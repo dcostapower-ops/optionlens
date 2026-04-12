@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OptionLens — Ticker Universe Gap Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c0e14;--surface:#141722;--border:#1e2333;--accent:#00e5a0;--accent2:#00b8d4;--warn:#ff6b6b;--orange:#ffa94d;--text:#d4d8e8;--dim:#6b7394;--font-mono:'JetBrains Mono',monospace;--font-sans:'DM Sans',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);min-height:100vh;padding:24px}
+.container{max-width:1100px;margin:0 auto}
+h1{font-family:var(--font-mono);font-size:22px;font-weight:600;color:var(--accent);margin-bottom:4px;letter-spacing:-0.5px}
+.subtitle{color:var(--dim);font-size:13px;margin-bottom:20px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px}
+.panel-title{font-family:var(--font-mono);font-size:13px;color:var(--accent2);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+button{font-family:var(--font-mono);font-size:13px;font-weight:600;border:none;padding:10px 22px;border-radius:8px;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--accent);color:#0c0e14}
+.btn-primary:hover{background:#33edba;transform:translateY(-1px)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-secondary{background:var(--border);color:var(--text)}
+.btn-secondary:hover{background:#2a2f44}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
+.stat{background:var(--bg);border-radius:8px;padding:12px 14px;text-align:center}
+.stat .val{font-family:var(--font-mono);font-size:24px;font-weight:600}
+.stat .lbl{font-size:11px;color:var(--dim);margin-top:2px}
+.green{color:var(--accent)}.blue{color:var(--accent2)}.red{color:var(--warn)}.orange{color:var(--orange)}
+#status{font-family:var(--font-mono);font-size:12px;color:var(--dim);margin:12px 0;white-space:pre-wrap;line-height:1.6;max-height:150px;overflow-y:auto}
+.bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin:8px 0}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width .3s;width:0}
+table{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--font-mono)}
+th{text-align:left;padding:8px 10px;color:var(--accent2);border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0;background:var(--surface)}
+td{padding:6px 10px;border-bottom:1px solid var(--border)}
+tr:hover td{background:rgba(0,229,160,.03)}
+.table-wrap{max-height:50vh;overflow-y:auto;border-radius:8px;border:1px solid var(--border)}
+.tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-family:var(--font-mono)}
+.tag-miss{background:rgba(255,107,107,.15);color:var(--warn)}
+.tag-ok{background:rgba(0,229,160,.15);color:var(--accent)}
+.tag-cs{background:rgba(0,184,212,.1);color:var(--accent2)}
+.tag-etf{background:rgba(255,169,77,.1);color:var(--orange)}
+.tabs{display:flex;gap:4px;margin-bottom:12px}
+.tab{padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-family:var(--font-mono);background:var(--bg);color:var(--dim);border:1px solid var(--border)}
+.tab.active{background:var(--border);color:var(--accent);border-color:var(--accent)}
+.hidden{display:none}
+.footer{text-align:center;color:var(--dim);font-size:11px;margin-top:16px}
+input[type=text]{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-family:var(--font-mono);font-size:12px;width:220px}
+input[type=text]:focus{outline:none;border-color:var(--accent)}
+</style>
+</head><body>
+<div class="container">
+<h1>🔍 Ticker Universe Gap Analyzer</h1>
+<p class="subtitle">Compares COMPANY_INFO (app_config) vs ta_cache vs options_iv_cache to find missing tickers</p>
+
+<div class="panel">
+<div class="panel-title">Analyze</div>
+<div class="row">
+<button class="btn-primary" id="runBtn" onclick="analyze()">Run Gap Analysis</button>
+<input type="text" id="search" placeholder="Filter tickers..." oninput="renderTable()">
+<button class="btn-secondary" onclick="exportCSV()">📋 Export Missing (CSV)</button>
+</div>
+<div class="bar"><div class="bar-fill" id="bar"></div></div>
+<div id="status">Click Run Gap Analysis to start.</div>
+</div>
+
+<div id="resultsPanel" class="hidden">
+<div class="stats" id="statsRow">
+<div class="stat"><div class="val green" id="sCi">0</div><div class="lbl">COMPANY_INFO</div></div>
+<div class="stat"><div class="val blue" id="sTa">0</div><div class="lbl">ta_cache</div></div>
+<div class="stat"><div class="val orange" id="sIv">0</div><div class="lbl">iv_cache tickers</div></div>
+<div class="stat"><div class="val red" id="sMissTa">0</div><div class="lbl">Missing from ta_cache</div></div>
+<div class="stat"><div class="val red" id="sMissIv">0</div><div class="lbl">Missing from iv_cache</div></div>
+</div>
+
+<div class="panel">
+<div class="tabs">
+<div class="tab active" data-tab="missTa" onclick="switchTab(this)">Missing from ta_cache</div>
+<div class="tab" data-tab="missIv" onclick="switchTab(this)">Missing from iv_cache (optionable)</div>
+<div class="tab" data-tab="orphanTa" onclick="switchTab(this)">In ta_cache but not COMPANY_INFO</div>
+<div class="tab" data-tab="all" onclick="switchTab(this)">Full Universe</div>
+</div>
+<div class="table-wrap">
+<table><thead><tr>
+<th>#</th><th>Ticker</th><th>Name</th><th>Exchange</th><th>ta_cache</th><th>iv_cache</th>
+</tr></thead><tbody id="tbody"></tbody></table>
+</div>
+</div>
+</div>
+
+<div class="footer">Reads from Supabase: app_config, ta_cache, options_iv_cache</div>
+</div>
+
+<script>
+const SUPA_URL = 'https://hkamukkkkpqhdpcradau.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY';
+const H = {'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY};
+const $ = id => document.getElementById(id);
+const bar = $('bar');
+const status = $('status');
+
+let ciMap = {};      // ticker -> [name, exchange]
+let taTickers = new Set();
+let ivTickers = new Set();
+let currentTab = 'missTa';
+let results = {};    // computed gap data
+
+function log(msg) {
+  status.textContent = msg + '\n' + status.textContent.split('\n').slice(0,20).join('\n');
+}
+function progress(pct) { bar.style.width = Math.min(100,pct)+'%'; }
+
+async function supaFetch(path) {
+  const r = await fetch(SUPA_URL + '/rest/v1/' + path, {headers:H});
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+async function analyze() {
+  $('runBtn').disabled = true;
+  $('resultsPanel').classList.add('hidden');
+  status.textContent = '';
+  ciMap = {}; taTickers = new Set(); ivTickers = new Set();
+
+  try {
+    // 1. Fetch COMPANY_INFO from app_config
+    log('Fetching COMPANY_INFO from app_config...');
+    progress(10);
+    const ciRows = await supaFetch('app_config?key=eq.company_info&select=value');
+    if (ciRows.length && ciRows[0].value) {
+      const raw = ciRows[0].value;
+      ciMap = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    }
+    const ciCount = Object.keys(ciMap).length;
+    log(`COMPANY_INFO: ${ciCount} tickers`);
+    progress(30);
+
+    // 2. Fetch all ta_cache tickers (paginated)
+    log('Fetching ta_cache tickers...');
+    let offset = 0;
+    while (true) {
+      const rows = await supaFetch(`ta_cache?select=ticker&order=ticker.asc&limit=1000&offset=${offset}`);
+      for (const r of rows) if (r.ticker) taTickers.add(r.ticker);
+      if (rows.length < 1000) break;
+      offset += 1000;
+    }
+    log(`ta_cache: ${taTickers.size} unique tickers`);
+    progress(60);
+
+    // 3. Fetch all iv_cache tickers (distinct)
+    log('Fetching options_iv_cache tickers...');
+    offset = 0;
+    const ivSeen = new Set();
+    while (true) {
+      const rows = await supaFetch(`options_iv_cache?select=ticker&order=ticker.asc&limit=1000&offset=${offset}`);
+      for (const r of rows) if (r.ticker) ivSeen.add(r.ticker);
+      if (rows.length < 1000) break;
+      offset += 1000;
+    }
+    ivTickers = ivSeen;
+    log(`options_iv_cache: ${ivTickers.size} unique tickers`);
+    progress(80);
+
+    // 4. Compute gaps
+    const allCI = Object.keys(ciMap).sort();
+    const missingFromTa = allCI.filter(t => !taTickers.has(t));
+    const missingFromIv = allCI.filter(t => !ivTickers.has(t));
+    const orphansInTa = [...taTickers].filter(t => !ciMap[t]).sort();
+
+    results = { allCI, missingFromTa, missingFromIv, orphansInTa };
+
+    // Stats
+    $('sCi').textContent = ciCount.toLocaleString();
+    $('sTa').textContent = taTickers.size.toLocaleString();
+    $('sIv').textContent = ivTickers.size.toLocaleString();
+    $('sMissTa').textContent = missingFromTa.length.toLocaleString();
+    $('sMissIv').textContent = missingFromIv.length.toLocaleString();
+
+    log(`\n✅ Gap analysis complete`);
+    log(`Missing from ta_cache: ${missingFromTa.length}`);
+    log(`Missing from iv_cache: ${missingFromIv.length}`);
+    log(`Orphans in ta_cache (not in COMPANY_INFO): ${orphansInTa.length}`);
+    progress(100);
+
+    $('resultsPanel').classList.remove('hidden');
+    renderTable();
+
+  } catch(e) {
+    log('❌ Error: ' + e.message);
+  }
+  $('runBtn').disabled = false;
+}
+
+function switchTab(el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  currentTab = el.dataset.tab;
+  renderTable();
+}
+
+function renderTable() {
+  const filter = $('search').value.toUpperCase().trim();
+  const tbody = $('tbody');
+  let rows = [];
+
+  if (currentTab === 'missTa') {
+    rows = results.missingFromTa || [];
+  } else if (currentTab === 'missIv') {
+    rows = results.missingFromIv || [];
+  } else if (currentTab === 'orphanTa') {
+    rows = results.orphansInTa || [];
+  } else {
+    rows = results.allCI || [];
+  }
+
+  if (filter) rows = rows.filter(t => t.includes(filter));
+
+  const html = rows.slice(0, 2000).map((tk, i) => {
+    const ci = ciMap[tk];
+    const name = ci ? ci[0] : '—';
+    const ex = ci ? ci[1] : '?';
+    const inTa = taTickers.has(tk);
+    const inIv = ivTickers.has(tk);
+    return `<tr>
+      <td style="color:var(--dim)">${i+1}</td>
+      <td style="font-weight:600">${tk}</td>
+      <td>${name}</td>
+      <td><span class="tag ${ex==='P'?'tag-etf':'tag-cs'}">${ex==='Q'?'NASDAQ':ex==='N'?'NYSE':ex==='P'?'AMEX':ex}</span></td>
+      <td><span class="tag ${inTa?'tag-ok':'tag-miss'}">${inTa?'✓':'✗'}</span></td>
+      <td><span class="tag ${inIv?'tag-ok':'tag-miss'}">${inIv?'✓':'✗'}</span></td>
+    </tr>`;
+  }).join('');
+
+  tbody.innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:20px">No results</td></tr>';
+  if (rows.length > 2000) {
+    tbody.innerHTML += `<tr><td colspan="6" style="text-align:center;color:var(--dim)">Showing 2000 of ${rows.length}...</td></tr>`;
+  }
+}
+
+function exportCSV() {
+  if (!results.missingFromTa) { log('Run analysis first'); return; }
+  const lines = ['ticker,name,exchange,in_ta_cache,in_iv_cache'];
+  for (const tk of results.missingFromTa) {
+    const ci = ciMap[tk] || ['',''];
+    const name = ci[0].replace(/,/g, ';');
+    lines.push(`${tk},${name},${ci[1]},no,${ivTickers.has(tk)?'yes':'no'}`);
+  }
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'missing_from_ta_cache.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('📋 Exported CSV');
+}
+</script>
+</body></html>

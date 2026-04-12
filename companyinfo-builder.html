@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OptionLens — COMPANY_INFO Builder</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c0e14;--surface:#141722;--border:#1e2333;--accent:#00e5a0;--accent2:#00b8d4;--warn:#ff6b6b;--text:#d4d8e8;--dim:#6b7394;--font-mono:'JetBrains Mono',monospace;--font-sans:'DM Sans',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);min-height:100vh;padding:24px}
+.container{max-width:960px;margin:0 auto}
+h1{font-family:var(--font-mono);font-size:22px;font-weight:600;color:var(--accent);margin-bottom:4px;letter-spacing:-0.5px}
+.subtitle{color:var(--dim);font-size:13px;margin-bottom:20px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px}
+.panel-title{font-family:var(--font-mono);font-size:13px;color:var(--accent2);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+label{font-size:13px;color:var(--dim)}
+input[type=number]{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:90px;font-family:var(--font-mono);font-size:13px}
+input[type=number]:focus{outline:none;border-color:var(--accent)}
+.cb{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
+.cb input{accent-color:var(--accent)}
+button{font-family:var(--font-mono);font-size:13px;font-weight:600;border:none;padding:10px 22px;border-radius:8px;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--accent);color:#0c0e14}
+.btn-primary:hover{background:#33edba;transform:translateY(-1px)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-secondary{background:var(--border);color:var(--text)}
+.btn-secondary:hover{background:#2a2f44}
+.btn-warn{background:rgba(255,107,107,.15);color:var(--warn);border:1px solid rgba(255,107,107,.2)}
+.btn-warn:hover{background:rgba(255,107,107,.25)}
+#status{font-family:var(--font-mono);font-size:12px;color:var(--dim);margin:12px 0;white-space:pre-wrap;line-height:1.6;max-height:180px;overflow-y:auto}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:12px 0}
+.stat{background:var(--bg);border-radius:8px;padding:10px 14px;text-align:center}
+.stat .val{font-family:var(--font-mono);font-size:22px;font-weight:600;color:var(--accent)}
+.stat .lbl{font-size:11px;color:var(--dim);margin-top:2px}
+#output{width:100%;height:50vh;background:var(--bg);color:var(--accent);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:var(--font-mono);font-size:11px;resize:vertical;line-height:1.5}
+.bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin:8px 0}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width .3s;width:0}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-family:var(--font-mono)}
+.tag-n{background:rgba(0,184,212,.1);color:var(--accent2)}
+.tag-q{background:rgba(0,229,160,.1);color:var(--accent)}
+.tag-p{background:rgba(255,193,7,.1);color:#ffc107}
+.footer{text-align:center;color:var(--dim);font-size:11px;margin-top:16px}
+</style>
+</head><body>
+<div class="container">
+<h1>⚡ COMPANY_INFO Builder</h1>
+<p class="subtitle">Fetches all active US tickers from Polygon → filters to liquid stocks & ETFs → outputs ready-to-paste JS</p>
+
+<div class="panel">
+<div class="panel-title">Filters</div>
+<div class="row">
+<div class="cb"><input type="checkbox" id="incStocks" checked><label for="incStocks">Common Stocks (CS)</label></div>
+<div class="cb"><input type="checkbox" id="incETFs" checked><label for="incETFs">ETFs</label></div>
+<div class="cb"><input type="checkbox" id="incADRs" checked><label for="incADRs">ADRs (ADRC)</label></div>
+</div>
+<div class="row" style="margin-top:10px">
+<label>Min avg daily vol ($M):</label><input type="number" id="minDV" value="1" min="0" step="0.5">
+</div>
+<div class="row" style="margin-top:10px">
+<div class="cb"><input type="checkbox" id="skipSPAC" checked><label for="skipSPAC">Skip SPACs/Acquisition Corps</label></div>
+<div class="cb"><input type="checkbox" id="skipLev" checked><label for="skipLev">Skip leveraged/inverse (2X/3X/Bull/Bear)</label></div>
+<div class="cb"><input type="checkbox" id="skipNotes" checked><label for="skipNotes">Skip Notes/Warrants/Preferred/Rights</label></div>
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-title">Execution</div>
+<div class="row">
+<button class="btn-primary" id="fetchBtn" onclick="run()">Fetch & Build</button>
+<button class="btn-secondary" onclick="copyOut()">📋 Copy Output</button>
+<button class="btn-secondary" onclick="downloadOut()">💾 Download .js</button>
+<button class="btn-warn" onclick="pushToSupabase()">🚀 Push to Supabase</button>
+</div>
+<div class="bar"><div class="bar-fill" id="bar"></div></div>
+<div id="status">Ready. Click Fetch & Build to start.</div>
+<div class="stats" id="statsRow" style="display:none">
+<div class="stat"><div class="val" id="sTotalFetched">0</div><div class="lbl">Fetched</div></div>
+<div class="stat"><div class="val" id="sKept">0</div><div class="lbl">Kept</div></div>
+<div class="stat"><div class="val" id="sStocks">0</div><div class="lbl">Stocks</div></div>
+<div class="stat"><div class="val" id="sETFs">0</div><div class="lbl">ETFs</div></div>
+<div class="stat"><div class="val" id="sBytes">0</div><div class="lbl">Output KB</div></div>
+</div>
+</div>
+
+<textarea id="output" readonly placeholder="Output will appear here..."></textarea>
+<div class="footer">Uses Polygon.io via api.massive.com • Filters for liquid US equities & ETFs</div>
+</div>
+
+<script>
+const KEY = 'PgRs52EbNphty72Y45WUqqpk_4UJzwil';
+const BASE = 'https://api.massive.com';
+const EXCHANGE_MAP = {
+  XNAS:'Q', XNYS:'N', ARCX:'P', XASE:'P', XNMS:'Q',
+  XNCM:'Q', XNGS:'Q', BATS:'P', IEXG:'N'
+};
+const DEAD = new Set([
+  'JNPR','ATVI','VMW','CERN','DFS','HES','ANSS','K','PARA','ZI',
+  'NOVA','TWTR','MPW','SPR','VERV','CYBR','ERJ','EXAS','MMC','BLUE',
+  'SWN','CIVI','BIRK','NVTA'
+]);
+const SPAC_RE = /acquisition|spac|blank check|merger|class a ordinary share/i;
+const LEV_RE  = /\b(2x|3x|bull|bear|ultra|inverse|short|leverag|proshares|direxion|graniteshares|t-rex)\b/i;
+const NOTES_RE = /\b(note|warrant|right|preferred|depositary|debenture|unit|series [a-z])\b/i;
+
+const $ = id => document.getElementById(id);
+const status = $('status');
+const bar    = $('bar');
+const output = $('output');
+
+let running = false;
+let sectorData = {};  // ticker -> sector (built during run)
+
+function sicToSector(sic, name, type) {
+  if (type === 'ETF') return 'ETF';
+  if (!sic) return classifyByName(name);
+  const s = +sic;
+  // Technology / Software
+  if (s >= 7370 && s <= 7379) return 'Tech';
+  if (s === 7372 || s === 5045 || s === 5112) return 'Tech';
+  // Semiconductors
+  if (s >= 3670 && s <= 3679) return 'Semis';
+  if (s === 3674 || s === 3672) return 'Semis';
+  // Electronics / Hardware
+  if (s >= 3570 && s <= 3579) return 'Tech';  // computers
+  if (s >= 3660 && s <= 3669) return 'Tech';  // telecom equipment
+  if (s >= 3825 && s <= 3829) return 'Tech';  // instruments
+  if (s === 3812) return 'Defense';
+  if (s >= 3760 && s <= 3769) return 'Defense';
+  // Pharma / Biotech
+  if (s >= 2830 && s <= 2836) return 'Pharma';
+  if (s === 2860 || s === 2890) return 'Materials';
+  if (s >= 8730 && s <= 8739) return 'Pharma'; // R&D services (biotech)
+  // Healthcare
+  if (s >= 8000 && s <= 8099) return 'Health';
+  if (s >= 3840 && s <= 3851) return 'Health'; // medical devices
+  if (s === 5047 || s === 5122) return 'Health'; // medical wholesale
+  // Banks
+  if (s >= 6020 && s <= 6029) return 'Banks';
+  if (s >= 6710 && s <= 6726) return 'Finance';
+  if (s >= 6030 && s <= 6036) return 'Banks'; // savings institutions
+  if (s === 6022 || s === 6021) return 'Banks';
+  // Insurance
+  if (s >= 6310 && s <= 6399) return 'Insurance';
+  if (s >= 6410 && s <= 6411) return 'Insurance';
+  // Finance / Capital Markets
+  if (s >= 6150 && s <= 6199) return 'Finance';
+  if (s >= 6200 && s <= 6282) return 'Finance';
+  // Real Estate
+  if (s >= 6500 && s <= 6553) return 'REITs';
+  if (s === 6798) return 'REITs';
+  // Energy / Oil & Gas
+  if (s >= 1310 && s <= 1389) return 'Energy';
+  if (s >= 2910 && s <= 2999) return 'Energy'; // petroleum refining
+  if (s >= 4900 && s <= 4941) return 'Utilities';
+  if (s === 4911 || s === 4931 || s === 4932) return 'Utilities';
+  if (s >= 4920 && s <= 4925) return 'Energy'; // gas distribution
+  if (s === 5171 || s === 5172) return 'Energy'; // petroleum wholesale
+  if (s >= 1040 && s <= 1099) return 'Materials'; // gold/silver mining
+  if (s >= 1000 && s <= 1499) return 'Materials'; // mining
+  // Industrials / Aerospace / Defense
+  if (s >= 3710 && s <= 3720) return 'Industrials';
+  if (s >= 3720 && s <= 3728) return 'Defense';
+  if (s >= 3730 && s <= 3743) return 'Industrials';
+  if (s >= 3440 && s <= 3599) return 'Industrials';
+  if (s >= 3510 && s <= 3559) return 'Industrials';
+  if (s >= 4500 && s <= 4581) return 'Industrials'; // airlines
+  if (s >= 4000 && s <= 4200) return 'Industrials'; // rail/trucking
+  if (s >= 4210 && s <= 4231) return 'Industrials'; // trucking
+  if (s === 3585 || s === 3559 || s === 3561) return 'Industrials';
+  // Consumer Discretionary
+  if (s >= 5300 && s <= 5399) return 'Consumer';
+  if (s >= 5400 && s <= 5499) return 'Consumer';
+  if (s >= 5600 && s <= 5699) return 'Consumer';
+  if (s >= 5700 && s <= 5799) return 'Consumer';
+  if (s >= 5810 && s <= 5813) return 'Consumer'; // restaurants
+  if (s >= 5900 && s <= 5999) return 'Consumer';
+  if (s >= 5200 && s <= 5251) return 'Consumer'; // home improvement
+  if (s >= 7000 && s <= 7011) return 'Consumer'; // hotels
+  if (s >= 7800 && s <= 7841) return 'Media'; // entertainment
+  if (s === 5065 || s === 5040) return 'Consumer';
+  // Consumer Staples
+  if (s >= 2000 && s <= 2111) return 'Consumer';
+  if (s >= 2080 && s <= 2086) return 'Consumer'; // beverages
+  if (s >= 2040 && s <= 2068) return 'Consumer'; // food
+  if (s >= 2800 && s <= 2821) return 'Materials'; // chemicals
+  // Media / Telecom
+  if (s >= 4800 && s <= 4899) return 'Media';
+  if (s >= 2700 && s <= 2796) return 'Media'; // publishing
+  if (s === 4813 || s === 4812) return 'Media';
+  if (s === 7812 || s === 7819) return 'Media'; // motion pictures
+  // Materials
+  if (s >= 2600 && s <= 2679) return 'Materials'; // paper
+  if (s >= 3310 && s <= 3399) return 'Materials'; // metals
+  if (s >= 2810 && s <= 2829) return 'Materials'; // chemicals
+  if (s >= 3290 && s <= 3299) return 'Materials';
+  // Crypto
+  // (no SIC code, classify by name)
+  // Utilities
+  if (s >= 4910 && s <= 4991) return 'Utilities';
+  // Fallback: classify by name
+  return classifyByName(name);
+}
+
+function classifyByName(name) {
+  if (!name) return 'Other';
+  const n = name.toLowerCase();
+  if (/bitcoin|crypto|blockchain|digital currency/.test(n)) return 'Crypto';
+  if (/semiconductor|chip|silicon/.test(n)) return 'Semis';
+  if (/software|cloud|saas|platform|data|cyber|security/.test(n)) return 'Tech';
+  if (/pharma|biotech|therapeut|bioscien|genomic|oncolog/.test(n)) return 'Pharma';
+  if (/medical|health|hospital|diagnost|surgical/.test(n)) return 'Health';
+  if (/bank|bancorp|bancshares|financial services/.test(n)) return 'Banks';
+  if (/insurance|underwriter|reinsur/.test(n)) return 'Insurance';
+  if (/asset manage|capital market|invest|brokerage|exchange/.test(n)) return 'Finance';
+  if (/reit|real estate|property|realty/.test(n)) return 'REITs';
+  if (/oil|gas|petrol|energy|solar|wind|nuclear|pipeline|lng/.test(n)) return 'Energy';
+  if (/utility|electric|power|water|gas dist/.test(n)) return 'Utilities';
+  if (/aero|defense|missile|military|weapon/.test(n)) return 'Defense';
+  if (/transport|freight|logistic|airline|railroad|shipping/.test(n)) return 'Industrials';
+  if (/retail|restaurant|hotel|resort|leisure|gaming|apparel|fashion/.test(n)) return 'Consumer';
+  if (/food|beverage|staple|grocery|household/.test(n)) return 'Consumer';
+  if (/media|broadcast|entertain|stream|telecom|communicat|publish|advertis/.test(n)) return 'Media';
+  if (/mining|metal|steel|chemical|material|lumber/.test(n)) return 'Materials';
+  if (/etf|fund|trust|index|shares/.test(n)) return 'ETF';
+  return 'Other';
+}
+
+async function fetchPage(cursor) {
+  const p = new URLSearchParams({
+    market:'stocks', active:'true', limit:'1000', apiKey:KEY, order:'asc', sort:'ticker'
+  });
+  if (cursor) p.set('cursor', cursor);
+  const r = await fetch(`${BASE}/v3/reference/tickers?${p}`);
+  if (r.status === 429) {
+    log('⏳ Rate limited — waiting 15s...');
+    await new Promise(ok => setTimeout(ok, 15000));
+    return fetchPage(cursor);
+  }
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// Fetch daily bars for volume check (batch of tickers)
+async function fetchSnapshot(tickers) {
+  // Use grouped daily for all tickers at once
+  // Actually use ticker details v3 for market_cap
+  // Polygon grouped daily: /v2/aggs/grouped/locale/us/market/stocks/{date}
+  // This is too heavy. Instead, we'll skip volume filtering if no snapshot available
+  // and rely on type/exchange filtering which is good enough.
+  return {};
+}
+
+function log(msg) {
+  status.textContent = msg + '\n' + status.textContent.split('\n').slice(0, 30).join('\n');
+}
+
+function progress(pct) {
+  bar.style.width = Math.min(100, pct) + '%';
+}
+
+async function run() {
+  if (running) return;
+  running = true;
+  $('fetchBtn').disabled = true;
+  $('statsRow').style.display = 'none';
+  output.value = '';
+  status.textContent = '';
+  log('Starting Polygon fetch...');
+
+  const incStocks = $('incStocks').checked;
+  const incETFs   = $('incETFs').checked;
+  const incADRs   = $('incADRs').checked;
+  const skipSPAC  = $('skipSPAC').checked;
+  const skipLev   = $('skipLev').checked;
+  const skipNotes = $('skipNotes').checked;
+  const allowedTypes = new Set();
+  if (incStocks) allowedTypes.add('CS');
+  if (incETFs)   allowedTypes.add('ETF');
+  if (incADRs)   allowedTypes.add('ADRC');
+
+  const all = {};
+  const sicMap = {};   // ticker -> SIC code
+  const typeMap = {};  // ticker -> 'ETF' if ETF
+  let cursor = null, page = 0, totalFetched = 0, skipped = {type:0,dead:0,spac:0,lev:0,notes:0,exchange:0};
+
+  try {
+    while (true) {
+      page++;
+      const data = await fetchPage(cursor);
+      const results = data.results || [];
+      totalFetched += results.length;
+      log(`Page ${page}: +${results.length} tickers (${totalFetched} total)`);
+      progress(Math.min(90, page * 5));
+
+      for (const t of results) {
+        if (!t.ticker) continue;
+        const tk = t.ticker;
+
+        // Dead tickers
+        if (DEAD.has(tk)) { skipped.dead++; continue; }
+
+        // Special chars (warrants, units, rights)
+        if (/[.\-+]/.test(tk)) { skipped.notes++; continue; }
+
+        // Type filter
+        if (t.type && !allowedTypes.has(t.type)) { skipped.type++; continue; }
+
+        // Exchange filter — must be a known US exchange
+        const ex = EXCHANGE_MAP[t.primary_exchange];
+        if (!ex) { skipped.exchange++; continue; }
+
+        const name = t.name || tk;
+
+        // SPAC filter
+        if (skipSPAC && SPAC_RE.test(name)) { skipped.spac++; continue; }
+
+        // Leveraged/inverse filter
+        if (skipLev && LEV_RE.test(name)) { skipped.lev++; continue; }
+
+        // Notes/warrants/preferred filter
+        if (skipNotes && NOTES_RE.test(name)) { skipped.notes++; continue; }
+
+        // Clean name: truncate to 50 chars, escape quotes
+        let cleanName = name
+          .replace(/\s+Common\s+Stock\s*/i, '')
+          .replace(/\s+Ordinary\s+Shares?\s*/i, '')
+          .replace(/\s+American\s+Depositary\s+Shares?.*$/i, '')
+          .replace(/\s+ADS.*$/i, '')
+          .replace(/\s+ADR.*$/i, '')
+          .replace(/,?\s*\b(Inc\.?|Incorporated|Corp\.?|Corporation|Company|Limited|Holdings?|Plc|Ltd\.?|N\.V\.?|S\.A\.?|Class\s+[A-Z])\b\s*/gi, '')
+          .replace(/\s*\(.*?\)\s*/g, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+        if (cleanName.length > 45) cleanName = cleanName.slice(0, 42) + '...';
+        if (!cleanName) cleanName = name.slice(0, 45);
+
+        all[tk] = [cleanName, ex];
+
+        // Capture SIC code for sector mapping
+        if (t.sic_code) sicMap[tk] = t.sic_code;
+        if (t.type === 'ETF') typeMap[tk] = 'ETF';
+      }
+
+      if (data.next_url) {
+        const u = new URL(data.next_url);
+        cursor = u.searchParams.get('cursor');
+        if (!cursor) break;
+        await new Promise(ok => setTimeout(ok, 250));
+      } else {
+        break;
+      }
+    }
+
+    // Volume filter — fetch grouped daily bars for last trading day
+    const minDV = +$('minDV').value || 0;
+    if (minDV > 0) {
+      log('\n📊 Fetching daily volume data for liquidity filter...');
+      progress(91);
+      // Find last weekday
+      const d = new Date();
+      while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+      d.setDate(d.getDate() - 1); // yesterday to ensure market closed
+      while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+      const dateStr = d.toISOString().slice(0, 10);
+      log(`Using trading date: ${dateStr}`);
+      try {
+        const vr = await fetch(`${BASE}/v2/aggs/grouped/locale/us/market/stocks/${dateStr}?adjusted=true&apiKey=${KEY}`);
+        if (vr.ok) {
+          const vd = await vr.json();
+          const volMap = {};
+          for (const bar of (vd.results || [])) {
+            if (bar.T && bar.v && bar.vw) volMap[bar.T] = (bar.v * bar.vw) / 1e6; // dollar vol in $M
+          }
+          const beforeCount = Object.keys(all).length;
+          let volSkipped = 0;
+          for (const tk of Object.keys(all)) {
+            const dv = volMap[tk];
+            if (dv === undefined || dv < minDV) {
+              delete all[tk];
+              volSkipped++;
+            }
+          }
+          log(`Volume filter: removed ${volSkipped} tickers below $${minDV}M daily volume`);
+          log(`Kept ${Object.keys(all).length} of ${beforeCount} after volume filter`);
+        } else {
+          log('⚠️ Could not fetch volume data (HTTP ' + vr.status + ') — skipping volume filter');
+        }
+      } catch(e) {
+        log('⚠️ Volume fetch error: ' + e.message + ' — skipping volume filter');
+      }
+      progress(94);
+    }
+
+    // Build output
+    const keys = Object.keys(all).sort();
+    log(`\n✅ Kept ${keys.length} tickers from ${totalFetched} fetched`);
+    log(`Skipped: type=${skipped.type} dead=${skipped.dead} spac=${skipped.spac} lev=${skipped.lev} notes=${skipped.notes} exchange=${skipped.exchange}`);
+    progress(95);
+
+    // Build sector mapping
+    sectorData = {};
+    const sectorCounts = {};
+    for (const k of keys) {
+      const [name, ex] = all[k];
+      const sector = sicToSector(sicMap[k], name, typeMap[k]);
+      sectorData[k] = sector;
+      sectorCounts[sector] = (sectorCounts[sector] || 0) + 1;
+    }
+    const sectorSummary = Object.entries(sectorCounts).sort((a,b)=>b[1]-a[1]).map(([s,c])=>s+':'+c).join(' · ');
+    log('Sectors: ' + sectorSummary);
+
+    // Count stocks vs ETFs
+    let nStocks = 0, nETFs = 0;
+    // We don't have type info stored, estimate from exchange
+    // Actually let's store type too
+    // For stats, approximate: P exchange = mostly ETFs
+    for (const k of keys) {
+      if (all[k][1] === 'P') nETFs++; else nStocks++;
+    }
+
+    // Format as compact single-line JS (like the old COMPANY_INFO)
+    let lines = [];
+    let line = '';
+    for (const k of keys) {
+      const [name, ex] = all[k];
+      const safeName = name.replace(/'/g, "\\'");
+      const entry = `${k}:['${safeName}','${ex}']`;
+      if (line.length + entry.length + 2 > 160) {
+        lines.push(line + ',');
+        line = entry;
+      } else {
+        line = line ? line + ',' + entry : entry;
+      }
+    }
+    if (line) lines.push(line);
+
+    const result = 'const COMPANY_INFO = {\n' + lines.join('\n') + '\n};';
+    output.value = result;
+
+    const bytes = new Blob([result]).size;
+    $('sTotalFetched').textContent = totalFetched.toLocaleString();
+    $('sKept').textContent = keys.length.toLocaleString();
+    $('sStocks').textContent = nStocks.toLocaleString();
+    $('sETFs').textContent = nETFs.toLocaleString();
+    $('sBytes').textContent = (bytes / 1024).toFixed(1);
+    $('statsRow').style.display = 'grid';
+
+    progress(100);
+    log(`\nOutput: ${(bytes/1024).toFixed(1)} KB — ready to copy/download`);
+  } catch (e) {
+    log(`❌ Error: ${e.message}`);
+  }
+  running = false;
+  $('fetchBtn').disabled = false;
+}
+
+function copyOut() {
+  if (!output.value) { log('Nothing to copy'); return; }
+  navigator.clipboard.writeText(output.value).then(() => log('📋 Copied!')).catch(() => {
+    output.select(); document.execCommand('copy'); log('📋 Copied (fallback)');
+  });
+}
+
+function downloadOut() {
+  if (!output.value) { log('Nothing to download'); return; }
+  const blob = new Blob([output.value], {type:'text/javascript'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'COMPANY_INFO.js';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('💾 Downloaded COMPANY_INFO.js');
+}
+
+const SUPA_URL = 'https://hkamukkkkpqhdpcradau.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY';
+
+async function pushToSupabase() {
+  if (!output.value) { log('Nothing to push — run Fetch & Build first'); return; }
+  log('🚀 Pushing COMPANY_INFO to Supabase app_config...');
+  try {
+    // Parse the JS output to extract the raw object
+    const raw = output.value.replace(/^const COMPANY_INFO = /, '').replace(/;\s*$/, '');
+    const obj = (new Function('return ' + raw))();
+    const count = Object.keys(obj).length;
+
+    // Upsert to app_config table (key = 'company_info')
+    const r = await fetch(SUPA_URL + '/rest/v1/app_config', {
+      method: 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify({
+        key: 'company_info',
+        value: JSON.stringify(obj)
+      })
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      log('❌ Supabase error ' + r.status + ': ' + txt);
+      if (r.status === 404) {
+        log('⚠️  app_config table may not exist. Run this SQL in Supabase:\n' +
+            'CREATE TABLE IF NOT EXISTS app_config (\n' +
+            '  key TEXT PRIMARY KEY,\n' +
+            '  value JSONB,\n' +
+            '  updated_at TIMESTAMPTZ DEFAULT now()\n' +
+            ');\n' +
+            'ALTER TABLE app_config ENABLE ROW LEVEL SECURITY;\n' +
+            'CREATE POLICY "anon_rw" ON app_config FOR ALL USING (true) WITH CHECK (true);');
+      }
+      return;
+    }
+    log('✅ Pushed ' + count + ' tickers to Supabase app_config (key=company_info)');
+
+    // Push sector mapping
+    if (Object.keys(sectorData).length > 0) {
+      log('🚀 Pushing ticker_sectors...');
+      const r2 = await fetch(SUPA_URL + '/rest/v1/app_config', {
+        method: 'POST',
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': 'Bearer ' + SUPA_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify({
+          key: 'ticker_sectors',
+          value: JSON.stringify(sectorData)
+        })
+      });
+      if (r2.ok) {
+        const sectorCounts = {};
+        Object.values(sectorData).forEach(s => sectorCounts[s] = (sectorCounts[s]||0)+1);
+        const summary = Object.entries(sectorCounts).sort((a,b)=>b[1]-a[1]).map(([s,c])=>s+':'+c).join(' · ');
+        log('✅ Pushed ' + Object.keys(sectorData).length + ' ticker sectors');
+        log('   ' + summary);
+      } else {
+        log('⚠️ Sector push failed: ' + r2.status);
+      }
+    }
+
+    log('   The screener will load this automatically on next refresh.');
+  } catch(e) {
+    log('❌ Push error: ' + e.message);
+  }
+}
+</script>
+</body></html>

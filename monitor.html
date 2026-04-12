@@ -1,0 +1,2105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>OptionLens · Batch Monitor</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#09090f;color:#f0f0fa;font-family:'Segoe UI',system-ui,sans-serif;padding:0;min-height:100vh}
+.topbar{background:#0d0d17;border-bottom:1px solid #1e1e2e;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.brand{font-size:15px;font-weight:700;letter-spacing:.3px}.brand span{color:#a78bfa}
+.topbar-right{display:flex;align-items:center;gap:14px}
+.countdown{font-family:'Courier New',monospace;font-size:11px;color:#8888aa;display:flex;align-items:center;gap:6px}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#00e5a8;animation:blink 1.4s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+@keyframes alertPulse{0%,100%{border-color:rgba(255,51,85,.3)}50%{border-color:rgba(255,51,85,.6)}}
+.btn-ref{background:#3d6eff;color:#fff;border:none;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer}
+.btn-ref:hover{opacity:.85}
+.wrap{padding:20px 24px 60px;max-width:1400px;margin:0 auto}
+
+/* STATUS BAR */
+.status-bar{background:#111118;border:1px solid #1e1e2e;border-radius:14px;padding:20px 24px;margin-bottom:18px;display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.big-pct{font-family:'Courier New',monospace;font-size:52px;font-weight:700;letter-spacing:-2px;line-height:1;min-width:110px}
+.big-pct.run{color:#3d6eff}.big-pct.done{color:#00e5a8}.big-pct.pend{color:#555570}
+.status-info{flex:1;min-width:220px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-family:'Courier New',monospace;font-size:10px;font-weight:700;letter-spacing:.5px;margin-bottom:8px}
+.badge.run{background:rgba(61,110,255,.15);color:#3d6eff;border:1px solid rgba(61,110,255,.3)}
+.badge.done{background:rgba(0,229,168,.12);color:#00e5a8;border:1px solid rgba(0,229,168,.25)}
+.badge.pend{background:rgba(85,85,112,.15);color:#8888aa;border:1px solid #1e1e2e}
+.status-meta{font-size:12px;color:#8888aa;line-height:2}
+.status-meta strong{color:#f0f0fa}
+.status-eta{font-family:'Courier New',monospace;font-size:11px;color:#ffaa00;margin-top:6px}
+.prog-bar{height:10px;background:#1e1e2e;border-radius:5px;margin-top:16px;overflow:hidden}
+.prog-fill{height:100%;border-radius:5px;background:linear-gradient(90deg,#3d6eff,#00e5a8);transition:width .7s}
+.prog-fill.done{background:#00e5a8}
+
+/* INDICATOR GRID */
+.sec-label{font-family:'Courier New',monospace;font-size:9px;font-weight:700;letter-spacing:2px;color:#a78bfa;margin-bottom:10px}
+.ind-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:18px}
+@media(max-width:700px){.ind-grid{grid-template-columns:repeat(4,1fr)}}
+.ic{background:#111118;border:1px solid #1e1e2e;border-radius:10px;padding:12px 6px 10px;text-align:center;transition:all .3s}
+.ic.done{background:rgba(0,229,168,.05);border-color:rgba(0,229,168,.2)}
+.ic.active{background:rgba(61,110,255,.06);border-color:rgba(61,110,255,.25)}
+.ic-name{font-family:'Courier New',monospace;font-size:9px;font-weight:700;letter-spacing:.5px;color:#8888aa;margin-bottom:6px}
+.ic.done .ic-name{color:#00e5a8}.ic.active .ic-name{color:#3d6eff}
+.ic-count{font-family:'Courier New',monospace;font-size:14px;font-weight:700;margin-bottom:4px}
+.ic-count.d{color:#00e5a8}.ic-count.a{color:#3d6eff}.ic-count.p{color:#8888aa}
+.ic-tag{font-size:8px;font-weight:700;font-family:'Courier New',monospace;padding:2px 6px;border-radius:3px;display:inline-block}
+.ic-tag.d{background:rgba(0,229,168,.12);color:#00e5a8}
+.ic-tag.a{background:rgba(61,110,255,.12);color:#3d6eff}
+.ic-tag.p{background:rgba(68,68,96,.2);color:#8888aa}
+.mini-bar{height:3px;background:#1e1e2e;border-radius:2px;margin-top:7px;overflow:hidden}
+.mini-fill{height:100%;border-radius:2px;transition:width .5s}
+.mini-fill.d{background:#00e5a8}.mini-fill.a{background:#3d6eff}
+
+/* 2-COL */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+@media(max-width:800px){.two-col{grid-template-columns:1fr}}
+.card{background:#111118;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden}
+.card-hdr{padding:10px 14px;background:#16161f;border-bottom:1px solid #1e1e2e}
+.card-body{padding:14px}
+.sr{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(30,30,46,.8)}
+.sr:last-child{border-bottom:none}
+.sl{font-size:12px;color:#8888aa}
+.sv{font-family:'Courier New',monospace;font-size:12px;font-weight:700;color:#f0f0fa}
+.sv.ok{color:#00e5a8}.sv.wa{color:#ffaa00}.sv.dim{color:#8888aa}
+
+/* DB CONTENTS */
+.db-card{background:#111118;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;margin-bottom:18px}
+.db-hdr{padding:12px 16px;background:#16161f;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.db-date{font-family:'Courier New',monospace;font-size:13px;font-weight:700;color:#f0f0fa}
+.db-date em{color:#a78bfa;font-style:normal}
+.db-meta{font-family:'Courier New',monospace;font-size:10px;color:#8888aa;margin-top:2px}
+.db-status{font-family:'Courier New',monospace;font-size:11px;font-weight:700}
+.ind-row{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:#1e1e2e}
+.ind-cell{background:#111118;padding:12px 6px;text-align:center}
+.ind-cell.cfull{background:rgba(0,229,168,.04)}
+.ind-cell.cpart{background:rgba(61,110,255,.04)}
+.ind-cname{font-family:'Courier New',monospace;font-size:8px;font-weight:700;letter-spacing:.5px;color:#555570;margin-bottom:5px}
+.ind-cn{font-family:'Courier New',monospace;font-size:15px;font-weight:700}
+.ind-cn.full{color:#00e5a8}.ind-cn.part{color:#3d6eff}.ind-cn.zero{color:#7777aa}
+.ind-csub{font-family:'Courier New',monospace;font-size:9px;margin-top:2px}
+.ind-csub.full{color:rgba(0,229,168,.5)}.ind-csub.part{color:rgba(61,110,255,.6)}.ind-csub.zero{color:#7777aa}
+.sum-row{display:flex;border-top:1px solid #1e1e2e}
+.sum-cell{flex:1;padding:10px 8px;text-align:center;border-right:1px solid #1e1e2e}
+.sum-cell:last-child{border-right:none}
+.sum-lbl{font-family:'Courier New',monospace;font-size:8px;letter-spacing:1px;color:#555570;margin-bottom:4px}
+.sum-val{font-family:'Courier New',monospace;font-size:12px;font-weight:700;color:#f0f0fa}
+
+/* LOG */
+.logbox{background:#06060e;border:1px solid #1e1e2e;border-radius:8px;padding:10px 12px;max-height:190px;overflow-y:auto;font-family:'Courier New',monospace;font-size:10px;line-height:2.1}
+.ll{display:flex;gap:8px}
+.lt{color:#7777aa;min-width:58px;flex-shrink:0}
+.lok{color:#00e5a8}.lw{color:#ffaa00}.li{color:#555570}.le{color:#ff3355}
+
+/* TABLE */
+.tbl-wrap{background:#111118;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;margin-bottom:18px}
+.tbl-hdr{padding:10px 14px;background:#16161f;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #1e1e2e}
+.filters input{background:#16161f;border:1px solid #1e1e2e;color:#f0f0fa;padding:6px 10px;border-radius:7px;font-size:12px;outline:none;width:160px}
+.filters input:focus{border-color:#3d6eff}
+.chip{padding:4px 10px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e1e2e;color:#8888aa;background:transparent;transition:all .15s}
+.chip.on{border-color:#3d6eff;color:#3d6eff;background:rgba(61,110,255,.08)}
+.chip:hover:not(.on){border-color:#555570}
+.tbl-sc{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{font-family:'Courier New',monospace;font-size:8px;letter-spacing:1.5px;color:#8888aa;text-align:left;padding:8px 10px;border-bottom:1px solid #1e1e2e;white-space:nowrap}
+td{padding:6px 10px;border-bottom:1px solid rgba(30,30,46,.6);font-family:'Courier New',monospace;white-space:nowrap}
+tr:hover td{background:rgba(255,255,255,.015)}
+.tck{font-weight:700;color:#f0f0fa}
+.tok{color:#00e5a8}.tnu{color:#7777aa}
+.pager{display:flex;align-items:center;gap:8px;padding:10px 14px;font-family:'Courier New',monospace;font-size:11px;color:#555570}
+.pager button{padding:3px 9px;border-radius:5px;background:#16161f;border:1px solid #1e1e2e;color:#8888aa;font-size:11px;cursor:pointer}
+.pager button:hover{border-color:#3d6eff;color:#3d6eff}
+.pager button:disabled{opacity:.3;cursor:not-allowed}
+.btn-csv{background:transparent;border:1px solid #1e1e2e;color:#8888aa;padding:5px 10px;border-radius:7px;font-size:11px;cursor:pointer}
+.btn-csv:hover{border-color:#00e5a8;color:#00e5a8}
+.stat-box{background:#0d1626;border:1px solid #1c2538;border-radius:6px;padding:10px 14px;}
+  .stat-val{font-size:22px;font-weight:800;color:#e0eaf4;font-family:'JetBrains Mono',monospace;}
+  .stat-lbl{font-size:11px;color:#8ab4ce;margin-top:3px;font-family:'JetBrains Mono',monospace;}
+  .ts-bar{font-family:'Courier New',monospace;font-size:10px;color:#8888aa;padding:8px 0 16px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">⚡ OptionLens · <span>Batch Monitor</span></div>
+  <div class="topbar-right">
+    <div class="countdown">
+      <div class="live-dot"></div>
+      <span id="cdText">Loading...</span>
+    </div>
+    <button class="btn-ref" onclick="doRefresh()">↻ Refresh Now</button>
+    <button class="btn-ref" id="invokeBtn" onclick="startAuto()" style="background:#00e5a8;color:#000;font-weight:700;margin-left:8px;">▶ Auto-Run</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <!-- ALERT BANNER (shown when health check finds issues) -->
+  <div id="alertBanner" style="display:none;background:rgba(255,51,85,.08);border:1px solid rgba(255,51,85,.3);border-radius:10px;padding:14px 20px;margin-bottom:14px;animation:alertPulse 2s infinite;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:20px;">🚨</span>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#f85149;margin-bottom:4px;">ATTENTION REQUIRED</div>
+        <div id="alertText" style="font-size:12px;color:#e0a0a0;font-family:'JetBrains Mono',monospace;line-height:1.8;"></div>
+      </div>
+    </div>
+  </div>
+  <div class="ts-bar" id="tsBar">Connecting to Supabase...</div>
+
+  <!-- ═══ DAILY OPERATIONS DASHBOARD ═══ -->
+  <div class="sec-label" style="margin-top:14px;">📋 DAILY OPERATIONS DASHBOARD</div>
+
+  <!-- Job Status Cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;margin-bottom:14px;">
+
+    <!-- TA-Batch Card -->
+    <div class="stat-box" id="opsTaCard" style="border-left:3px solid #555570;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-size:13px;font-weight:700;color:#3fb950;">📊 TA-BATCH</div>
+        <span id="opsTaBadge" style="font-family:'Courier New',monospace;font-size:10px;padding:3px 8px;border-radius:10px;background:rgba(85,85,112,.2);color:#8888aa;">—</span>
+      </div>
+      <div style="font-size:11px;color:#8888aa;font-family:'Courier New',monospace;line-height:2;" id="opsTaDetail">
+        Loading...
+      </div>
+      <div class="prog-bar" style="height:4px;margin-top:8px;">
+        <div class="prog-fill" id="opsTaBar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- IV-Batch Card -->
+    <div class="stat-box" id="opsIvCard" style="border-left:3px solid #555570;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-size:13px;font-weight:700;color:#58a6ff;">⚡ IV-BATCH</div>
+        <span id="opsIvBadge" style="font-family:'Courier New',monospace;font-size:10px;padding:3px 8px;border-radius:10px;background:rgba(85,85,112,.2);color:#8888aa;">—</span>
+      </div>
+      <div style="font-size:11px;color:#8888aa;font-family:'Courier New',monospace;line-height:2;" id="opsIvDetail">
+        Loading...
+      </div>
+      <div class="prog-bar" style="height:4px;margin-top:8px;">
+        <div class="prog-fill" id="opsIvBar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Health Check Card -->
+    <div class="stat-box" id="opsHealthCard" style="border-left:3px solid #555570;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-size:13px;font-weight:700;color:#e3b341;">🩺 HEALTH CHECK</div>
+        <span id="opsHealthBadge" style="font-family:'Courier New',monospace;font-size:10px;padding:3px 8px;border-radius:10px;background:rgba(85,85,112,.2);color:#8888aa;">—</span>
+      </div>
+      <div style="font-size:11px;color:#8888aa;font-family:'Courier New',monospace;line-height:2;" id="opsHealthDetail">
+        Loading...
+      </div>
+    </div>
+  </div>
+
+  <!-- 7-Day History -->
+  <div id="opsHistoryWrap" style="margin-bottom:18px;">
+    <div class="sec-label" style="font-size:11px;margin-bottom:6px;">📅 7-DAY RUN HISTORY</div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;font-family:'JetBrains Mono',monospace;">
+        <thead>
+          <tr style="border-bottom:1px solid #2a3a50;color:#8ab4ce;">
+            <th style="padding:6px 10px;text-align:left;">Date</th>
+            <th style="padding:6px 10px;text-align:left;">Day</th>
+            <th style="padding:6px 10px;text-align:center;">TA-Batch</th>
+            <th style="padding:6px 10px;text-align:right;">TA Tickers</th>
+            <th style="padding:6px 10px;text-align:center;">IV-Batch</th>
+            <th style="padding:6px 10px;text-align:right;">IV Contracts</th>
+            <th style="padding:6px 10px;text-align:center;">Errors</th>
+          </tr>
+        </thead>
+        <tbody id="opsHistoryBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ADX + STOCHASTIC COVERAGE -->
+  <div class="sec-label" style="margin-top:14px;">📐 ADX14 + STOCHASTIC COVERAGE (from price bars)</div>
+  <div id="barsBar" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px;">
+    <div class="stat-box">
+      <div class="stat-val" id="adxCount">—</div>
+      <div class="stat-lbl">ADX14 populated</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stochCount">—</div>
+      <div class="stat-lbl">Stoch %K populated</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="adxStrong">—</div>
+      <div class="stat-lbl">ADX &gt; 25 (trending)</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stochOS">—</div>
+      <div class="stat-lbl">Stoch &lt; 20 (oversold)</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stochOB">—</div>
+      <div class="stat-lbl">Stoch &gt; 80 (overbought)</div>
+    </div>
+    <div class="stat-box" style="border-color:#3fb950;">
+      <div class="stat-val" id="smartComboReady" style="color:#3fb950;">—</div>
+      <div class="stat-lbl">Smart Combos ready</div>
+    </div>
+  </div>
+
+  <!-- HERO STATUS -->
+  <div class="sec-label">📊 OVERALL BATCH STATUS</div>
+  <div class="status-bar">
+    <div id="bigPct" class="big-pct pend">—%</div>
+    <div class="status-info">
+      <div id="badge" class="badge pend"><div class="live-dot" style="animation:none;background:#555570"></div>LOADING</div>
+      <div id="statusMeta" class="status-meta">Fetching batch status from Supabase...</div>
+      <div id="statusEta" class="status-eta"></div>
+    </div>
+  </div>
+  <div class="prog-bar"><div id="progFill" class="prog-fill" style="width:0%"></div></div>
+  <br>
+
+  <!-- INDICATOR GRID -->
+  <div style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:12px;padding:14px 20px;margin-bottom:18px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+    <div style="font-family:'Courier New',monospace;font-size:9px;font-weight:700;letter-spacing:2px;color:#a78bfa;">⚙ BATCH CONFIG</div>
+    <div style="font-family:'Courier New',monospace;font-size:11px;color:#e2e8f0;">
+      <span style="color:#555570;">Call gap:</span> <strong id="cfgGapDisplay">700ms</strong>
+      &nbsp;·&nbsp;
+      <span style="color:#555570;">Batch size:</span> <strong id="cfgBatchDisplay">10</strong>
+      &nbsp;·&nbsp;
+      <span style="color:#555570;">Rate:</span> <strong id="cfgCpmDisplay">~66 calls/min</strong>
+    </div>
+    <div style="font-family:'Courier New',monospace;font-size:9px;color:#555570;">
+      To change: edit BATCH_SIZE in ta-batch.ts → redeploy
+    </div>
+  </div>
+
+  <div class="sec-label">🔢 PER-INDICATOR COMPLETION</div>
+  <div class="ind-grid" id="indGrid">
+    <!-- filled by JS -->
+  </div>
+
+  <!-- DB CONTENTS -->
+  <div class="sec-label">🗄 DATABASE CONTENTS — STORED DATA BY DATE</div>
+  <div id="dbContents"><div style="color:#555570;font-size:12px;padding:16px 0">Loading database contents...</div></div>
+
+  <!-- 2-COL: DETAILS + LOG -->
+  <div class="two-col">
+    <div class="card">
+      <div class="card-hdr"><div class="sec-label" style="margin:0">📋 BATCH RUN DETAILS</div></div>
+      <div class="card-body" id="batchDetails"><div class="sl">Loading...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><div class="sec-label" style="margin:0">📟 ACTIVITY LOG</div></div>
+      <div class="card-body" style="padding:8px 10px">
+        <div class="logbox" id="logEl"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CRON SCHEDULE STATUS -->
+  <div class="sec-label" style="margin-top:18px;">⏰ CRON SCHEDULE STATUS</div>
+  <div id="cronBar" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:18px;">
+    <!-- ta-batch cron -->
+    <div class="stat-box" style="border-left:3px solid #3fb950;">
+      <div style="font-size:12px;font-weight:700;color:#3fb950;margin-bottom:6px;letter-spacing:0.05em;">
+        📊 TA BATCH (ADX + Stochastic + Indicators)
+      </div>
+      <div style="font-size:12px;color:#b8ccd8;line-height:1.8;">
+        <div>Schedule: <b style="color:#cdd9e5;">30 21 * * 1-5</b> &nbsp;→ 4:30 PM ET after close</div>
+        <div>Schedule: <b style="color:#cdd9e5;">0 11 * * 1-5</b> &nbsp;→ 6:00 AM ET pre-market</div>
+        <div>Continues: <b style="color:#cdd9e5;">*/45 * * * *</b> &nbsp;→ every 45min until complete</div>
+        <div id="taBatchCronStatus" style="margin-top:4px;">
+          <span style="color:#9ab0c4;">Checking last run...</span>
+        </div>
+      </div>
+    </div>
+    <!-- options IV cron -->
+    <div class="stat-box" style="border-left:3px solid #58a6ff;">
+      <div style="font-size:12px;font-weight:700;color:#58a6ff;margin-bottom:6px;letter-spacing:0.05em;">
+        ⚡ IV-BATCH (Options IV Cache)
+      </div>
+      <div style="font-size:12px;color:#b8ccd8;line-height:1.8;">
+        <div>Schedule: <b style="color:#cdd9e5;">*/5 13-20 * * 1-5</b> &nbsp;→ every 5min Mon–Fri 9AM–4PM ET</div>
+        <div>Endpoint: <b style="color:#cdd9e5;">iv-batch</b> (standalone function)</div>
+        <div id="optIVCronStatus" style="margin-top:4px;">
+          <span style="color:#9ab0c4;">Checking last run...</span>
+        </div>
+      </div>
+    </div>
+    <!-- Quick invoke buttons -->
+    <div class="stat-box" style="border-left:3px solid #e3b341;">
+      <div style="font-size:12px;font-weight:700;color:#e3b341;margin-bottom:8px;letter-spacing:0.05em;">
+        ▶ BATCH CONTROL
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;gap:6px;">
+          <button onclick="triggerBatch('ta')"
+            style="flex:1;background:#0b1020;border:1px solid #3fb950;color:#3fb950;font-size:11px;
+              font-family:'JetBrains Mono',monospace;padding:6px 10px;border-radius:4px;
+              cursor:pointer;text-align:left;">
+            ▶ Run TA
+          </button>
+          <button onclick="triggerBatch('iv')"
+            style="flex:1;background:#0b1020;border:1px solid #58a6ff;color:#58a6ff;font-size:11px;
+              font-family:'JetBrains Mono',monospace;padding:6px 10px;border-radius:4px;
+              cursor:pointer;text-align:left;">
+            ▶ Run IV
+          </button>
+        </div>
+        <button onclick="runAllBatches()"
+          style="background:#0b1020;border:1px solid #e3b341;color:#e3b341;font-size:12px;
+            font-family:'JetBrains Mono',monospace;padding:6px 12px;border-radius:4px;
+            cursor:pointer;font-weight:700;">
+          ▶▶ Run ALL Batches
+        </button>
+        <div style="display:flex;gap:6px;">
+          <button id="suspendBtn" onclick="suspendAllBatches()"
+            style="flex:1;background:#1a0808;border:1px solid #f85149;color:#f85149;font-size:11px;
+              font-family:'JetBrains Mono',monospace;padding:6px 10px;border-radius:4px;
+              cursor:pointer;font-weight:700;">
+            ⏸ Suspend All
+          </button>
+          <button id="resumeBtn" onclick="resumeAllBatches()"
+            style="flex:1;background:#041808;border:1px solid #3fb950;color:#3fb950;font-size:11px;
+              font-family:'JetBrains Mono',monospace;padding:6px 10px;border-radius:4px;
+              cursor:pointer;font-weight:700;">
+            ▶ Resume All
+          </button>
+        </div>
+        <div id="triggerStatus" style="font-size:11px;color:#9ab0c4;margin-top:2px;"></div>
+        <div id="suspendStatus" style="font-size:11px;color:#9ab0c4;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OPTIONS IV CACHE MONITOR -->
+  <div class="sec-label" style="margin-top:18px;">⚡ OPTIONS IV CACHE</div>
+  <!-- IV-Batch Progress -->
+  <div id="ivBatchProgress" style="background:#111118;border:1px solid #1e1e2e;border-radius:10px;padding:14px 18px;margin-bottom:12px;display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-family:'Courier New',monospace;font-size:11px;font-weight:700;letter-spacing:0.5px;">
+        <span id="ivBatchBadge" class="badge run" style="margin:0;">● RUNNING</span>
+      </div>
+      <div style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;" id="ivBatchPct">0%</div>
+    </div>
+    <div class="prog-bar" style="height:6px;margin:0 0 8px 0;">
+      <div class="prog-fill" id="ivBatchBar" style="width:0%"></div>
+    </div>
+    <div style="font-size:12px;color:#8888aa;line-height:1.8;font-family:'Courier New',monospace;">
+      <span id="ivBatchDetail">—</span>
+    </div>
+  </div>
+  <div id="oivBar" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:10px;margin-bottom:14px;">
+    <div class="stat-box">
+      <div class="stat-val" id="oivTotal">—</div>
+      <div class="stat-lbl">Rows cached</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="oivTickers">—</div>
+      <div class="stat-lbl">Tickers covered</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="oivLive">—</div>
+      <div class="stat-lbl">With live bid/ask</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="oivFresh">—</div>
+      <div class="stat-lbl">Updated today</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="oivLastRun">—</div>
+      <div class="stat-lbl">Last cache run</div>
+    </div>
+    <div class="stat-box" style="grid-column:span 2;">
+      <div class="stat-val" id="oivNextCron" style="font-size:13px;">—</div>
+      <div class="stat-lbl">Cron schedule · Mon–Fri 9AM–4PM ET every 5min (iv-batch)</div>
+    </div>
+  </div>
+  <!-- Recent options IV rows -->
+  <div id="oivRecentWrap" style="margin-bottom:18px;display:none;">
+    <div class="sec-label" style="font-size:11px;margin-bottom:6px;">RECENT CACHED OPTIONS (latest 10)</div>
+    <div style="overflow-x:auto;">
+      <table id="oivTbl" style="width:100%;border-collapse:collapse;font-size:12px;font-family:'JetBrains Mono',monospace;">
+        <thead>
+          <tr style="border-bottom:1px solid #2a3a50;color:#8ab4ce;">
+            <th style="padding:5px 8px;text-align:left;">Ticker</th>
+            <th style="padding:5px 8px;text-align:left;">Expiry</th>
+            <th style="padding:5px 8px;text-align:right;">Strike</th>
+            <th style="padding:5px 8px;text-align:left;">Type</th>
+            <th style="padding:5px 8px;text-align:right;">Bid</th>
+            <th style="padding:5px 8px;text-align:right;">Ask</th>
+            <th style="padding:5px 8px;text-align:right;">Mid</th>
+            <th style="padding:5px 8px;text-align:right;">IV</th>
+            <th style="padding:5px 8px;text-align:right;">Delta</th>
+            <th style="padding:5px 8px;text-align:right;">Cached at</th>
+          </tr>
+        </thead>
+        <tbody id="oivTblBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="tbl-wrap">
+    <div class="tbl-hdr">
+      <div class="sec-label" style="margin:0">📈 TA_CACHE — ALL TICKERS</div>
+      <button class="btn-csv" onclick="exportCSV()">⬇ Export CSV</button>
+    </div>
+    <div class="filters">
+      <input id="srch" type="text" placeholder="Search ticker..." oninput="applyFilter()">
+      <span id="sectorChips">
+        <span class="chip on" onclick="setSec('all')">ALL</span>
+        <span class="chip" onclick="setSec('partial')">⚠ Partial</span>
+        <span class="chip" onclick="setSec('missing')">✗ Prices Only</span>
+      </span>
+    </div>
+    <div class="tbl-sc">
+      <table>
+        <thead><tr>
+          <th>TICKER</th><th>SECTOR</th><th>DATE</th><th>PRICE</th>
+          <th>RSI(14)</th><th>MACD_H</th><th>EMA(9)</th><th>EMA(20)</th>
+          <th>EMA(50)</th><th>SMA(50)</th><th>SMA(200)</th>
+          <th>ATR14</th><th>BOLL%</th><th>MOM5%</th><th>STATUS</th>
+        </tr></thead>
+        <tbody id="tbl"></tbody>
+      </table>
+    </div>
+    <div class="pager" id="pager"></div>
+  </div>
+
+</div>
+
+<script>
+const SUPA='https://hkamukkkkpqhdpcradau.supabase.co';
+const ANON='sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81';
+const H={'apikey':ANON,'Authorization':'Bearer '+ANON};
+const INDS=['rsi','macd_h','ema9','ema20','ema50','sma50','sma200'];
+const INDS_BARS=['adx14','stoch_k']; // computed from price bars, not Polygon indicator API
+const ILAB={'rsi':'RSI(14)','macd_h':'MACD','ema9':'EMA(9)','ema20':'EMA(20)','ema50':'EMA(50)','sma50':'SMA(50)','sma200':'SMA(200)'};
+const ILAB_BARS={'adx14':'ADX(14)','stoch_k':'Stoch %K'};
+const TOTAL=1481;
+// Sectors loaded dynamically from ta_cache.sector column
+let SECS={};
+
+let rows=[],filtered=[],sec='all',pg=0,logs=[],cdSecs=30,cdTimer=null,liveTotal=1481;
+
+function buildDynamicSectors(dataRows){
+  SECS = {};
+  for(const r of dataRows){
+    if(!r.sector || !r.ticker) continue;
+    const s = r.sector.toLowerCase().replace(/\s+/g,'');
+    if(!SECS[s]) SECS[s] = [];
+    SECS[s].push(r.ticker);
+  }
+  // Sort each sector's tickers
+  for(const s of Object.keys(SECS)) SECS[s].sort();
+  const summary = Object.entries(SECS).sort((a,b)=>b[1].length-a[1].length).map(([s,arr])=>s+':'+arr.length).join(' · ');
+  log('Sectors from ta_cache: '+summary, 'ok');
+  rebuildFilterChips();
+}
+
+function rebuildFilterChips(){
+  const container = document.getElementById('sectorChips');
+  if(!container) return;
+  const sorted = Object.entries(SECS).sort((a,b)=>b[1].length-a[1].length);
+  let html = '<span class="chip'+(sec==='all'?' on':'')+'" onclick="setSec(\'all\')">ALL ('+rows.length+')</span>';
+  for(const [s, arr] of sorted){
+    const label = s.charAt(0).toUpperCase()+s.slice(1);
+    html += '<span class="chip'+(sec===s?' on':'')+'" onclick="setSec(\''+s+'\')">'+label+' ('+arr.length+')</span>';
+  }
+  html += '<span class="chip'+(sec==='partial'?' on':'')+'" onclick="setSec(\'partial\')" style="margin-left:8px;">⚠ Partial</span>';
+  html += '<span class="chip'+(sec==='missing'?' on':'')+'" onclick="setSec(\'missing\')">✗ Prices Only</span>';
+  container.innerHTML = html;
+}
+
+const sb=p=>fetch(SUPA+p,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]);
+
+async function fetchBarsStats(){
+  const SUPA_URL2='https://hkamukkkkpqhdpcradau.supabase.co';
+  const ANON2='sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81';
+  const H2={'apikey':ANON2,'Authorization':'Bearer '+ANON2};
+  // Use LATEST trading_date in ta_cache — NOT today's UTC date.
+  // The batch writes trading_date based on ET market close, which can be
+  // a different UTC calendar date depending on timezone.
+  const latestDateR = await fetch(SUPA_URL2+'/rest/v1/ta_cache?select=trading_date&order=trading_date.desc&limit=1',{headers:H2}).then(r=>r.json()).catch(()=>[]);
+  const today = (latestDateR[0]||{}).trading_date || new Date().toISOString().slice(0,10);
+  try{
+    const [adxR, stochR, adxStrR, stochOSR, stochOBR, totalR] = await Promise.all([
+      fetch(SUPA_URL2+'/rest/v1/ta_cache?select=ticker&adx14=not.is.null&trading_date=eq.'+today+'&limit=1',
+        {headers:{...H2,'Prefer':'count=exact'}}).then(r=>({count:+(r.headers.get('content-range')||'0').split('/')[1]})),
+      fetch(SUPA_URL2+'/rest/v1/ta_cache?select=ticker&stoch_k=not.is.null&trading_date=eq.'+today+'&limit=1',
+        {headers:{...H2,'Prefer':'count=exact'}}).then(r=>({count:+(r.headers.get('content-range')||'0').split('/')[1]})),
+      fetch(SUPA_URL2+'/rest/v1/ta_cache?select=ticker&adx14=gt.25&trading_date=eq.'+today+'&limit=1',
+        {headers:{...H2,'Prefer':'count=exact'}}).then(r=>({count:+(r.headers.get('content-range')||'0').split('/')[1]})),
+      fetch(SUPA_URL2+'/rest/v1/ta_cache?select=ticker&stoch_k=lt.20&trading_date=eq.'+today+'&limit=1',
+        {headers:{...H2,'Prefer':'count=exact'}}).then(r=>({count:+(r.headers.get('content-range')||'0').split('/')[1]})),
+      fetch(SUPA_URL2+'/rest/v1/ta_cache?select=ticker&stoch_k=gt.80&trading_date=eq.'+today+'&limit=1',
+        {headers:{...H2,'Prefer':'count=exact'}}).then(r=>({count:+(r.headers.get('content-range')||'0').split('/')[1]})),
+      fetch(SUPA_URL2+'/rest/v1/ta_cache?select=ticker&trading_date=eq.'+today+'&limit=1',
+        {headers:{...H2,'Prefer':'count=exact'}}).then(r=>({count:+(r.headers.get('content-range')||'0').split('/')[1]})),
+    ]);
+    const id=x=>document.getElementById(x);
+    const total=totalR.count||0;
+    const adx=adxR.count||0;
+    const stoch=stochR.count||0;
+    id('adxCount').textContent  = adx+(total?' / '+total:'');
+    id('stochCount').textContent= stoch+(total?' / '+total:'');
+    id('adxStrong').textContent = adxStrR.count||0;
+    id('stochOS').textContent   = stochOSR.count||0;
+    id('stochOB').textContent   = stochOBR.count||0;
+    // Smart combos ready = both ADX and Stoch populated
+    const ready = adx>0 && stoch>0;
+    const readyEl = id('smartComboReady');
+    readyEl.textContent = ready ? '✓ YES' : (adx===0&&stoch===0?'Not yet':'Partial');
+    readyEl.style.color = ready?'#3fb950':adx===0&&stoch===0?'#f85149':'#e3b341';
+    log('ADX/Stoch coverage: '+adx+'/'+total+' ADX, '+stoch+'/'+total+' Stoch', ready?'ok':'i');
+  }catch(e){ log('Bars stats error: '+e.message,'e'); }
+}
+
+async function fetchOptionsIVStats(){
+  try{
+    // Safe fetch helper -- returns null on any error or non-array response
+    const safeFetch = async (url, opts={}) => {
+      try{
+        const r = await fetch(url, {headers:H, ...opts});
+        if(!r.ok) return null;
+        const ct = r.headers.get('content-range')||'';
+        const d  = await r.json();
+        return {data: d, count: ct ? +(ct.split('/')[1]||0) : null};
+      }catch{ return null; }
+    };
+
+    const [totalR, tickersR, liveR, freshR, recentR] = await Promise.all([
+      // Total rows via count=exact header
+      safeFetch(SUPA+'/rest/v1/options_iv_cache?select=ticker&limit=1',
+        {headers:{...H,'Prefer':'count=exact'}}),
+      // Distinct tickers -- fetch with count too
+      safeFetch(SUPA+'/rest/v1/options_iv_cache?select=ticker&limit=2000',
+        {headers:{...H,'Prefer':'count=exact'}}),
+      // Live bid/ask rows
+      safeFetch(SUPA+'/rest/v1/options_iv_cache?select=ticker&bid=gt.0&limit=1',
+        {headers:{...H,'Prefer':'count=exact'}}),
+      // Updated today
+      safeFetch(SUPA+'/rest/v1/options_iv_cache?select=ticker&cached_at=gte.'
+        +new Date(Date.now()-86400000).toISOString()+'&limit=1',
+        {headers:{...H,'Prefer':'count=exact'}}),
+      // Latest 10 rows
+      safeFetch(SUPA+'/rest/v1/options_iv_cache?select=ticker,expiry,strike,contract_type,bid,ask,mid,iv,delta,cached_at&order=cached_at.desc&limit=10'),
+    ]);
+
+    const el = id => document.getElementById(id);
+
+    // Total count
+    el('oivTotal').textContent = totalR?.count != null ? totalR.count.toLocaleString() : '--';
+
+    // Distinct tickers
+    const tickerData = Array.isArray(tickersR?.data) ? tickersR.data : [];
+    const uniqueTickers = new Set(tickerData.map(x=>x.ticker).filter(Boolean));
+    el('oivTickers').textContent = uniqueTickers.size > 0 ? uniqueTickers.size.toLocaleString()
+      : tickersR?.count != null ? tickersR.count.toLocaleString() : '--';
+
+    // Live bid/ask
+    el('oivLive').textContent = liveR?.count != null ? liveR.count.toLocaleString() : '--';
+
+    // Updated today
+    el('oivFresh').textContent = freshR?.count != null ? freshR.count.toLocaleString() : '--';
+
+    // Last run
+    const rows = Array.isArray(recentR?.data) ? recentR.data : [];
+    if(rows.length){
+      const lastTs = new Date(rows[0].cached_at);
+      el('oivLastRun').textContent = lastTs.toLocaleString('en-US',
+        {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    } else {
+      el('oivLastRun').textContent = totalR?.count === 0 ? 'Never run -- trigger above' : '--';
+    }
+
+    // Next cron slot (every 5 min)
+    const now = new Date();
+    const nextSlot = new Date(now);
+    const m = now.getUTCMinutes();
+    nextSlot.setUTCMinutes(Math.ceil((m+1)/5)*5, 0, 0);
+    el('oivNextCron').textContent = 'Next: ~'
+      + nextSlot.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'})
+      + ' ET · every 5min Mon-Fri 9AM-4PM';
+
+    // Recent rows table
+    if(rows.length){
+      document.getElementById('oivRecentWrap').style.display='block';
+      document.getElementById('oivTblBody').innerHTML = rows.map(r=>{
+        const hasBid = (r.bid||0) > 0;
+        const cachedAt = new Date(r.cached_at).toLocaleTimeString('en-US',
+          {hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
+        return `<tr style="border-bottom:1px solid #141e2e;">
+          <td style="padding:4px 8px;color:#cdd9e5;font-weight:700;">${r.ticker||'--'}</td>
+          <td style="padding:4px 8px;color:#8ab4ce;">${r.expiry||'--'}</td>
+          <td style="padding:4px 8px;text-align:right;color:#cdd9e5;">$${r.strike||'--'}</td>
+          <td style="padding:4px 8px;color:${r.contract_type==='call'?'#3fb950':'#f85149'};">${r.contract_type||'--'}</td>
+          <td style="padding:4px 8px;text-align:right;color:${hasBid?'#3fb950':'#5c6d80'};">${r.bid!=null?'$'+r.bid.toFixed(2):'--'}</td>
+          <td style="padding:4px 8px;text-align:right;color:#8ab4ce;">${r.ask!=null?'$'+r.ask.toFixed(2):'--'}</td>
+          <td style="padding:4px 8px;text-align:right;color:#e3b341;font-weight:700;">${r.mid!=null?'$'+r.mid.toFixed(2):'--'}</td>
+          <td style="padding:4px 8px;text-align:right;color:#9ab0c4;">${r.iv!=null?(r.iv*100).toFixed(0)+'%':'--'}</td>
+          <td style="padding:4px 8px;text-align:right;color:#9ab0c4;">${r.delta!=null?r.delta.toFixed(3):'--'}</td>
+          <td style="padding:4px 8px;color:#8899aa;font-size:11px;">${cachedAt} ET</td>
+        </tr>`;
+      }).join('');
+    } else {
+      document.getElementById('oivRecentWrap').style.display='none';
+    }
+
+    log('Options IV cache: '+(totalR?.count||0)+' rows, '
+      +uniqueTickers.size+' tickers, '+(freshR?.count||0)+' updated today','ok');
+  }catch(e){
+    log('Options IV stats error: '+e.message,'e');
+    // Show friendly message in stat boxes rather than leaving them blank
+    ['oivTotal','oivTickers','oivLive','oivFresh'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el&&el.textContent==='--')el.textContent='--';
+    });
+    const lr=document.getElementById('oivLastRun');
+    if(lr)lr.textContent='Error -- table may not exist yet';
+  }
+}
+
+async function triggerBatch(mode){
+  const statusEl = document.getElementById('triggerStatus');
+  if(statusEl) statusEl.textContent = '\u23F3 Triggering ' + mode + ' batch...';
+  try{
+    const endpoint = mode === 'iv' ? '/functions/v1/iv-batch' : '/functions/v1/ta-batch';
+    const r = await fetch(SUPA+endpoint, {
+      method:'POST',
+      headers:{...H, 'Content-Type':'application/json'},
+      body: JSON.stringify(mode === 'iv' ? {} : {mode})
+    });
+    const d = await r.json();
+    const msg = d.status || JSON.stringify(d).substring(0,80);
+    if(statusEl) statusEl.innerHTML = '<span style="color:#3fb950;">✓ '+mode+': '+msg+'</span>';
+    log('Triggered '+mode+': '+msg, 'ok');
+    setTimeout(doRefresh, 3000);
+  }catch(e){
+    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;">✗ '+e.message+'</span>';
+    log('Trigger error: '+e.message, 'e');
+  }
+}
+
+async function runAllBatches(){
+  const statusEl = document.getElementById('triggerStatus');
+  if(statusEl) statusEl.innerHTML = '⏳ Running TA batch...';
+  log('Run All: starting TA batch...', 'i');
+  try{
+    const r1 = await fetch(SUPA+'/functions/v1/ta-batch', {
+      method:'POST', headers:{...H, 'Content-Type':'application/json'}, body:'{}'
+    });
+    const d1 = await r1.json();
+    if(statusEl) statusEl.innerHTML = '✓ TA: '+(d1.status||'done')+' · ⏳ Running IV batch...';
+    log('TA batch: '+(d1.status||'done'), 'ok');
+  }catch(e){
+    if(statusEl) statusEl.innerHTML = '✗ TA error: '+e.message+' · ⏳ Trying IV...';
+    log('TA error: '+e.message, 'e');
+  }
+  try{
+    const r2 = await fetch(SUPA+'/functions/v1/iv-batch', {
+      method:'POST', headers:{...H, 'Content-Type':'application/json'}, body:'{}'
+    });
+    const d2 = await r2.json();
+    if(statusEl) statusEl.innerHTML += ' · ✓ IV: '+(d2.status||'done');
+    log('IV batch: '+(d2.status||'done'), 'ok');
+  }catch(e){
+    if(statusEl) statusEl.innerHTML += ' · ✗ IV error: '+e.message;
+    log('IV error: '+e.message, 'e');
+  }
+  setTimeout(doRefresh, 3000);
+}
+
+async function suspendAllBatches(){
+  const statusEl = document.getElementById('suspendStatus');
+  if(statusEl) statusEl.innerHTML = '⏳ Suspending...';
+  try{
+    // Get current trading date from batch_state
+    const bsR = await fetch(SUPA+'/rest/v1/batch_state?select=trading_date&order=trading_date.desc&limit=1', {headers:H}).then(r=>r.json());
+    const tradingDate = bsR?.[0]?.trading_date || new Date().toISOString().slice(0,10);
+
+    // Set TA batch_state to 'suspended'
+    await fetch(SUPA+'/rest/v1/batch_state?trading_date=eq.'+tradingDate, {
+      method:'PATCH',
+      headers:{...H, 'Content-Type':'application/json', 'Prefer':'return=minimal'},
+      body: JSON.stringify({status:'complete', indicator_index:99, ticker_index:99999})
+    });
+
+    // Set IV batch state to 'complete' (stops cron from processing)
+    const ivState = {status:'complete', trading_date:tradingDate, ticker_index:99999, suspended:true};
+    await fetch(SUPA+'/rest/v1/app_config?key=eq.iv_batch_state', {
+      method:'PATCH',
+      headers:{...H, 'Content-Type':'application/json', 'Prefer':'return=minimal'},
+      body: JSON.stringify({value:ivState})
+    });
+
+    // Write suspend flag to app_config
+    await fetch(SUPA+'/rest/v1/app_config', {
+      method:'POST',
+      headers:{...H, 'Content-Type':'application/json', 'Prefer':'resolution=merge-duplicates'},
+      body: JSON.stringify({key:'batch_suspended', value:{suspended:true, at:new Date().toISOString(), date:tradingDate}})
+    });
+
+    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;font-weight:700;">⏸ ALL BATCHES SUSPENDED</span>';
+    document.getElementById('suspendBtn').style.opacity = '0.4';
+    document.getElementById('resumeBtn').style.opacity = '1';
+    log('All batches suspended for '+tradingDate, 'w');
+    setTimeout(doRefresh, 2000);
+  }catch(e){
+    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;">✗ Suspend error: '+e.message+'</span>';
+    log('Suspend error: '+e.message, 'e');
+  }
+}
+
+async function resumeAllBatches(){
+  const statusEl = document.getElementById('suspendStatus');
+  if(statusEl) statusEl.innerHTML = '⏳ Resuming services...';
+  try{
+    const bsR = await fetch(SUPA+'/rest/v1/batch_state?select=trading_date&order=trading_date.desc&limit=1', {headers:H}).then(r=>r.json());
+    const tradingDate = bsR?.[0]?.trading_date || new Date().toISOString().slice(0,10);
+
+    // Step 1: Clear suspend flag
+    if(statusEl) statusEl.innerHTML = '⏳ Step 1/4: Clearing suspend flag...';
+    await fetch(SUPA+'/rest/v1/app_config', {
+      method:'POST',
+      headers:{...H, 'Content-Type':'application/json', 'Prefer':'resolution=merge-duplicates'},
+      body: JSON.stringify({key:'batch_suspended', value:{suspended:false, at:new Date().toISOString()}})
+    });
+
+    // Step 2: Reset TA batch state
+    if(statusEl) statusEl.innerHTML = '⏳ Step 2/4: Resetting TA batch...';
+    await fetch(SUPA+'/rest/v1/batch_state?trading_date=eq.'+tradingDate, {
+      method:'PATCH',
+      headers:{...H, 'Content-Type':'application/json', 'Prefer':'return=minimal'},
+      body: JSON.stringify({status:'pending', indicator_index:0, ticker_index:0, price_bars_done:false})
+    });
+
+    // Step 3: Reset IV batch state
+    if(statusEl) statusEl.innerHTML = '⏳ Step 3/4: Resetting IV batch...';
+    const ivState = {status:'pending', trading_date:tradingDate, ticker_index:0, suspended:false};
+    await fetch(SUPA+'/rest/v1/app_config?key=eq.iv_batch_state', {
+      method:'PATCH',
+      headers:{...H, 'Content-Type':'application/json', 'Prefer':'return=minimal'},
+      body: JSON.stringify({value:ivState})
+    });
+
+    // Step 4: Trigger TA batch immediately
+    if(statusEl) statusEl.innerHTML = '⏳ Step 4/4: Starting TA batch...';
+    try{
+      const r1 = await fetch(SUPA+'/functions/v1/ta-batch', {
+        method:'POST', headers:{...H, 'Content-Type':'application/json'}, body:'{}'
+      });
+      const d1 = await r1.json();
+      log('Resume → TA batch: '+(d1.status||'triggered'), 'ok');
+    }catch(e){ log('Resume → TA trigger error: '+e.message, 'e'); }
+
+    // Trigger IV batch
+    try{
+      const r2 = await fetch(SUPA+'/functions/v1/iv-batch', {
+        method:'POST', headers:{...H, 'Content-Type':'application/json'}, body:'{}'
+      });
+      const d2 = await r2.json();
+      log('Resume → IV batch: '+(d2.status||'triggered'), 'ok');
+    }catch(e){ log('Resume → IV trigger error: '+e.message, 'e'); }
+
+    if(statusEl) statusEl.innerHTML = '<span style="color:#3fb950;font-weight:700;">✓ ALL SERVICES RESUMED & RUNNING</span>';
+    document.getElementById('suspendBtn').style.opacity = '1';
+    document.getElementById('resumeBtn').style.opacity = '0.4';
+    log('All batches resumed and triggered for '+tradingDate, 'ok');
+    setTimeout(doRefresh, 3000);
+  }catch(e){
+    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;">✗ Resume error: '+e.message+'</span>';
+    log('Resume error: '+e.message, 'e');
+  }
+}
+
+async function checkSuspendStatus(){
+  try{
+    const r = await fetch(SUPA+'/rest/v1/app_config?key=eq.batch_suspended&select=value', {headers:H}).then(r=>r.json());
+    const val = r?.[0]?.value;
+    const isSuspended = val && (typeof val === 'object' ? val.suspended : false);
+    const statusEl = document.getElementById('suspendStatus');
+    if(isSuspended){
+      if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;font-weight:700;">⏸ SUSPENDED</span> since '+(val.at?new Date(val.at).toLocaleTimeString():'—');
+      document.getElementById('suspendBtn').style.opacity = '0.4';
+      document.getElementById('resumeBtn').style.opacity = '1';
+    } else {
+      if(statusEl && !statusEl.innerHTML.includes('RESUMED')) statusEl.innerHTML = '<span style="color:#3fb950;">▶ Active</span>';
+      document.getElementById('suspendBtn').style.opacity = '1';
+      document.getElementById('resumeBtn').style.opacity = '0.4';
+    }
+  }catch(e){}
+}
+
+async function fetchCronStatus(){
+  try{
+    // Get last batch_run to show ta-batch status
+    const [batchRuns, oivRows] = await Promise.all([
+      fetch(SUPA+'/rest/v1/batch_run?select=trading_date,status,started_at,completed_at&order=trading_date.desc&limit=1',{headers:H}).then(r=>r.json()),
+      fetch(SUPA+'/rest/v1/options_iv_cache?select=cached_at&order=cached_at.desc&limit=1',{headers:H}).then(r=>r.json()),
+    ]);
+
+    // TA batch status
+    const lastBatch = (batchRuns||[])[0];
+    const batchEl = document.getElementById('taBatchCronStatus');
+    if(batchEl && lastBatch){
+      const ts = lastBatch.completed_at || lastBatch.started_at;
+      const ago = ts ? Math.round((Date.now()-new Date(ts).getTime())/60000) : null;
+      const col = lastBatch.status==='complete' ? '#3fb950' : lastBatch.status==='running' ? '#e3b341' : '#f85149';
+      batchEl.innerHTML = 'Last run: <b style="color:'+col+';">'+lastBatch.status+'</b>'
+        + ' on '+lastBatch.trading_date
+        + (ago!==null?' * '+(ago<60?ago+'min':Math.round(ago/60)+'hr')+' ago':'');
+    }
+
+    // Options IV status from iv_batch_state
+    const oivEl = document.getElementById('optIVCronStatus');
+    try{
+      const ivStateR = await fetch(SUPA+'/rest/v1/app_config?key=eq.iv_batch_state&select=value',{headers:H}).then(r=>r.json());
+      if(ivStateR?.length && ivStateR[0].value){
+        const raw = ivStateR[0].value;
+        const st = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        const isComplete = st.status === 'complete';
+        const isRunning = st.status === 'running';
+        const idx = st.ticker_index || 0;
+        const col = isComplete ? '#3fb950' : isRunning ? '#3d6eff' : '#e3b341';
+        oivEl.innerHTML = 'Status: <b style="color:'+col+';">'+st.status+'</b>'
+          + ' · '+st.trading_date
+          + ' · '+idx+'/1394 tickers'
+          + (isComplete?' ✓':isRunning?' ⏳':' ⚠');
+      } else if(lastOIV){
+        const ts = lastOIV.cached_at;
+        const ago = ts ? Math.round((Date.now()-new Date(ts).getTime())/60000) : null;
+        const isRecent = ago!==null && ago < 45;
+        const col = isRecent ? '#3fb950' : '#e3b341';
+        oivEl.innerHTML = 'Last cached: <b style="color:'+col+';">'
+          + (ago!==null ? (ago<60?ago+'min':Math.round(ago/60)+'hr')+' ago' : 'unknown')
+          + '</b>'+(isRecent?' ✓ fresh':' \u26A0 stale (>45min)');
+      } else {
+        oivEl.innerHTML = '<span style="color:#f85149;">No iv-batch state yet — trigger above</span>';
+      }
+    }catch(e2){
+      if(oivEl) oivEl.innerHTML = '<span style="color:#9ab0c4;">Could not load iv-batch state</span>';
+    }
+  }catch(e){
+    log('Cron status error: '+e.message,'e');
+  }
+}
+
+async function fetchIVBatchState(){
+  try{
+    const r = await fetch(SUPA+'/rest/v1/app_config?key=eq.iv_batch_state&select=value',{headers:H});
+    if(!r.ok) return;
+    const rows = await r.json();
+    const panel = document.getElementById('ivBatchProgress');
+    if(!rows.length || !rows[0].value){
+      panel.style.display='none';
+      return;
+    }
+    const raw = rows[0].value;
+    const state = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const idx = +(state.ticker_index||0);
+    const total = 1394; // iv_ticker_universe size
+    const status = state.status || 'unknown';
+    const date = state.trading_date || '—';
+    const pct = total > 0 ? Math.round(idx/total*100) : 0;
+
+    panel.style.display='block';
+    const badge = document.getElementById('ivBatchBadge');
+    const isComplete = status === 'complete';
+    const isRunning = status === 'running';
+    badge.className = 'badge ' + (isComplete?'done':isRunning?'run':'pend');
+    badge.innerHTML = (isComplete?'✓ COMPLETE':isRunning?'● RUNNING':'◌ PENDING')
+      + ' &nbsp; ' + date;
+
+    document.getElementById('ivBatchPct').textContent = pct + '%';
+    document.getElementById('ivBatchPct').style.color = isComplete?'#00e5a8':isRunning?'#3d6eff':'#555570';
+
+    const bar = document.getElementById('ivBatchBar');
+    bar.style.width = pct + '%';
+    bar.className = 'prog-fill' + (isComplete?' done':'');
+
+    document.getElementById('ivBatchDetail').innerHTML =
+      'Tickers: <b style="color:#cdd9e5;">' + idx + ' / ' + total + '</b>'
+      + ' &nbsp;·&nbsp; Status: <b style="color:' + (isComplete?'#00e5a8':isRunning?'#3d6eff':'#8888aa') + ';">' + status + '</b>';
+
+    log('IV-batch: '+status+' '+idx+'/'+total+' ('+pct+'%) for '+date, isComplete?'ok':'i');
+  }catch(e){
+    log('IV-batch state error: '+e.message,'e');
+  }
+}
+
+async function fetchDailyOps(){
+  try{
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    // ── Fetch all data in parallel ──
+    const [batchStates, batchRuns, ivStateR, taCounts, ivCounts, suspendR] = await Promise.all([
+      fetch(SUPA+'/rest/v1/batch_state?select=*&order=trading_date.desc&limit=7',{headers:H}).then(r=>r.json()).catch(()=>[]),
+      fetch(SUPA+'/rest/v1/batch_run?select=*&order=trading_date.desc&limit=7',{headers:H}).then(r=>r.json()).catch(()=>[]),
+      fetch(SUPA+'/rest/v1/app_config?key=eq.iv_batch_state&select=value',{headers:H}).then(r=>r.json()).catch(()=>[]),
+      fetch(SUPA+'/rest/v1/batch_run?select=trading_date,tickers_done,status&order=trading_date.desc&limit=7',{headers:H}).then(r=>r.json()).catch(()=>[]),
+      fetch(SUPA+'/rest/v1/options_iv_cache?select=cached_at&order=cached_at.desc&limit=1',{headers:H}).then(r=>r.json()).catch(()=>[]),
+      fetch(SUPA+'/rest/v1/app_config?key=eq.batch_suspended&select=value',{headers:H}).then(r=>r.json()).catch(()=>[]),
+    ]);
+    const _suspVal = suspendR?.[0]?.value;
+    const _isSuspended = _suspVal && (typeof _suspVal === 'object' ? _suspVal.suspended : false);
+    const _suspTime = _suspVal?.at ? new Date(_suspVal.at).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) : '';
+
+    // ── TA-BATCH STATUS CARD ──
+    const latestState = (batchStates||[])[0];
+    const latestRun = (batchRuns||[])[0];
+    // Detect weekend/holiday for card display
+    const _nowET2 = new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
+    const _todayET2 = _nowET2.toISOString().slice(0,10);
+    const _dowET2 = _nowET2.getDay();
+    const _US_HOL2 = new Set(['2025-01-01','2025-01-20','2025-02-17','2025-04-18','2025-05-26','2025-06-19','2025-07-04','2025-09-01','2025-11-27','2025-12-25','2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25','2026-06-19','2026-07-03','2026-09-07','2026-11-26','2026-12-25','2027-01-01','2027-01-18','2027-02-15','2027-04-02','2027-05-31','2027-06-19','2027-07-05','2027-09-06','2027-11-25','2027-12-24']);
+    const _isOffDay = _dowET2===0 || _dowET2===6 || _US_HOL2.has(_todayET2);
+
+    const taCard = document.getElementById('opsTaCard');
+    const taBadge = document.getElementById('opsTaBadge');
+    const taDetail = document.getElementById('opsTaDetail');
+    const taBar = document.getElementById('opsTaBar');
+
+    if(latestState){
+      const s = latestState;
+      const isComplete = s.status === 'complete';
+      const isRunning = s.status === 'running';
+      const indIdx = s.indicator_index || 0;
+      const tkIdx = s.ticker_index || 0;
+      const totalInds = 7;
+      const totalTk = liveTotal || 1481;
+      const pct = isComplete ? 100 : Math.round(((indIdx * totalTk + tkIdx) / (totalInds * totalTk)) * 100);
+      const lastAct = s.last_updated ? new Date(s.last_updated) : null;
+      const ago = lastAct ? Math.round((Date.now() - lastAct.getTime()) / 60000) : null;
+
+      if(_isSuspended){
+        taCard.style.borderLeftColor = '#f85149';
+        taBadge.textContent = '⛔ SUSPENDED';
+        taBadge.style.background = 'rgba(248,81,73,.15)';
+        taBadge.style.color = '#f85149';
+      } else if(_isOffDay){
+        taCard.style.borderLeftColor = '#58a6ff';
+        taBadge.textContent = '⏸ PAUSED';
+        taBadge.style.background = 'rgba(88,166,255,.15)';
+        taBadge.style.color = '#58a6ff';
+      } else {
+        taCard.style.borderLeftColor = isComplete ? '#00e5a8' : isRunning ? '#3d6eff' : '#f85149';
+        taBadge.textContent = isComplete ? '✓ COMPLETE' : isRunning ? '● RUNNING' : '⚠ ' + (s.status||'unknown');
+        taBadge.style.background = isComplete ? 'rgba(0,229,168,.15)' : isRunning ? 'rgba(61,110,255,.15)' : 'rgba(255,51,85,.15)';
+        taBadge.style.color = isComplete ? '#00e5a8' : isRunning ? '#3d6eff' : '#f85149';
+      }
+
+      taDetail.innerHTML =
+        'Date: <b style="color:#cdd9e5;">'+s.trading_date+'</b>'+ (_isSuspended ? ' <span style="color:#f85149;font-weight:700;">⛔ MANUALLY SUSPENDED at '+_suspTime+'</span>' : _isOffDay ? ' <span style="color:#58a6ff;">(market closed)</span>' : '') +'<br>'
+        +'Function: <b style="color:#cdd9e5;">ta-batch</b> · Cron: <b style="color:#cdd9e5;">*/2 * * * *</b> (every 2 min)<br>'
+        +'Indicator: <b style="color:#cdd9e5;">'+(indIdx+1)+'/'+totalInds+'</b> · Ticker: <b style="color:#cdd9e5;">'+tkIdx+'/'+totalTk+'</b><br>'
+        +'Last activity: <b style="color:#cdd9e5;">'+(ago!==null?(ago<60?ago+'min':ago<1440?Math.round(ago/60)+'hr':Math.round(ago/1440)+'d')+' ago':'—')+'</b>'
+        +(isComplete && latestRun?.completed_at ? '<br>Completed: <b style="color:#00e5a8;">'+new Date(latestRun.completed_at).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'})+' ET</b>':'');
+
+      taBar.style.width = pct+'%';
+      taBar.className = 'prog-fill'+(isComplete?' done':'');
+    } else {
+      taDetail.innerHTML = '<span style="color:#f85149;">No batch_state data found</span>';
+    }
+
+    // ── IV-BATCH STATUS CARD ──
+    const ivCard = document.getElementById('opsIvCard');
+    const ivBadge = document.getElementById('opsIvBadge');
+    const ivDetail = document.getElementById('opsIvDetail');
+    const ivBar = document.getElementById('opsIvBar');
+
+    if(ivStateR?.length && ivStateR[0].value){
+      const raw = ivStateR[0].value;
+      const st = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const isComplete = st.status === 'complete';
+      const isRunning = st.status === 'running';
+      const idx = +(st.ticker_index||0);
+      const total = 1394;
+      const pct = Math.round(idx/total*100);
+
+      if(_isSuspended){
+        ivCard.style.borderLeftColor = '#f85149';
+        ivBadge.textContent = '⛔ SUSPENDED';
+        ivBadge.style.background = 'rgba(248,81,73,.15)';
+        ivBadge.style.color = '#f85149';
+      } else if(_isOffDay){
+        ivCard.style.borderLeftColor = '#58a6ff';
+        ivBadge.textContent = '⏸ PAUSED';
+        ivBadge.style.background = 'rgba(88,166,255,.15)';
+        ivBadge.style.color = '#58a6ff';
+      } else {
+        ivCard.style.borderLeftColor = isComplete ? '#00e5a8' : isRunning ? '#3d6eff' : '#f85149';
+        ivBadge.textContent = isComplete ? '✓ COMPLETE' : isRunning ? '● RUNNING' : '⚠ ' + (st.status||'unknown');
+        ivBadge.style.background = isComplete ? 'rgba(0,229,168,.15)' : isRunning ? 'rgba(61,110,255,.15)' : 'rgba(255,51,85,.15)';
+        ivBadge.style.color = isComplete ? '#00e5a8' : isRunning ? '#3d6eff' : '#f85149';
+      }
+
+      ivDetail.innerHTML =
+        'Date: <b style="color:#cdd9e5;">'+(st.trading_date||'—')+'</b>'+ (_isSuspended ? ' <span style="color:#f85149;font-weight:700;">⛔ MANUALLY SUSPENDED at '+_suspTime+'</span>' : _isOffDay ? ' <span style="color:#58a6ff;">(market closed)</span>' : '') +'<br>'
+        +'Function: <b style="color:#cdd9e5;">iv-batch</b> · Cron: <b style="color:#cdd9e5;">*/5 13-20 * * 1-5</b> (every 5 min)<br>'
+        +'Tickers: <b style="color:#cdd9e5;">'+idx+'/'+total+'</b> · Progress: <b style="color:#cdd9e5;">'+pct+'%</b><br>'
+        +'Mode: <b style="color:#cdd9e5;">Polygon snapshots + Black-Scholes fallback</b>';
+
+      ivBar.style.width = pct+'%';
+      ivBar.className = 'prog-fill'+(isComplete?' done':'');
+    } else {
+      ivDetail.innerHTML = '<span style="color:#f85149;">No iv_batch_state in app_config — iv-batch has not run yet</span>';
+    }
+
+    // ── HEALTH CHECK CARD ──
+    const hCard = document.getElementById('opsHealthCard');
+    const hBadge = document.getElementById('opsHealthBadge');
+    const hDetail = document.getElementById('opsHealthDetail');
+    const checks = [];
+    let errors = 0;
+
+    // ── Manual Suspend Override ──
+    if(_isSuspended){
+      checks.push('<span style="color:#f85149;font-weight:700;">⛔ ALL SERVICES MANUALLY SUSPENDED</span>');
+      checks.push('Suspended at: <b style="color:#f85149;">'+_suspTime+'</b>');
+      checks.push('TA-Batch: <b style="color:#f85149;">⛔ STOPPED</b>');
+      checks.push('IV-Batch: <b style="color:#f85149;">⛔ STOPPED</b>');
+      checks.push('<span style="color:#8ab4ce;">Click <b>▶ Resume All</b> then <b>▶▶ Run ALL Batches</b> to restart</span>');
+      hCard.style.borderLeftColor = '#f85149';
+      hBadge.textContent = '⛔ SUSPENDED';
+      hBadge.style.background = 'rgba(248,81,73,.15)';
+      hBadge.style.color = '#f85149';
+      hDetail.innerHTML = checks.join('<br>');
+      const alertBanner = document.getElementById('alertBanner');
+      if(alertBanner) alertBanner.style.display = 'none';
+    } else {
+
+    // ── Holiday / Weekend detection ──
+    const US_HOLIDAYS_MON = new Set([
+      '2025-01-01','2025-01-20','2025-02-17','2025-04-18','2025-05-26',
+      '2025-06-19','2025-07-04','2025-09-01','2025-11-27','2025-12-25',
+      '2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25',
+      '2026-06-19','2026-07-03','2026-09-07','2026-11-26','2026-12-25',
+      '2027-01-01','2027-01-18','2027-02-15','2027-04-02','2027-05-31',
+      '2027-06-19','2027-07-05','2027-09-06','2027-11-25','2027-12-24',
+    ]);
+    const nowET = new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
+    const todayET = nowET.toISOString().slice(0,10);
+    const dowET = nowET.getDay(); // 0=Sun, 6=Sat
+    const isWeekend = dowET === 0 || dowET === 6;
+    const isHoliday = US_HOLIDAYS_MON.has(todayET);
+    const isMarketClosed = isWeekend || isHoliday;
+
+    // Find next trading day
+    function nextTradingDay(){
+      const d = new Date(nowET);
+      for(let i=0;i<10;i++){
+        d.setDate(d.getDate()+1);
+        const ds = d.toISOString().slice(0,10);
+        const dw = d.getDay();
+        if(dw>=1 && dw<=5 && !US_HOLIDAYS_MON.has(ds)){
+          const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dw];
+          return dayName + ' ' + d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+        }
+      }
+      return 'next weekday';
+    }
+
+    if(isMarketClosed){
+      // ── HOLIDAY / WEEKEND MODE ──
+      const reason = isHoliday ? '🏛️ US Market Holiday' : '📅 Weekend';
+      const nextDay = nextTradingDay();
+      checks.push(reason + ' — markets closed today');
+      checks.push('🔄 TA-batch paused — resumes <b style="color:#58a6ff;">'+nextDay+'</b> at 9:30 AM ET');
+      checks.push('🔄 IV-batch paused — resumes <b style="color:#58a6ff;">'+nextDay+'</b> at 9:00 AM ET');
+
+      // Still check data freshness but don't flag as error
+      const latestTaDate = latestState?.trading_date;
+      if(latestTaDate){
+        const lastStatus = latestState?.status || '—';
+        const statusCol = lastStatus==='complete'?'#00e5a8':'#e3b341';
+        checks.push('📊 Last TA run: <b style="color:'+statusCol+';">'+lastStatus+'</b> for '+latestTaDate);
+      }
+      if(ivStateR?.length && ivStateR[0].value){
+        const st = typeof ivStateR[0].value === 'string' ? JSON.parse(ivStateR[0].value) : ivStateR[0].value;
+        checks.push('⚡ Last IV run: <b style="color:'+(st.status==='complete'?'#00e5a8':'#e3b341')+';">'+st.status+'</b> for '+(st.trading_date||'—'));
+      }
+
+      hCard.style.borderLeftColor = '#58a6ff';
+      hBadge.textContent = isHoliday ? '🏛️ HOLIDAY' : '📅 WEEKEND';
+      hBadge.style.background = 'rgba(88,166,255,.15)';
+      hBadge.style.color = '#58a6ff';
+      hDetail.innerHTML = checks.join('<br>');
+
+      // Hide alert banner
+      const alertBanner = document.getElementById('alertBanner');
+      if(alertBanner) alertBanner.style.display = 'none';
+
+    } else {
+      // ── NORMAL TRADING DAY CHECKS ──
+
+      // Check 1: ta-batch ran today
+      const today = todayET;
+      const taToday = (batchStates||[]).find(s=>s.trading_date===today || s.trading_date===latestState?.trading_date);
+      if(taToday?.status==='complete'){ checks.push('✅ TA-batch completed for '+taToday.trading_date); }
+      else if(taToday?.status==='running'){ checks.push('🔄 TA-batch running for '+taToday.trading_date); }
+      else {
+        // Only flag as error after 10 AM ET — before that, batch may not have started yet
+        const etHour = nowET.getHours();
+        if(etHour >= 10){ checks.push('❌ TA-batch not started today'); errors++; }
+        else { checks.push('⏳ TA-batch waiting for market open (9:30 AM ET)'); }
+      }
+
+      // Check 2: iv-batch ran today
+      if(ivStateR?.length && ivStateR[0].value){
+        const st = typeof ivStateR[0].value === 'string' ? JSON.parse(ivStateR[0].value) : ivStateR[0].value;
+        if(st.status==='complete'){ checks.push('✅ IV-batch completed for '+st.trading_date); }
+        else if(st.status==='running'){ checks.push('🔄 IV-batch running ('+st.ticker_index+'/1394)'); }
+        else { checks.push('⚠️ IV-batch status: '+(st.status||'unknown')); errors++; }
+      } else {
+        const etHour = nowET.getHours();
+        if(etHour >= 10){ checks.push('❌ IV-batch has never run'); errors++; }
+        else { checks.push('⏳ IV-batch waiting for market open'); }
+      }
+
+      // Check 3: ta_cache has recent data
+      const latestTaDate = latestState?.trading_date;
+      if(latestTaDate){
+        const daysOld = Math.round((Date.now()-new Date(latestTaDate+'T16:00:00').getTime())/86400000);
+        if(daysOld<=1){ checks.push('✅ ta_cache is fresh ('+latestTaDate+')'); }
+        else if(daysOld<=3){ checks.push('⚠️ ta_cache is '+daysOld+' days old ('+latestTaDate+')'); }
+        else { checks.push('❌ ta_cache is '+daysOld+' days stale ('+latestTaDate+')'); errors++; }
+      }
+
+      // Check 4: ta-batch not stuck (only on trading days during market hours)
+      if(latestState?.status==='running' && latestState.last_updated){
+        const stuckMin = Math.round((Date.now()-new Date(latestState.last_updated).getTime())/60000);
+        if(stuckMin > 15){ checks.push('❌ TA-batch stuck — no progress for '+stuckMin+' min'); errors++; }
+        else { checks.push('✅ TA-batch responsive (last activity '+stuckMin+'min ago)'); }
+      }
+
+      const allGood = errors === 0;
+      hCard.style.borderLeftColor = allGood ? '#00e5a8' : errors >= 2 ? '#f85149' : '#e3b341';
+      hBadge.textContent = allGood ? '✓ HEALTHY' : errors+' ISSUE'+(errors>1?'S':'');
+      hBadge.style.background = allGood ? 'rgba(0,229,168,.15)' : errors >= 2 ? 'rgba(255,51,85,.15)' : 'rgba(227,179,65,.15)';
+      hBadge.style.color = allGood ? '#00e5a8' : errors >= 2 ? '#f85149' : '#e3b341';
+      hDetail.innerHTML = checks.join('<br>');
+
+      // Show/hide alert banner
+      const alertBanner = document.getElementById('alertBanner');
+      const alertText = document.getElementById('alertText');
+      if(errors > 0){
+        alertBanner.style.display = 'block';
+        const issues = checks.filter(c => c.startsWith('❌') || c.startsWith('⚠️'));
+        alertText.innerHTML = issues.join('<br>');
+        if(Notification.permission === 'granted'){
+          new Notification('OptionLens Batch Monitor', {body: errors+' issue'+(errors>1?'s':'')+' detected', icon: '⚠️'});
+        } else if(Notification.permission !== 'denied'){
+          Notification.requestPermission();
+        }
+      } else {
+        alertBanner.style.display = 'none';
+      }
+    }
+    } // end else (not suspended)
+
+    // ── 7-DAY HISTORY TABLE ──
+    // Build date map from batch_run and batch_state
+    const runMap = {};
+    for(const r of (batchRuns||[])) runMap[r.trading_date] = r;
+    const stateMap = {};
+    for(const s of (batchStates||[])) stateMap[s.trading_date] = s;
+
+    // Build ta counts from batch_run
+    const taCountMap = {};
+    if(Array.isArray(taCounts)){
+      for(const r of taCounts) if(r.trading_date) taCountMap[r.trading_date] = {tickers: r.tickers_done||0, status: r.status};
+    }
+
+    // IV: we know the latest cached_at but not per-day counts without RPC
+    // Use batch_run dates + iv_batch_state to infer
+    const ivHasData = ivCounts?.length > 0;
+
+    // Generate last 7 trading days
+    const dates = [];
+    const d = new Date();
+    while(dates.length < 7){
+      const ds = d.toISOString().slice(0,10);
+      const dow = d.getDay();
+      if(dow >= 1 && dow <= 5) dates.push(ds);
+      d.setDate(d.getDate()-1);
+    }
+
+    const tbody = document.getElementById('opsHistoryBody');
+    tbody.innerHTML = dates.map(dt=>{
+      const run = runMap[dt];
+      const state = stateMap[dt];
+      const dow = dayNames[new Date(dt+'T12:00:00').getDay()];
+      const taInfo = taCountMap[dt] || {};
+      const taStatus = run?.status || state?.status || taInfo.status || '—';
+      const taTk = taInfo.tickers || (state?.status==='complete' ? (run?.tickers_done||liveTotal) : '—');
+      const taCol = taStatus==='complete'?'#00e5a8':taStatus==='running'?'#3d6eff':'#555570';
+      const taIcon = taStatus==='complete'?'✅':taStatus==='running'?'🔄':'—';
+
+      // IV status: check if iv_batch_state matches this date
+      let ivStatus = '—';
+      let ivContracts = '—';
+      if(ivStateR?.length && ivStateR[0].value){
+        const ivSt = typeof ivStateR[0].value === 'string' ? JSON.parse(ivStateR[0].value) : ivStateR[0].value;
+        if(ivSt.trading_date === dt){
+          ivStatus = ivSt.status || '—';
+          ivContracts = ivSt.status === 'complete' ? '✓' : ivSt.ticker_index+'/1394';
+        }
+      }
+      const hasIV = ivStatus === 'complete';
+      const ivIcon = hasIV ? '✅' : ivStatus==='running' ? '🔄' : '—';
+      const ivCol = hasIV ? '#00e5a8' : ivStatus==='running' ? '#3d6eff' : '#555570';
+
+      const isToday = dt === dates[0];
+      const hasError = !isToday && taStatus!=='complete' && taStatus!=='running';
+
+      return `<tr style="border-bottom:1px solid #141e2e;${hasError?'background:rgba(255,51,85,.03)':''}">
+        <td style="padding:5px 10px;color:#cdd9e5;font-weight:700;">${dt}${isToday?' <span style="color:#e3b341;font-size:9px;">TODAY</span>':''}</td>
+        <td style="padding:5px 10px;color:#8888aa;">${dow}</td>
+        <td style="padding:5px 10px;text-align:center;">${taIcon} <span style="color:${taCol};font-weight:600;">${taStatus}</span></td>
+        <td style="padding:5px 10px;text-align:right;color:#cdd9e5;">${typeof taTk==='number'?taTk.toLocaleString():taTk}</td>
+        <td style="padding:5px 10px;text-align:center;">${ivIcon} <span style="color:${ivCol};font-weight:600;">${ivStatus}</span></td>
+        <td style="padding:5px 10px;text-align:right;color:#cdd9e5;">${ivContracts}</td>
+        <td style="padding:5px 10px;text-align:center;">${hasError?'<span style="color:#f85149;">⚠</span>':'<span style="color:#00e5a8;">—</span>'}</td>
+      </tr>`;
+    }).join('');
+
+  }catch(e){
+    log('Daily ops error: '+e.message,'e');
+  }
+}
+
+function log(msg,t='i'){
+  const ts=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  logs.unshift({ts,msg,t});
+  if(logs.length>40)logs.pop();
+  document.getElementById('logEl').innerHTML=logs.map(l=>`<div class="ll"><div class="lt">${l.ts}</div><div class="l${l.t}">${l.msg}</div></div>`).join('');
+}
+
+function startCountdown(){
+  if(cdTimer)clearInterval(cdTimer);
+  cdSecs=30;
+  const el=document.getElementById('cdText');
+  cdTimer=setInterval(()=>{
+    cdSecs--;
+    if(cdSecs<=0){cdSecs=30;doRefresh();}
+    el.textContent=cdSecs<=5?`Refreshing in ${cdSecs}s...`:`Auto-refresh in ${cdSecs}s`;
+    el.style.color=cdSecs<=5?'#ffaa00':'#555570';
+  },1000);
+}
+
+async function doRefresh(){
+  document.getElementById('cdText').textContent='Refreshing...';
+  log('Fetching from Supabase...','i');
+  try{
+    // Fire ALL queries in parallel -- no sequential loops
+    // Phase 1: get active date from batch_state first
+    const [allStates,allRuns]=await Promise.all([
+      sb('/rest/v1/batch_state?select=*&order=trading_date.desc&limit=5'),
+      sb('/rest/v1/batch_run?select=*&order=trading_date.desc&limit=5'),
+    ]);
+    const activeDate=(allStates&&allStates[0]?.trading_date)||new Date().toISOString().slice(0,10);
+
+    // Phase 2: query ta_cache filtered by date at API level
+    const [cacheRows,...indArrs]=await Promise.all([
+      sb('/rest/v1/ta_cache?select=ticker,rsi,macd_h,ema9,ema20,ema50,sma50,sma200,price,atr14,boll_pos,mom5,trading_date,sector&trading_date=eq.'+activeDate+'&order=ticker&limit=2000'),
+      ...INDS.map(ind=>sb('/rest/v1/ta_cache?select=ticker&trading_date=eq.'+activeDate+'&'+ind+'=not.is.null&limit=2000'))
+    ]);
+    rows=(cacheRows||[]).filter(r=>r.trading_date===activeDate);
+    buildDynamicSectors(rows);
+    liveTotal=Math.max(TOTAL,rows.length);
+
+    // Build counts from the all-rows indArrs (no date filter needed -- filter here)
+    const counts={};
+    INDS.forEach((ind,i)=>{
+      counts[ind]=(indArrs[i]||[]).length;
+    });
+
+    // Build DB date summary from same data
+    const allRows2=cacheRows||[];
+    const dateCounts={};
+    allRows2.forEach(r=>{dateCounts[r.trading_date]=(dateCounts[r.trading_date]||0)+1;});
+    const dates=Object.keys(dateCounts).sort().reverse();
+
+    const dbDateData=dates.map(dt=>({
+      date:dt,
+      total:dateCounts[dt],
+      ...Object.fromEntries(INDS.map((ind,i)=>[ind,indArrs[i].filter(r=>r.trading_date===dt).length]))
+    }));
+
+    log('Dates in DB: '+(dates.join(', ')||'none'),'ok');
+    // Derive actual total from ta_cache -- use max count across all indicators
+    const dynamicTotal = Math.max(TOTAL, rows.length, ...INDS.map(ind=>counts[ind]||0));
+    log('Active: '+activeDate+' | '+rows.length+' tickers | RSI='+counts.rsi+'/'+dynamicTotal+' MACD='+counts.macd_h+'/'+dynamicTotal+' EMA9='+counts.ema9+'/'+dynamicTotal+' EMA20='+counts.ema20+'/'+dynamicTotal+' EMA50='+counts.ema50+'/'+dynamicTotal,'ok');
+
+    const state=allStates[0]||null;
+    const run=allRuns[0]||null;
+
+    renderHero(state,counts,activeDate);
+    renderIndGrid(counts);
+    renderDB(dbDateData,allStates,allRuns);
+    renderDetails(state,run,activeDate);
+    applyFilter();
+
+    const full=rows.filter(r=>INDS.every(ind=>r[ind]!=null)).length;
+    const ts=new Date().toLocaleTimeString();
+    document.getElementById('tsBar').textContent='✓ Last refresh: '+ts+'  *  Active date: '+activeDate+'  *  '+rows.length+' tickers  *  '+full+' fully complete';
+  }catch(e){
+    log('Error: '+e.message,'e');
+    document.getElementById('tsBar').textContent='Error: '+e.message;
+  }
+  fetchBarsStats();
+  fetchOptionsIVStats();
+  fetchCronStatus();
+  fetchIVBatchState();
+  fetchDailyOps();
+  checkSuspendStatus();
+  startCountdown();
+}
+
+function renderHero(state,counts,td){
+  const total=INDS.reduce((s,ind)=>s+counts[ind],0);
+  const pct=Math.round(total/(INDS.length*liveTotal)*100);
+  const isDone=state?.status==='complete';
+  const isRun=state?.status==='running';
+  document.getElementById('bigPct').textContent=pct+'%';
+  document.getElementById('bigPct').className='big-pct '+(isDone?'done':isRun?'run':'pend');
+  document.getElementById('progFill').style.width=pct+'%';
+  document.getElementById('progFill').className='prog-fill'+(isDone?' done':'');
+  const NAMES=['RSI(14)','MACD','EMA(9)','EMA(20)','EMA(50)','SMA(50)','SMA(200)'];
+  const sc=isDone?'#00e5a8':isRun?'#3d6eff':'#ffaa00';
+  const bdg=document.getElementById('badge');
+  const meta=document.getElementById('statusMeta');
+  const eta=document.getElementById('statusEta');
+  if(isDone){
+    bdg.className='badge done';
+    bdg.innerHTML='<div class="live-dot"></div>COMPLETE ✓';
+    meta.innerHTML=`<strong>All 7 indicators loaded for all ${liveTotal} tickers</strong><br>Trading date: ${state.trading_date}<br>Trade Ideas is now <strong style="color:#00e5a8">UNLOCKED</strong>`;
+    eta.textContent='';
+  } else if(isRun){
+    bdg.className='badge run';
+    bdg.innerHTML='<div class="live-dot"></div>RUNNING';
+    const cur=NAMES[state.indicator_index]||'Finalising';
+    const etaMins=Math.round(((7-(state.indicator_index||0))*Math.ceil(liveTotal/5)*44)/60);
+    meta.innerHTML=`<strong>Trading date:</strong> ${td}<br><strong>Current indicator:</strong> ${cur} &nbsp;(${(state.indicator_index||0)+1} of 7)<br><strong>Ticker position:</strong> ${state.ticker_index||0} / ${liveTotal}<br><strong>Last activity:</strong> ${state.last_updated?new Date(state.last_updated).toLocaleTimeString():'--'}<br><strong>Cron:</strong> fires every 2 minutes automatically`;
+    eta.textContent=`Estimated ~${etaMins} min remaining * Auto-refreshes every 30s`;
+  } else {
+    bdg.className='badge pend';
+    bdg.innerHTML='<div class="live-dot" style="animation:none;background:#555570"></div>NO ACTIVE RUN';
+    meta.innerHTML=`No batch running for <strong>${td}</strong><br>Batch runs at <strong>4:30pm ET</strong> (after close) and <strong>6:00am ET</strong> (pre-market) on weekdays`;
+    eta.textContent='';
+  }
+}
+
+function renderIndGrid(counts){
+  document.getElementById('indGrid').innerHTML=INDS.map(ind=>{
+    const n=counts[ind],pct=Math.round(n/liveTotal*100);
+    const d=n>=liveTotal,a=n>0&&n<liveTotal;
+    return `<div class="ic ${d?'done':a?'active':''}">
+      <div class="ic-name">${ILAB[ind]}</div>
+      <div class="ic-count ${d?'d':a?'a':'p'}">${n}/${TOTAL}</div>
+      <div class="ic-tag ${d?'d':a?'a':'p'}">${d?'DONE ✓':a?pct+'%':'QUEUED'}</div>
+      <div class="mini-bar"><div class="mini-fill ${d?'d':a?'a':''}" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderDB(dateData,states,runs){
+  const el=document.getElementById('dbContents');
+  if(!dateData.length){el.innerHTML='<div style="color:#555570;font-size:12px;padding:16px 0">No data found in ta_cache.</div>';return;}
+  el.innerHTML=dateData.map(dd=>{
+    const state=states.find(s=>s.trading_date===dd.date);
+    const run=runs.find(r=>r.trading_date===dd.date);
+    const totalDone=INDS.reduce((s,ind)=>s+(dd[ind]||0),0);
+    const pct=Math.round(totalDone/(INDS.length*liveTotal)*100);
+    const isComplete=state?.status==='complete'||pct===100;
+    const isRunning=state?.status==='running';
+    const sc=isComplete?'#00e5a8':isRunning?'#3d6eff':'#ffaa00';
+    const label=isComplete?'✓ COMPLETE':isRunning?'⟳ RUNNING':'\u23F3 PARTIAL';
+    const NAMES=['RSI(14)','MACD','EMA(9)','EMA(20)','EMA(50)','SMA(50)','SMA(200)'];
+    return `<div class="db-card">
+      <div class="db-hdr">
+        <div>
+          <div class="db-date">📅 <em>${dd.date}</em> &nbsp;*&nbsp; ${dd.total} tickers stored</div>
+          <div class="db-meta">Started: ${run?.started_at?new Date(run.started_at).toLocaleString():'--'} &nbsp;*&nbsp; Completed: ${run?.completed_at?new Date(run.completed_at).toLocaleString():'Still running...'} &nbsp;*&nbsp; Last updated: ${state?.last_updated?new Date(state.last_updated).toLocaleString():'--'}</div>
+        </div>
+        <div class="db-status" style="color:${sc}">${label} &nbsp; ${pct}%</div>
+      </div>
+      <div class="ind-row">
+        ${INDS.map(ind=>{
+          const n=dd[ind]||0,full=n>=liveTotal,none=n===0;
+          return `<div class="ind-cell ${full?'cfull':none?'':'cpart'}">
+            <div class="ind-cname">${ILAB[ind]}</div>
+            <div class="ind-cn ${full?'full':none?'zero':'part'}">${n}</div>
+            <div class="ind-csub ${full?'full':none?'zero':'part'}">/ ${TOTAL}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="sum-row">
+        <div class="sum-cell"><div class="sum-lbl">TOTAL ROWS</div><div class="sum-val">${dd.total}</div></div>
+        <div class="sum-cell"><div class="sum-lbl">PRICE BARS</div><div class="sum-val" style="color:${state?.price_bars_done?'#00e5a8':'#444460'}">${state?.price_bars_done?'✓ Done':'Pending'}</div></div>
+        <div class="sum-cell"><div class="sum-lbl">CURRENT IND.</div><div class="sum-val" style="color:#ffaa00">${state?NAMES[state.indicator_index]||'Done':'--'}</div></div>
+        <div class="sum-cell"><div class="sum-lbl">TICKER POS.</div><div class="sum-val">${state?state.ticker_index+'/'+TOTAL:'--'}</div></div>
+        <div class="sum-cell"><div class="sum-lbl">INDICATORS ✓</div><div class="sum-val" style="color:#00e5a8">${INDS.filter(ind=>(dd[ind]||0)===TOTAL).length}/7</div></div>
+        <div class="sum-cell"><div class="sum-lbl">OVERALL</div><div class="sum-val" style="color:${sc}">${pct}%</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderDetails(state,run,td){
+  const el=document.getElementById('batchDetails');
+  if(!state&&!run){el.innerHTML=`<div class="sl">No batch record for ${td}.</div>`;return;}
+  const r=run||{},s=state||{};
+  const NAMES=['RSI(14)','MACD','EMA(9)','EMA(20)','EMA(50)','SMA(50)','SMA(200)'];
+  el.innerHTML=`
+    <div class="sr"><div class="sl">Trading Date</div><div class="sv">${r.trading_date||td}</div></div>
+    <div class="sr"><div class="sl">Run Status</div><div class="sv ${r.status==='complete'?'ok':r.status==='running'?'wa':'dim'}">${(r.status||'--').toUpperCase()}</div></div>
+    <div class="sr"><div class="sl">Started At</div><div class="sv">${r.started_at?new Date(r.started_at).toLocaleTimeString():'--'}</div></div>
+    <div class="sr"><div class="sl">Completed At</div><div class="sv ${r.completed_at?'ok':'dim'}">${r.completed_at?new Date(r.completed_at).toLocaleTimeString():'Still running...'}</div></div>
+    <div class="sr"><div class="sl">Price Bars</div><div class="sv ${s.price_bars_done?'ok':'dim'}">${s.price_bars_done?'✓ Loaded':'Pending'}</div></div>
+    <div class="sr"><div class="sl">Indicators Done</div><div class="sv ok">${INDS.filter((_,i)=>i<(s.indicator_index||0)).length} of 7</div></div>
+    <div class="sr"><div class="sl">Current Indicator</div><div class="sv wa">${NAMES[s.indicator_index||0]||'--'}</div></div>
+    <div class="sr"><div class="sl">Ticker Position</div><div class="sv">${s.ticker_index!=null?s.ticker_index+'/706':'--'}</div></div>
+    <div class="sr"><div class="sl">Last Updated</div><div class="sv">${s.last_updated?new Date(s.last_updated).toLocaleTimeString():'--'}</div></div>`;
+}
+
+function setSec(s){sec=s;pg=0;rebuildFilterChips();applyFilter();}
+function applyFilter(){
+  const q=(document.getElementById('srch').value||'').trim().toUpperCase();
+  let r=rows;
+  if(sec==='partial')r=r.filter(x=>INDS.some(i=>x[i]==null)&&INDS.some(i=>x[i]!=null));
+  else if(sec==='missing')r=r.filter(x=>INDS.every(i=>x[i]==null));
+  else if(sec!=='all'){const s=new Set(SECS[sec]||[]);r=r.filter(x=>s.has(x.ticker));}
+  if(q)r=r.filter(x=>x.ticker&&x.ticker.includes(q));
+  filtered=r;renderTbl();
+}
+function done(r){return INDS.filter(i=>r[i]!=null).length;}
+function renderTbl(){
+  const PS=50,start=pg*PS,slice=filtered.slice(start,start+PS);
+  const tb=document.getElementById('tbl');
+  if(!slice.length){tb.innerHTML='<tr><td colspan="15" style="color:#8888aa;text-align:center;padding:20px">No data for this filter</td></tr>';renderPg();return;}
+  const f=(v,d=2)=>v!=null?`<td class="tok">${parseFloat(v).toFixed(d)}</td>`:`<td class="tnu">--</td>`;
+  tb.innerHTML=slice.map(r=>{
+    const d=done(r);
+    const tag=d===7?'<span style="color:#00e5a8;font-weight:700">✓ 7/7</span>':d===0?'<span style="color:#7777aa">0/7</span>':`<span style="color:#ffaa00">${d}/7</span>`;
+    const sectorLabel = r.sector || '—';
+    const sectorCol = r.sector ? '#8ab4ce' : '#7777aa';
+    return `<tr><td class="tck">${r.ticker}</td><td style="color:${sectorCol};font-size:10px;">${sectorLabel}</td><td style="color:#8888aa">${r.trading_date}</td>
+    <td>${r.price!=null?'$'+parseFloat(r.price).toFixed(2):'<span class="tnu">--</span>'}</td>
+    ${f(r.rsi,1)}${f(r.macd_h,3)}${f(r.ema9,2)}${f(r.ema20,2)}${f(r.ema50,2)}${f(r.sma50,2)}${f(r.sma200,2)}
+    ${f(r.atr14,2)}${f(r.boll_pos,1)}${f(r.mom5,2)}<td>${tag}</td></tr>`;
+  }).join('');
+  renderPg();
+}
+function renderPg(){
+  const PS=50,total=filtered.length,pages=Math.ceil(total/PS);
+  const el=document.getElementById('pager');
+  if(pages<=1){el.innerHTML=`<span>Showing all ${total} tickers</span>`;return;}
+  el.innerHTML=`<button onclick="setP(${pg-1})" ${pg===0?'disabled':''}>← Prev</button><span>Page ${pg+1}/${pages} * ${total} rows</span><button onclick="setP(${pg+1})" ${pg>=pages-1?'disabled':''}>Next →</button>`;
+}
+function setP(p){pg=p;renderTbl();}
+function exportCSV(){
+  if(!filtered.length)return;
+  const cols=['ticker','trading_date','price','rsi','macd_h','ema9','ema20','ema50','sma50','sma200','atr14','boll_pos','mom5'];
+  const csv=[cols.join(','),...filtered.map(r=>cols.map(c=>r[c]!=null?r[c]:'').join(','))].join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='ta_cache_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+  log('Exported '+filtered.length+' rows as CSV','ok');
+}
+
+// Boot -- load immediately then auto-refresh every 30s
+doRefresh();
+// ── Auto-run loop ─────────────────────────────────────────────────────────────
+let _ar = false;
+
+function stopAuto(){
+  _ar = false;
+  const b = document.getElementById('invokeBtn');
+  if(b){ b.textContent='▶ Auto-Run'; b.style.background='#00e5a8'; b.onclick=startAuto; }
+  log('Auto-run stopped.','i');
+}
+
+async function runOnce(){
+  log('Invoking ta-batch...','i');
+  try{
+    const r = await fetch(SUPA+'/functions/v1/ta-batch',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+ANON,'Content-Type':'application/json'},
+      body:'{}'
+    });
+    let d=null;
+    try{ d=await r.json(); }catch(_){}
+    if(!d || d.status===undefined){
+      log('\u26A0 No response body (CORS/401) -- check JWT verification is OFF in Supabase.','w');
+      setTimeout(doRefresh,3000);
+      return 'partial';
+    }
+    const msg = d.status
+      + (d.indicator ? ' * '+d.indicator : '')
+      + (d.ticker_index!==undefined ? ' * ticker '+d.ticker_index+'/706' : '');
+    log((d.status==='complete'?'\u2705 ':'⟳ ')+msg, d.status==='complete'?'ok':'i');
+    setTimeout(doRefresh,2000);
+    return d.status;
+  }catch(e){
+    log('\u26A0 '+e.message,'w');
+    setTimeout(doRefresh,5000);
+    return 'partial';
+  }
+}
+
+async function autoLoop(){
+  const b = document.getElementById('invokeBtn');
+  while(_ar){
+    b.textContent = '⟳ Running...';
+    const s = await runOnce();
+    if(!_ar) break;
+    if(s==='complete'||s==='already_complete'){
+      log('\u2705 BATCH COMPLETE -- all 706 tickers scored!','ok');
+      b.textContent='\u2705 Complete'; b.style.background='#00e5a8'; _ar=false; doRefresh(); break;
+    } else if(s==='skipped'){
+      log('⏭ Not a trading day.','i'); stopAuto(); break;
+    } else if(s==='rate_limited'){
+      let t=65;
+      while(t>0&&_ar){ b.textContent='\u23F3 '+t+'s...'; await new Promise(r=>setTimeout(r,1000)); t--; }
+    } else {
+      // partial or unknown -- wait 3s then invoke again
+      await new Promise(r=>setTimeout(r,3000));
+    }
+  }
+}
+
+function startAuto(){
+  if(_ar) return;
+  _ar = true;
+  const b = document.getElementById('invokeBtn');
+  b.textContent='⏹ Stop'; b.style.background='#ff3355'; b.onclick=stopAuto;
+  log('Auto-run started -- runs until complete.','ok');
+  autoLoop();
+}
+
+
+
+// ════════════════════════════════════════════════════════════════
+//  TELEGRAM ALERTS -- BATCH MONITOR
+// ════════════════════════════════════════════════════════════════
+
+// ================================================================
+//  TELEGRAM ALERTS -- BATCH MONITOR
+// ================================================================
+const BM_TG_KEY = 'ol_telegram_cfg'; // shared key with screener
+
+function bmLoadCfg(){ try{ return JSON.parse(localStorage.getItem(BM_TG_KEY)||'{}'); }catch{ return {}; } }
+function bmSaveCfgData(cfg){ localStorage.setItem(BM_TG_KEY, JSON.stringify(cfg)); }
+
+function openTgCfg(){
+  var panel = document.getElementById('tgCfgPanel');
+  if(!panel) return;
+  var open = panel.style.display === 'flex';
+  panel.style.display = open ? 'none' : 'flex';
+  if(!open) bmLoadIntoForm();
+}
+
+function bmLoadIntoForm(){
+  var cfg = bmLoadCfg();
+  var tokenEl = document.getElementById('bmTgToken');
+  if(tokenEl) tokenEl.value = cfg.token || '';
+  bmRenderChatList(cfg.chatIds || []);
+}
+
+function bmRenderChatList(ids){
+  var el = document.getElementById('bmChatList');
+  if(!el) return;
+  if(!ids.length){ el.innerHTML = '<span style="color:#8899aa;">No recipients added</span>'; return; }
+  el.innerHTML = ids.map(function(c,i){
+    return '<div style="display:flex;align-items:center;gap:6px;background:#0b1020;border:1px solid #1c2538;border-radius:4px;padding:4px 8px;">'
+      + '<span style="flex:1;color:#cdd9e5;">' + c.label + '</span>'
+      + '<span style="color:#9ab0c4;">' + c.chatId + '</span>'
+      + '<button onclick="bmRemoveChat(' + i + ')" style="background:transparent;border:none;color:#f85149;cursor:pointer;font-size:13px;padding:0 2px;">X</button>'
+      + '</div>';
+  }).join('');
+}
+
+function bmAddChat(){
+  var inp = document.getElementById('bmNewChat');
+  if(!inp) return;
+  var raw = inp.value.trim();
+  if(!raw){ bmCfgStatus('Enter a chat ID first','warn'); return; }
+  var label = 'Recipient', chatId = raw;
+  if(raw.indexOf(':') >= 0){ var p = raw.split(':'); label = p[0].trim(); chatId = p[1].trim(); }
+  if(!/^-?[0-9]+$/.test(chatId)){ bmCfgStatus('Chat ID must be a number','warn'); return; }
+  var cfg = bmLoadCfg();
+  cfg.chatIds = cfg.chatIds || [];
+  if(cfg.chatIds.find(function(c){ return c.chatId === chatId; })){ bmCfgStatus('Already in list','warn'); return; }
+  cfg.chatIds.push({chatId: chatId, label: label});
+  bmSaveCfgData(cfg);
+  bmRenderChatList(cfg.chatIds);
+  inp.value = '';
+  bmCfgStatus('Added: ' + label + ' (' + chatId + ')','ok');
+}
+
+function bmRemoveChat(idx){
+  var cfg = bmLoadCfg();
+  cfg.chatIds = cfg.chatIds || [];
+  cfg.chatIds.splice(idx, 1);
+  bmSaveCfgData(cfg);
+  bmRenderChatList(cfg.chatIds);
+}
+
+function bmSaveTg(){
+  var tokenEl = document.getElementById('bmTgToken');
+  if(!tokenEl) return;
+  var token = tokenEl.value.trim();
+  if(!token){ bmCfgStatus('Enter a bot token first','warn'); return; }
+  var cfg = bmLoadCfg();
+  cfg.token = token;
+  bmSaveCfgData(cfg);
+  bmCfgStatus('Settings saved','ok');
+}
+
+function bmFindChatId(){
+  var tokenEl = document.getElementById('bmTgToken');
+  if(!tokenEl || !tokenEl.value.trim()){ bmCfgStatus('Paste your bot token first','warn'); return; }
+  var token = tokenEl.value.trim();
+  bmCfgStatus('Calling Telegram getUpdates...','ok');
+  fetch('https://api.telegram.org/bot' + token + '/getUpdates?limit=10')
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d.ok){ bmCfgStatus('Telegram error: ' + d.description,'err'); return; }
+      if(!d.result || !d.result.length){ bmCfgStatus('No messages found -- send /start to your bot in Telegram then try again','warn'); return; }
+      var chats = [], seen = {};
+      d.result.forEach(function(upd){
+        var msg = upd.message || upd.channel_post || upd.edited_message;
+        if(msg && msg.chat){
+          var id = String(msg.chat.id);
+          var name = msg.chat.first_name ? (msg.chat.first_name + (msg.chat.last_name ? ' ' + msg.chat.last_name : '')) : (msg.chat.title || 'Chat');
+          if(!seen[id]){ seen[id] = true; chats.push({chatId: id, label: name}); }
+        }
+      });
+      if(!chats.length){ bmCfgStatus('Could not parse chats','warn'); return; }
+      var cfg = bmLoadCfg();
+      cfg.chatIds = cfg.chatIds || [];
+      var added = 0;
+      chats.forEach(function(c){
+        if(!cfg.chatIds.find(function(x){ return x.chatId === c.chatId; })){
+          cfg.chatIds.push(c); added++;
+        }
+      });
+      bmSaveCfgData(cfg);
+      bmRenderChatList(cfg.chatIds);
+      bmCfgStatus('Found ' + chats.length + ' chat(s)' + (added ? ' -- added ' + added + ' new' : ' -- already in list'),'ok');
+    })
+    .catch(function(e){ bmCfgStatus('Error: ' + e.message,'err'); });
+}
+
+function bmTestTelegram(){
+  bmSendTg('<b>OptionLens Batch Monitor -- Test</b>\nTelegram is connected!\n<i>' + new Date().toLocaleString() + '</i>');
+}
+
+function bmSendTg(text){
+  var cfg = bmLoadCfg();
+  if(!cfg.token){ bmCfgStatus('No token -- open Settings first','err'); return Promise.resolve(false); }
+  if(!(cfg.chatIds||[]).length){ bmCfgStatus('No recipients -- add chat IDs in Settings','err'); return Promise.resolve(false); }
+  var sends = (cfg.chatIds||[]).map(function(r){
+    return fetch('https://api.telegram.org/bot' + cfg.token + '/sendMessage', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({chat_id: r.chatId, text: text, parse_mode: 'HTML'})
+    }).then(function(res){ return res.json(); })
+      .then(function(d){ return d.ok; })
+      .catch(function(){ return false; });
+  });
+  return Promise.all(sends).then(function(results){ return results.every(Boolean); });
+}
+
+function bmCfgStatus(msg, type){
+  var el = document.getElementById('bmTgCfgStatus');
+  if(!el) return;
+  el.style.display = 'block';
+  el.style.background  = type==='ok' ? 'rgba(63,185,80,0.1)' : type==='warn' ? 'rgba(227,179,65,0.1)' : 'rgba(248,81,73,0.1)';
+  el.style.borderColor = type==='ok' ? '#3fb950' : type==='warn' ? '#e3b341' : '#f85149';
+  el.style.color       = type==='ok' ? '#3fb950' : type==='warn' ? '#e3b341' : '#f85149';
+  el.textContent = msg;
+}
+
+function showStatus(elId, msg, type){
+  var el = document.getElementById(elId);
+  if(!el) return;
+  el.style.display = 'block';
+  el.style.borderColor = type==='ok'?'#3fb950':type==='warn'?'#e3b341':'#f85149';
+  el.style.color       = type==='ok'?'#3fb950':type==='warn'?'#e3b341':'#f85149';
+  el.textContent = msg;
+}
+
+// ── Daily Extreme Signals ─────────────────────────────────────────────────
+function fetchExtremeSignals(){
+  var SUPA = 'https://hkamukkkkpqhdpcradau.supabase.co';
+  var ANON = 'sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81';
+  var H = {'apikey':ANON,'Authorization':'Bearer '+ANON};
+  return fetch(SUPA+'/rest/v1/ta_cache?select=trading_date&order=trading_date.desc&limit=1',{headers:H})
+    .then(function(r){ return r.json(); })
+    .then(function(dateD){
+      if(!dateD||!dateD.length) return {shorts:[],longs:[],date:'unknown',total:0};
+      var td = dateD[0].trading_date;
+      return fetch(SUPA+'/rest/v1/ta_cache?select=ticker,rsi,macd_h,adx14,stoch_k,boll_pos,sma50,sma200,mom5&trading_date=eq.'+td+'&limit=1000',{headers:H})
+        .then(function(r){ return r.json(); })
+        .then(function(rows){
+          var scored = rows.map(function(row){
+            var S=0,L=0;
+            if(row.rsi!=null){
+              if(row.rsi>80)S+=4; else if(row.rsi>70)S+=2.5; else if(row.rsi>65)S+=1.5; else if(row.rsi>58)S+=0.5;
+              else if(row.rsi<20)L+=4; else if(row.rsi<30)L+=2.5; else if(row.rsi<40)L+=1.5; else if(row.rsi<42)L+=0.5;
+            }
+            var sk=row.stoch_k;
+            if(sk!=null){
+              if(sk>85)S+=1.5; else if(sk>70)S+=0.5; else if(sk<15)L+=1.5; else if(sk<30)L+=0.5;
+              if(row.rsi!=null){ if(sk>80&&row.rsi>70)S+=1; if(sk<20&&row.rsi<30)L+=1; }
+            }
+            var mh=row.macd_h;
+            if(mh!=null){
+              if(mh>0.5)L+=2.5; else if(mh>0.1)L+=1.5; else if(mh>0.02)L+=0.5;
+              else if(mh<-0.5)S+=2.5; else if(mh<-0.1)S+=1.5; else if(mh<-0.02)S+=0.5;
+            }
+            var bp=row.boll_pos;
+            if(bp!=null){
+              if(bp>=95)S+=3; else if(bp>=80)S+=1.5; else if(bp>=70)S+=0.8;
+              else if(bp<=5)L+=3; else if(bp<=20)L+=1.5; else if(bp<=30)L+=0.8;
+            }
+            if(row.mom5!=null){
+              if(row.mom5>8)L+=1.5; else if(row.mom5>4)L+=0.8;
+              else if(row.mom5<-8)S+=1.5; else if(row.mom5<-4)S+=0.8;
+            }
+            if(row.sma50!=null&&row.sma200!=null){ if(row.sma50<row.sma200)S+=1.5; else L+=1.5; }
+            var amp=row.adx14>30?1.25:row.adx14>20?1.1:1;
+            S*=amp; L*=amp;
+            var net=+(S-L).toFixed(2);
+            return {ticker:row.ticker,net:net,rsi:row.rsi,
+              tier:net>=7?'STRONG SELL':net>=4?'SELL':net<=-7?'STRONG BUY':net<=-4?'BUY':'NEUTRAL'};
+          });
+          var shorts=scored.filter(function(r){return r.tier==='STRONG SELL';}).sort(function(a,b){return b.net-a.net;}).slice(0,5);
+          var longs=scored.filter(function(r){return r.tier==='STRONG BUY';}).sort(function(a,b){return a.net-b.net;}).slice(0,5);
+          return {shorts:shorts,longs:longs,date:td,total:rows.length};
+        });
+    });
+}
+
+function previewExtremeSignals(){
+  var el = document.getElementById('extremeSignalPreview');
+  el.textContent = 'Loading...'; el.style.color = '#9ab0c4';
+  fetchExtremeSignals().then(function(d){
+    var shorts=d.shorts, longs=d.longs, date=d.date, total=d.total;
+    if(!shorts.length&&!longs.length){
+      // Compute avg RSI and MACD to explain why
+      fetch('https://hkamukkkkpqhdpcradau.supabase.co/rest/v1/ta_cache?select=rsi,macd_h&trading_date=eq.'+date+'&rsi=not.is.null&macd_h=not.is.null&limit=200',
+        {headers:{'apikey':'sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81','Authorization':'Bearer sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81'}})
+        .then(function(r){return r.json();})
+        .then(function(rows){
+          var avgRsi  = rows.length ? (rows.reduce(function(s,r){return s+(r.rsi||0);},0)/rows.length).toFixed(1) : '?';
+          var avgMacd = rows.length ? (rows.reduce(function(s,r){return s+(r.macd_h||0);},0)/rows.length).toFixed(3) : '?';
+          var mktState = avgRsi<40?'oversold (recent sell-off)':avgRsi>65?'overbought':('neutral (avg '+avgRsi+')');
+          var macdState = avgMacd<-0.1?'bearish (avg '+avgMacd+')':avgMacd>0.1?'bullish (avg '+avgMacd+')':'flat';
+          el.innerHTML = '<span style="color:#e3b341;">No STRONG SELL or BUY signals in ta_cache for ' + date + '</span><br>'
+            + '<span style="color:#9ab0c4;">Market state: RSI avg ' + avgRsi + ' (' + mktState + ') | MACD ' + macdState + '</span><br>'
+            + '<span style="color:#8899aa;">STRONG SELL needs RSI &gt; 70 + bearish MACD. STRONG BUY needs RSI &lt; 30 + bullish MACD.<br>'
+            + 'Data refreshes after next ta-batch run (after market close or pre-market).</span>';
+        })
+        .catch(function(){
+          el.innerHTML = '<span style="color:#e3b341;">No STRONG signals in ta_cache for ' + date + '</span><br>'
+            + '<span style="color:#8899aa;">Signal thresholds require overbought (RSI&gt;70) for SELL or oversold (RSI&lt;30) for BUY.</span>';
+        });
+      return;
+    }
+    var html = '<span style="color:#9ab0c4;">'+date+' | '+total+' tickers scored</span><br>';
+    if(shorts.length) html += '<span style="color:#f85149;">STRONG SELL: '+shorts.map(function(r){return r.ticker+'('+r.net+')';}).join(' | ')+'</span><br>';
+    if(longs.length)  html += '<span style="color:#3fb950;">STRONG BUY: '+longs.map(function(r){return r.ticker+'('+Math.abs(r.net)+')';}).join(' | ')+'</span>';
+    el.innerHTML = html;
+  }).catch(function(e){ el.textContent = 'Error: '+e.message; el.style.color='#f85149'; });
+}
+
+function sendExtremeSignals(){
+  var statusEl = document.getElementById('extremeStatus');
+  showStatus('extremeStatus','Fetching signals...','ok');
+  fetchExtremeSignals().then(function(d){
+    var shorts=d.shorts, longs=d.longs, date=d.date, total=d.total;
+    var date2 = new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    if(!shorts.length&&!longs.length){
+      showStatus('extremeStatus','No STRONG SELL or BUY signals yet -- run the ta-batch first','warn');
+      return;
+    }
+    var msg = '<b>OptionLens -- Daily Extreme Signals</b> (' + date2 + ')\n'
+      + '<i>' + total + ' tickers scored | ' + date + '</i>\n\n';
+    if(shorts.length){
+      msg += '<b>STRONG SELL -- Top ' + shorts.length + '</b>\n';
+      shorts.forEach(function(r,i){
+        msg += (i+1) + '. <b>' + r.ticker + '</b>  score=' + r.net + (r.rsi ? '  RSI ' + r.rsi.toFixed(0) : '') + '\n';
+      });
+      msg += '\n';
+    }
+    if(longs.length){
+      msg += '<b>STRONG BUY -- Top ' + longs.length + '</b>\n';
+      longs.forEach(function(r,i){
+        msg += (i+1) + '. <b>' + r.ticker + '</b>  score=' + Math.abs(r.net) + (r.rsi ? '  RSI ' + r.rsi.toFixed(0) : '') + '\n';
+      });
+    }
+    msg += '\n<i>OptionLens Batch Monitor</i>';
+    bmSendTg(msg).then(function(ok){
+      showStatus('extremeStatus', ok ? 'Sent to all recipients' : 'Send failed -- check Settings', ok?'ok':'err');
+    });
+  }).catch(function(e){ showStatus('extremeStatus','Error: '+e.message,'err'); });
+}
+
+// ── Smart Combo Readiness ─────────────────────────────────────────────────
+var COMBO_REQS = [
+  {name:'Vol Breakout',   fields:['vol_ratio','boll_pos']},
+  {name:'Squeeze Fire',   fields:['boll_pos']},
+  {name:'Bull Momentum',  fields:['adx14','macd_h']},
+  {name:'Bear Momentum',  fields:['adx14','macd_h']},
+  {name:'Bounce Setup',   fields:['boll_pos','stoch_k']},
+  {name:'Fade Setup',     fields:['boll_pos','stoch_k']},
+];
+
+function fetchComboReadiness(){
+  var SUPA = 'https://hkamukkkkpqhdpcradau.supabase.co';
+  var ANON = 'sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81';
+  var H = {'apikey':ANON,'Authorization':'Bearer '+ANON,'Prefer':'count=exact'};
+  var fieldSet = ['adx14','macd_h','boll_pos','stoch_k','vol_ratio'];
+  var allFetches = [
+    fetch(SUPA+'/rest/v1/ta_cache?select=ticker&limit=1',{headers:H}).then(function(r){
+      return {field:'_total', count:+(r.headers.get('content-range')||'').split('/')[1]||0};
+    })
+  ].concat(fieldSet.map(function(f){
+    return fetch(SUPA+'/rest/v1/ta_cache?select=ticker&'+f+'=not.is.null&limit=1',{headers:H}).then(function(r){
+      return {field:f, count:+(r.headers.get('content-range')||'').split('/')[1]||0};
+    });
+  }));
+  return Promise.all(allFetches).then(function(results){
+    var counts = {};
+    results.forEach(function(r){ counts[r.field] = r.count; });
+    var total = counts['_total'] || 0;
+    var combos = COMBO_REQS.map(function(c){
+      var fields = c.fields.map(function(f){
+        var pct = total > 0 ? Math.round((counts[f]||0)/total*100) : 0;
+        return {field:f, pct:pct};
+      });
+      var ready = fields.every(function(f){ return f.pct >= 30; });
+      return {name:c.name, ready:ready, fields:fields};
+    });
+    return {combos:combos, total:total};
+  });
+}
+
+function previewComboReadiness(){
+  var el = document.getElementById('comboReadinessPreview');
+  el.textContent = 'Loading...'; el.style.color = '#9ab0c4';
+  fetchComboReadiness().then(function(d){
+    var combos=d.combos, total=d.total;
+    if(!total){
+      el.innerHTML = '<span style="color:#e3b341;">Could not read ta_cache row count</span><br>'
+        + '<span style="color:#8899aa;">The count query may have timed out. Try clicking Preview again.</span>';
+      return;
+    }
+    var html = '<span style="color:#9ab0c4;">'+total+' rows in ta_cache</span><br>';
+    combos.forEach(function(c){
+      var dot  = c.ready ? '[YES]' : '[NO] ';
+      var col  = c.ready ? '#3fb950' : '#f85149';
+      var detail = c.fields.map(function(f){
+        var pctCol = f.pct>=80?'#3fb950':f.pct>=30?'#e3b341':'#f85149';
+        return '<span style="color:'+pctCol+';">'+f.field+' '+f.pct+'%</span>';
+      }).join(' <span style="color:#2d3d5a;">|</span> ');
+      html += '<span style="color:'+col+';font-weight:700;font-size:11px;">'+dot+'</span> '
+        + '<span style="color:#cdd9e5;font-weight:600;">'+c.name+'</span> '
+        + '<span style="color:#8899aa;font-size:11px;">('+detail+')</span><br>';
+    });
+    el.innerHTML = html;
+  }).catch(function(e){ el.textContent='Error: '+e.message; el.style.color='#f85149'; });
+}
+
+function sendComboReadiness(){
+  showStatus('comboStatus','Checking combos...','ok');
+  fetchComboReadiness().then(function(d){
+    var combos=d.combos, total=d.total;
+    var ready    = combos.filter(function(c){ return c.ready; });
+    var notReady = combos.filter(function(c){ return !c.ready; });
+    var date = new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    var now  = new Date();
+    var etH  = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'})).getHours();
+    var isWD = [1,2,3,4,5].includes(new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'})).getDay());
+    var nextBatch = 'after next batch run';
+    if(isWD){ if(etH<6) nextBatch='today at 6:00 AM ET'; else if(etH<16) nextBatch='today at 4:30 PM ET'; else nextBatch='tomorrow at 6:00 AM ET'; }
+    var msg = '<b>OptionLens -- Smart Combo Readiness</b> (' + date + ')\n'
+      + '<i>' + total + ' tickers in ta_cache</i>\n\n';
+    if(ready.length){
+      msg += '<b>READY TO RUN (' + ready.length + ')</b>\n';
+      ready.forEach(function(c){
+        msg += '+ ' + c.name + ' -- ' + c.fields.map(function(f){ return f.field+' '+f.pct+'%'; }).join(', ') + '\n';
+      });
+      msg += '\n';
+    } else {
+      msg += 'No combos fully ready yet\n\n';
+    }
+    if(notReady.length){
+      msg += '<b>NOT READY (' + notReady.length + ')</b>\n';
+      notReady.forEach(function(c){
+        var missing = c.fields.filter(function(f){ return f.pct<30; }).map(function(f){ return f.field+' ('+f.pct+'%)'; }).join(', ');
+        msg += '- ' + c.name + ' -- missing: ' + missing + '\n';
+      });
+      msg += '\n';
+      msg += '<i>Missing data will populate: ' + nextBatch + '</i>\n';
+    }
+    msg += '\n<i>OptionLens Batch Monitor</i>';
+    bmSendTg(msg).then(function(ok){
+      showStatus('comboStatus', ok ? 'Sent to all recipients' : 'Send failed -- check Settings', ok?'ok':'err');
+    });
+  }).catch(function(e){ showStatus('comboStatus','Error: '+e.message,'err'); });
+}
+
+window.addEventListener('DOMContentLoaded', function(){ bmLoadIntoForm(); });
+</script>
+
+
+<!-- ══════════════════════════════════════════════════════
+     TELEGRAM ALERTS SECTION
+══════════════════════════════════════════════════════════ -->
+<div style="margin-top:24px;border:1px solid #1c2d45;border-radius:10px;overflow:hidden;">
+
+  <!-- Header -->
+  <div style="background:#090d18;padding:12px 18px;border-bottom:1px solid #1c2538;
+    display:flex;align-items:center;gap:10px;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#2CA5E0">
+      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.008 9.456c-.148.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.332-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.871.765z"/>
+    </svg>
+    <span style="font-size:14px;font-weight:700;color:#cdd9e5;font-family:'JetBrains Mono',monospace;">
+      Telegram Alerts
+    </span>
+    <span style="font-size:12px;color:#9ab0c4;font-family:'JetBrains Mono',monospace;">
+      — Daily Extreme Signals + Smart Combo Readiness
+    </span>
+    <button onclick="openTgCfg()" style="margin-left:auto;background:rgba(44,165,224,0.12);
+      border:1px solid #2CA5E044;border-radius:5px;padding:5px 12px;color:#2CA5E0;
+      font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;cursor:pointer;">
+      ⚙ Settings
+    </button>
+  </div>
+
+  <!-- Config panel (hidden by default) -->
+  <div id="tgCfgPanel" style="display:none;background:#060910;border-bottom:1px solid #1c2538;
+    padding:16px 18px;display:none;flex-direction:column;gap:12px;">
+
+    <div style="background:#0a1628;border:1px solid #1c2d45;border-radius:6px;padding:10px 14px;
+      font-size:12px;color:#9ab0c4;line-height:1.7;font-family:'JetBrains Mono',monospace;">
+      <b style="color:#2CA5E0;">Quick setup:</b> Paste your BotFather token below, send any
+      message to your bot in Telegram, then click <b style="color:#e3b341;">Find My Chat ID</b>.
+    </div>
+
+    <!-- Token -->
+    <div>
+      <label style="font-size:11px;color:#8ab4ce;text-transform:uppercase;letter-spacing:.06em;
+        display:block;margin-bottom:4px;font-family:'JetBrains Mono',monospace;">Bot Token</label>
+      <input id="bmTgToken" type="password" placeholder="1234567890:AAFxxx..."
+        style="width:100%;box-sizing:border-box;background:#0b1020;border:1px solid #1c2538;
+        border-radius:5px;padding:7px 12px;color:#cdd9e5;font-family:'JetBrains Mono',monospace;
+        font-size:13px;outline:none;">
+    </div>
+
+    <!-- Chat ID finder -->
+    <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;">
+        <label style="font-size:11px;color:#8ab4ce;text-transform:uppercase;letter-spacing:.06em;
+          display:block;margin-bottom:4px;font-family:'JetBrains Mono',monospace;">Recipients</label>
+        <div id="bmChatList" style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px;
+          font-family:'JetBrains Mono',monospace;font-size:12px;color:#8899aa;">
+          No recipients added
+        </div>
+        <div style="display:flex;gap:6px;">
+          <input id="bmNewChat" placeholder="Label: ChatID  or just ChatID"
+            style="flex:1;background:#0b1020;border:1px solid #1c2538;border-radius:5px;
+            padding:6px 10px;color:#cdd9e5;font-family:'JetBrains Mono',monospace;font-size:12px;
+            outline:none;" onkeydown="if(event.key==='Enter')bmAddChat()">
+          <button onclick="bmAddChat()" style="background:#2CA5E0;border:none;border-radius:5px;
+            padding:6px 12px;color:#fff;font-family:'JetBrains Mono',monospace;font-size:12px;
+            font-weight:600;cursor:pointer;">+ Add</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;padding-top:20px;">
+        <button onclick="bmFindChatId()" style="background:#e3b341;border:none;border-radius:5px;
+          padding:7px 14px;color:#000;font-family:'JetBrains Mono',monospace;font-size:12px;
+          font-weight:700;cursor:pointer;white-space:nowrap;">🔍 Find My Chat ID</button>
+        <button onclick="bmTestTelegram()" style="background:rgba(44,165,224,0.12);
+          border:1px solid #2CA5E044;border-radius:5px;padding:7px 14px;color:#2CA5E0;
+          font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;
+          cursor:pointer;white-space:nowrap;">📤 Test Message</button>
+        <button onclick="bmSaveTg()" style="background:#3fb950;border:none;border-radius:5px;
+          padding:7px 14px;color:#000;font-family:'JetBrains Mono',monospace;font-size:12px;
+          font-weight:700;cursor:pointer;white-space:nowrap;">💾 Save</button>
+      </div>
+    </div>
+    <div id="bmTgCfgStatus" style="display:none;font-size:12px;padding:6px 10px;
+      border-radius:4px;border-left:3px solid;font-family:'JetBrains Mono',monospace;"></div>
+  </div>
+
+  <!-- Two alert action panels -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">
+
+    <!-- Left: Daily Extreme Signals -->
+    <div style="padding:16px 18px;border-right:1px solid #1c2538;">
+      <div style="font-size:13px;font-weight:700;color:#cdd9e5;margin-bottom:4px;
+        font-family:'JetBrains Mono',monospace;">📊 Daily Extreme Signals</div>
+      <div style="font-size:12px;color:#9ab0c4;margin-bottom:12px;line-height:1.6;
+        font-family:'JetBrains Mono',monospace;">
+        Queries ta_cache for top Strong Sell &amp; Strong Buy tickers and sends them
+        to all configured Telegram recipients.
+      </div>
+      <div id="extremeSignalPreview" style="font-size:12px;color:#8899aa;
+        font-family:'JetBrains Mono',monospace;margin-bottom:12px;min-height:40px;">
+        Click Preview to check current signals
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="previewExtremeSignals()" style="background:#0b1020;
+          border:1px solid #1c2538;border-radius:5px;padding:6px 12px;color:#9ab0c4;
+          font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;">
+          👁 Preview
+        </button>
+        <button onclick="sendExtremeSignals()" style="background:#2CA5E0;border:none;
+          border-radius:5px;padding:6px 14px;color:#fff;font-family:'JetBrains Mono',monospace;
+          font-size:12px;font-weight:600;cursor:pointer;">
+          📤 Send Now
+        </button>
+      </div>
+      <div id="extremeStatus" style="display:none;margin-top:8px;font-size:12px;padding:5px 8px;
+        border-radius:4px;border-left:3px solid;font-family:'JetBrains Mono',monospace;"></div>
+    </div>
+
+    <!-- Right: Smart Combo Readiness -->
+    <div style="padding:16px 18px;">
+      <div style="font-size:13px;font-weight:700;color:#cdd9e5;margin-bottom:4px;
+        font-family:'JetBrains Mono',monospace;">💡 Smart Combo Readiness</div>
+      <div style="font-size:12px;color:#9ab0c4;margin-bottom:12px;line-height:1.6;
+        font-family:'JetBrains Mono',monospace;">
+        Checks which Smart Combos have enough data to run right now and sends you
+        a readiness report.
+      </div>
+      <div id="comboReadinessPreview" style="font-size:12px;color:#8899aa;
+        font-family:'JetBrains Mono',monospace;margin-bottom:12px;min-height:40px;">
+        Click Preview to check combo data readiness
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="previewComboReadiness()" style="background:#0b1020;
+          border:1px solid #1c2538;border-radius:5px;padding:6px 12px;color:#9ab0c4;
+          font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;">
+          👁 Preview
+        </button>
+        <button onclick="sendComboReadiness()" style="background:#e3b341;border:none;
+          border-radius:5px;padding:6px 14px;color:#000;font-family:'JetBrains Mono',monospace;
+          font-size:12px;font-weight:600;cursor:pointer;">
+          📤 Send Now
+        </button>
+      </div>
+      <div id="comboStatus" style="display:none;margin-top:8px;font-size:12px;padding:5px 8px;
+        border-radius:4px;border-left:3px solid;font-family:'JetBrains Mono',monospace;"></div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

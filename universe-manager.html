@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OptionLens — Ticker Universe Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c0e14;--surface:#141722;--border:#1e2333;--accent:#00e5a0;--accent2:#00b8d4;--warn:#ff6b6b;--orange:#ffa94d;--text:#d4d8e8;--dim:#6b7394;--font-mono:'JetBrains Mono',monospace;--font-sans:'DM Sans',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);min-height:100vh;padding:24px}
+.container{max-width:1100px;margin:0 auto}
+h1{font-family:var(--font-mono);font-size:22px;font-weight:600;color:var(--accent);margin-bottom:4px;letter-spacing:-0.5px}
+.subtitle{color:var(--dim);font-size:13px;margin-bottom:20px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px}
+.panel-title{font-family:var(--font-mono);font-size:13px;color:var(--accent2);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+button{font-family:var(--font-mono);font-size:13px;font-weight:600;border:none;padding:10px 22px;border-radius:8px;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--accent);color:#0c0e14}
+.btn-primary:hover{background:#33edba;transform:translateY(-1px)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-secondary{background:var(--border);color:var(--text)}
+.btn-secondary:hover{background:#2a2f44}
+.btn-warn{background:rgba(255,107,107,.15);color:var(--warn);border:1px solid rgba(255,107,107,.2)}
+.btn-warn:hover{background:rgba(255,107,107,.25)}
+.btn-push{background:rgba(0,229,160,.15);color:var(--accent);border:1px solid rgba(0,229,160,.2)}
+.btn-push:hover{background:rgba(0,229,160,.25)}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+label{font-size:13px;color:var(--dim)}
+input[type=number],input[type=text]{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-family:var(--font-mono);font-size:13px;width:100px}
+input[type=text]{width:200px}
+input:focus{outline:none;border-color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:12px 0}
+.stat{background:var(--bg);border-radius:8px;padding:12px 14px;text-align:center}
+.stat .val{font-family:var(--font-mono);font-size:22px;font-weight:600}
+.stat .lbl{font-size:11px;color:var(--dim);margin-top:2px}
+.green{color:var(--accent)}.blue{color:var(--accent2)}.red{color:var(--warn)}.orange{color:var(--orange)}
+#status{font-family:var(--font-mono);font-size:12px;color:var(--dim);margin:12px 0;white-space:pre-wrap;line-height:1.6;max-height:200px;overflow-y:auto}
+.bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin:8px 0}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width .3s;width:0}
+table{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--font-mono)}
+th{text-align:left;padding:8px 10px;color:var(--accent2);border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0;background:var(--surface);cursor:pointer}
+th:hover{color:var(--accent)}
+td{padding:6px 10px;border-bottom:1px solid var(--border)}
+tr:hover td{background:rgba(0,229,160,.03)}
+.table-wrap{max-height:55vh;overflow-y:auto;border-radius:8px;border:1px solid var(--border)}
+.tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-family:var(--font-mono)}
+.tag-cs{background:rgba(0,184,212,.1);color:var(--accent2)}
+.tag-etf{background:rgba(255,169,77,.1);color:var(--orange)}
+.tag-adr{background:rgba(180,130,255,.1);color:#b482ff}
+.tag-cut{background:rgba(255,107,107,.1);color:var(--warn)}
+.tag-keep{background:rgba(0,229,160,.1);color:var(--accent)}
+.hidden{display:none}
+.footer{text-align:center;color:var(--dim);font-size:11px;margin-top:16px}
+.cb{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
+.cb input{accent-color:var(--accent)}
+</style>
+</head><body>
+<div class="container">
+<h1>⚡ Ticker Universe Manager</h1>
+<p class="subtitle">Ranks missing tickers by daily dollar volume → expands ta_cache universe → optionally seeds IV cache</p>
+
+<div class="panel">
+<div class="panel-title">Step 1 — Fetch & Rank</div>
+<p style="font-size:12px;color:var(--dim);margin-bottom:10px">Fetches COMPANY_INFO & ta_cache from Supabase, then pulls Polygon grouped daily bars to rank missing tickers by liquidity.</p>
+<div class="row">
+<label>Top N to add:</label><input type="number" id="topN" value="750" min="100" max="5000" step="50">
+<label style="margin-left:8px">Min $vol/day ($M):</label><input type="number" id="minVol" value="5" min="0" step="1">
+<label style="margin-left:8px">Avg over days:</label><input type="number" id="avgDays" value="3" min="1" max="10" step="1">
+</div>
+<div class="row" style="margin-top:10px">
+<button class="btn-primary" id="runBtn" onclick="runAnalysis()">Fetch & Rank</button>
+<input type="text" id="search" placeholder="Filter tickers..." oninput="renderTable()" style="width:180px">
+</div>
+<div class="bar"><div class="bar-fill" id="bar"></div></div>
+<div id="status">Click Fetch & Rank to start.</div>
+</div>
+
+<div id="resultsPanel" class="hidden">
+<div class="stats">
+<div class="stat"><div class="val blue" id="sExisting">0</div><div class="lbl">Current ta_cache</div></div>
+<div class="stat"><div class="val green" id="sAdding">0</div><div class="lbl">Adding (liquid)</div></div>
+<div class="stat"><div class="val orange" id="sNewTotal">0</div><div class="lbl">New Total</div></div>
+<div class="stat"><div class="val red" id="sDropped">0</div><div class="lbl">Below threshold</div></div>
+</div>
+
+<div class="panel">
+<div class="panel-title">Ranked Missing Tickers (by daily $ volume)</div>
+<div class="row" style="margin-bottom:10px">
+<button class="btn-push" onclick="pushUniverse()">🚀 Push Expanded Universe to Supabase</button>
+<button class="btn-secondary" onclick="exportRanked()">📋 Export Ranked CSV</button>
+</div>
+<div class="table-wrap">
+<table><thead><tr>
+<th onclick="sortBy('rank')">#</th>
+<th onclick="sortBy('ticker')">Ticker</th>
+<th onclick="sortBy('name')">Name</th>
+<th onclick="sortBy('ex')">Exchange</th>
+<th onclick="sortBy('vol')" style="text-align:right">Avg $Vol/day ($M)</th>
+<th onclick="sortBy('status')">Status</th>
+</tr></thead><tbody id="tbody"></tbody></table>
+</div>
+</div>
+</div>
+
+<div class="footer">Reads: Supabase app_config + ta_cache • Polygon grouped daily • Writes: app_config (ta_ticker_universe)</div>
+</div>
+
+<script>
+const SUPA_URL = 'https://hkamukkkkpqhdpcradau.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY';
+const POLY_KEY = 'PgRs52EbNphty72Y45WUqqpk_4UJzwil';
+const POLY_BASE = 'https://api.massive.com';
+const H = {'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY};
+const $ = id => document.getElementById(id);
+
+let ciMap = {};
+let existingTa = new Set();
+let ranked = [];       // [{ticker, name, ex, avgVol, keep}]
+let sortCol = 'vol';
+let sortAsc = false;
+
+function log(msg) {
+  const s = $('status');
+  s.textContent = msg + '\n' + s.textContent.split('\n').slice(0,30).join('\n');
+}
+function progress(pct) { $('bar').style.width = Math.min(100,pct)+'%'; }
+
+async function supaFetch(path) {
+  const r = await fetch(SUPA_URL+'/rest/v1/'+path, {headers:H});
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+function getRecentTradingDays(n) {
+  const days = [];
+  const d = new Date();
+  d.setDate(d.getDate() - 1); // start from yesterday
+  while (days.length < n) {
+    if (d.getDay() !== 0 && d.getDay() !== 6) {
+      days.push(d.toISOString().slice(0,10));
+    }
+    d.setDate(d.getDate() - 1);
+  }
+  return days;
+}
+
+async function fetchGroupedDaily(dateStr) {
+  const url = `${POLY_BASE}/v2/aggs/grouped/locale/us/market/stocks/${dateStr}?adjusted=true&apiKey=${POLY_KEY}`;
+  const r = await fetch(url);
+  if (r.status === 429) {
+    log('⏳ Rate limited — waiting 15s...');
+    await new Promise(ok => setTimeout(ok, 15000));
+    return fetchGroupedDaily(dateStr);
+  }
+  if (!r.ok) throw new Error(`Polygon HTTP ${r.status}`);
+  return r.json();
+}
+
+async function runAnalysis() {
+  $('runBtn').disabled = true;
+  $('resultsPanel').classList.add('hidden');
+  $('status').textContent = '';
+  ciMap = {}; existingTa = new Set(); ranked = [];
+
+  const topN = +$('topN').value || 750;
+  const minVol = +$('minVol').value || 0;
+  const avgDays = Math.min(10, Math.max(1, +$('avgDays').value || 3));
+
+  try {
+    // 1. Fetch COMPANY_INFO
+    log('Fetching COMPANY_INFO from Supabase...');
+    progress(5);
+    const ciRows = await supaFetch('app_config?key=eq.company_info&select=value');
+    if (ciRows.length && ciRows[0].value) {
+      const raw = ciRows[0].value;
+      ciMap = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    }
+    log(`COMPANY_INFO: ${Object.keys(ciMap).length} tickers`);
+    progress(15);
+
+    // 2. Fetch ta_cache tickers
+    log('Fetching ta_cache tickers...');
+    let offset = 0;
+    while (true) {
+      const rows = await supaFetch(`ta_cache?select=ticker&order=ticker.asc&limit=1000&offset=${offset}`);
+      for (const r of rows) if (r.ticker) existingTa.add(r.ticker);
+      if (rows.length < 1000) break;
+      offset += 1000;
+    }
+    log(`ta_cache: ${existingTa.size} existing tickers`);
+    progress(25);
+
+    // 3. Identify missing tickers
+    const allCI = Object.keys(ciMap);
+    const missing = allCI.filter(t => !existingTa.has(t));
+    const missingSet = new Set(missing);
+    log(`Missing from ta_cache: ${missing.length}`);
+    progress(30);
+
+    // 4. Fetch grouped daily bars for N days and average
+    const tradingDays = getRecentTradingDays(avgDays);
+    log(`Fetching volume data for ${avgDays} trading days: ${tradingDays.join(', ')}`);
+
+    const volAccum = {};  // ticker -> {totalDolVol, count}
+
+    for (let i = 0; i < tradingDays.length; i++) {
+      const day = tradingDays[i];
+      log(`Fetching grouped daily: ${day}...`);
+      const data = await fetchGroupedDaily(day);
+      const results = data.results || [];
+      let matched = 0;
+      for (const bar of results) {
+        if (!bar.T || !missingSet.has(bar.T)) continue;
+        if (!bar.v || !bar.vw) continue;
+        const dolVol = (bar.v * bar.vw) / 1e6;
+        if (!volAccum[bar.T]) volAccum[bar.T] = {total:0, count:0};
+        volAccum[bar.T].total += dolVol;
+        volAccum[bar.T].count++;
+        matched++;
+      }
+      log(`  ${day}: ${results.length} bars, ${matched} matched missing tickers`);
+      progress(30 + ((i+1)/tradingDays.length) * 50);
+      if (i < tradingDays.length - 1) await new Promise(ok => setTimeout(ok, 500));
+    }
+
+    // 5. Compute averages and rank
+    log('\nRanking by average daily dollar volume...');
+    const rankList = [];
+    for (const tk of missing) {
+      const v = volAccum[tk];
+      const avgVol = v ? v.total / avgDays : 0;  // use avgDays not v.count so missing days = 0
+      rankList.push({
+        ticker: tk,
+        name: (ciMap[tk]||[])[0] || tk,
+        ex: (ciMap[tk]||[])[1] || '?',
+        avgVol: avgVol,
+        keep: avgVol >= minVol
+      });
+    }
+
+    // Sort by volume descending
+    rankList.sort((a,b) => b.avgVol - a.avgVol);
+
+    // Mark top N as keep (even if above minVol, cap at topN)
+    let keepCount = 0;
+    for (const item of rankList) {
+      if (item.avgVol >= minVol && keepCount < topN) {
+        item.keep = true;
+        keepCount++;
+      } else {
+        item.keep = false;
+      }
+    }
+
+    ranked = rankList;
+    const dropping = rankList.length - keepCount;
+
+    // Stats
+    $('sExisting').textContent = existingTa.size.toLocaleString();
+    $('sAdding').textContent = keepCount.toLocaleString();
+    $('sNewTotal').textContent = (existingTa.size + keepCount).toLocaleString();
+    $('sDropped').textContent = dropping.toLocaleString();
+
+    log(`\n✅ Ranking complete`);
+    log(`Adding: ${keepCount} tickers (≥$${minVol}M/day, capped at ${topN})`);
+    log(`Dropping: ${dropping} tickers (below threshold or over cap)`);
+    log(`New total universe: ${existingTa.size + keepCount}`);
+    progress(95);
+
+    $('resultsPanel').classList.remove('hidden');
+    sortCol = 'vol'; sortAsc = false;
+    renderTable();
+    progress(100);
+
+  } catch(e) {
+    log('❌ Error: ' + e.message);
+  }
+  $('runBtn').disabled = false;
+}
+
+function sortBy(col) {
+  if (sortCol === col) sortAsc = !sortAsc;
+  else { sortCol = col; sortAsc = col === 'ticker' || col === 'name'; }
+  renderTable();
+}
+
+function renderTable() {
+  const filter = $('search').value.toUpperCase().trim();
+  let list = [...ranked];
+  if (filter) list = list.filter(r => r.ticker.includes(filter) || r.name.toUpperCase().includes(filter));
+
+  list.sort((a,b) => {
+    let va, vb;
+    switch(sortCol) {
+      case 'rank': case 'vol': va = a.avgVol; vb = b.avgVol; break;
+      case 'ticker': va = a.ticker; vb = b.ticker; break;
+      case 'name': va = a.name; vb = b.name; break;
+      case 'ex': va = a.ex; vb = b.ex; break;
+      case 'status': va = a.keep?1:0; vb = b.keep?1:0; break;
+      default: va = a.avgVol; vb = b.avgVol;
+    }
+    if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortAsc ? va - vb : vb - va;
+  });
+
+  const html = list.slice(0,2000).map((r, i) => {
+    const exTag = r.ex==='P' ? 'tag-etf' : r.ex==='Q' ? 'tag-cs' : 'tag-adr';
+    const exLabel = r.ex==='Q'?'NASDAQ':r.ex==='N'?'NYSE':r.ex==='P'?'AMEX':r.ex;
+    return `<tr style="${r.keep?'':'opacity:.5'}">
+      <td style="color:var(--dim)">${i+1}</td>
+      <td style="font-weight:600">${r.ticker}</td>
+      <td>${r.name}</td>
+      <td><span class="tag ${exTag}">${exLabel}</span></td>
+      <td style="text-align:right">${r.avgVol > 0 ? r.avgVol.toFixed(1) : '—'}</td>
+      <td><span class="tag ${r.keep?'tag-keep':'tag-cut'}">${r.keep?'ADDING':'BELOW'}</span></td>
+    </tr>`;
+  }).join('');
+
+  $('tbody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:20px">No results</td></tr>';
+  if (list.length > 2000) {
+    $('tbody').innerHTML += `<tr><td colspan="6" style="text-align:center;color:var(--dim)">Showing 2000 of ${list.length}...</td></tr>`;
+  }
+}
+
+async function pushUniverse() {
+  const adding = ranked.filter(r => r.keep).map(r => r.ticker);
+  if (!adding.length) { log('Nothing to push — no tickers marked ADDING'); return; }
+
+  // Build full universe: existing ta_cache + new additions
+  const fullUniverse = [...existingTa, ...adding].sort();
+
+  log(`\n🚀 Pushing expanded universe (${fullUniverse.length} tickers) to Supabase...`);
+
+  try {
+    const r = await fetch(SUPA_URL + '/rest/v1/app_config', {
+      method: 'POST',
+      headers: {
+        ...H,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify({
+        key: 'ta_ticker_universe',
+        value: JSON.stringify(fullUniverse)
+      })
+    });
+    if (!r.ok) {
+      log('❌ Supabase error ' + r.status + ': ' + await r.text());
+      return;
+    }
+    log(`✅ Pushed ta_ticker_universe: ${fullUniverse.length} tickers`);
+    log(`   Existing: ${existingTa.size} + Adding: ${adding.length}`);
+    log(`   Edge Function needs to read from app_config key='ta_ticker_universe'`);
+
+    // Also push optionable subset (stocks + ADRs, not pure bond/commodity ETFs)
+    // For IV cache, we want stocks (Q, N exchanges) and major optionable ETFs
+    const ivUniverse = fullUniverse.filter(tk => {
+      const ci = ciMap[tk];
+      if (!ci) return false;
+      const ex = ci[1];
+      // All stocks (Q, N) are optionable candidates
+      if (ex === 'Q' || ex === 'N') return true;
+      // AMEX (P) = ETFs — include them too as many are optionable
+      if (ex === 'P') return true;
+      return false;
+    });
+
+    const r2 = await fetch(SUPA_URL + '/rest/v1/app_config', {
+      method: 'POST',
+      headers: {
+        ...H,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify({
+        key: 'iv_ticker_universe',
+        value: JSON.stringify(ivUniverse)
+      })
+    });
+    if (!r2.ok) {
+      log('⚠️ IV universe push error ' + r2.status);
+    } else {
+      log(`✅ Pushed iv_ticker_universe: ${ivUniverse.length} tickers`);
+    }
+
+  } catch(e) {
+    log('❌ Push error: ' + e.message);
+  }
+}
+
+function exportRanked() {
+  if (!ranked.length) { log('Run analysis first'); return; }
+  const lines = ['ticker,name,exchange,avg_dol_vol_M,status'];
+  for (const r of ranked) {
+    const name = r.name.replace(/,/g, ';');
+    lines.push(`${r.ticker},${name},${r.ex},${r.avgVol.toFixed(2)},${r.keep?'ADDING':'BELOW'}`);
+  }
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ranked_missing_tickers.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('📋 Exported ranked CSV');
+}
+</script>
+</body></html>

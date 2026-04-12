@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OptionLens Pro</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#080c17">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+--bg:#080c17;--s1:#0b1020;--s2:#0e1525;--s3:#131c30;
+--b1:#1e2d45;--b2:#273d5a;--tx:#e2e8f0;--mu:#8fa4b8;--di:#5c7080;
+--gr:#22c55e;--rd:#ef4444;--bl:#3b82f6;--ac:#2563eb;--pu:#8b5cf6;--am:#f59e0b;
+}
+html,body{height:100%;background:var(--bg);color:var(--tx);font-family:'JetBrains Mono',monospace;}
+.shell{min-height:100vh;display:flex;flex-direction:column;}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;
+background:var(--s1);border-bottom:1px solid var(--b1);}
+.logo{display:flex;align-items:center;gap:10px;}
+.lmark{width:32px;height:32px;background:var(--ac);border-radius:6px;display:flex;
+align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;}
+.logo-text{font-size:16px;font-weight:700;letter-spacing:-0.5px;}
+.logo-text em{font-style:normal;font-weight:300;color:var(--mu);}
+.clock{font-size:12px;color:var(--di);}
+.hero{padding:40px 24px 20px;text-align:center;}
+.hero h1{font-size:24px;font-weight:800;letter-spacing:-0.5px;margin-bottom:6px;
+background:linear-gradient(135deg,#58a6ff,#3fb950);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{font-size:13px;color:var(--di);max-width:500px;margin:0 auto;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;
+padding:10px 24px 40px;max-width:960px;margin:0 auto;width:100%;}
+.card{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:20px;
+cursor:pointer;transition:all .2s;text-decoration:none;color:inherit;position:relative;overflow:hidden;}
+.card:hover{border-color:var(--b2);background:var(--s2);transform:translateY(-2px);
+box-shadow:0 8px 24px rgba(0,0,0,0.3);}
+.card-accent{position:absolute;top:0;left:0;right:0;height:3px;border-radius:10px 10px 0 0;}
+.card-icon{font-size:24px;margin-bottom:10px;}
+.card-title{font-size:14px;font-weight:700;margin-bottom:4px;}
+.card-desc{font-size:11px;color:var(--di);line-height:1.6;}
+.card-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;
+border-radius:10px;margin-top:10px;letter-spacing:0.5px;}
+.section-label{font-size:11px;font-weight:700;color:var(--di);letter-spacing:1px;
+text-transform:uppercase;padding:0 24px;max-width:960px;margin:20px auto 8px;width:100%;}
+.footer{margin-top:auto;padding:16px 24px;text-align:center;font-size:11px;color:var(--di);
+border-top:1px solid var(--b1);background:var(--s1);}
+.status-row{display:flex;gap:8px;justify-content:center;padding:6px 24px;flex-wrap:wrap;}
+.status-chip{font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid var(--b1);
+background:var(--s2);color:var(--mu);}
+.status-chip.live{border-color:#22c55e33;color:#22c55e;background:#05200f;}
+@media(max-width:640px){
+.grid{grid-template-columns:1fr;padding:10px 14px 40px;}
+.hero{padding:24px 14px 12px;}
+.hero h1{font-size:20px;}
+.topbar{padding:12px 14px;}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+<div class="topbar">
+<div class="logo">
+<div class="lmark">◈</div>
+<div class="logo-text">OptionLens <em>Pro</em></div>
+</div>
+<div class="clock" id="clock"></div>
+</div>
+
+<div class="hero">
+<h1>Options Trading Decision Engine</h1>
+<p>Real-time screening, technical analysis, IV analytics, and options strategy recommendations</p>
+</div>
+
+<div class="status-row">
+<span class="status-chip live" id="supaChip">● Supabase Connected</span>
+<span class="status-chip" id="polyChip">Polygon API</span>
+<span class="status-chip" id="tickerChip">— tickers</span>
+</div>
+
+<div class="section-label">TRADING TOOLS</div>
+<div class="grid">
+<a class="card" href="screener.html">
+<div class="card-accent" style="background:linear-gradient(90deg,var(--ac),var(--pu));"></div>
+<div class="card-icon">◈</div>
+<div class="card-title">OptionLens Screener</div>
+<div class="card-desc">1,481 tickers · TA signals · IV Rank · Expected Move · UOA · Options strategy · Interactive charts with prediction cone & WBR</div>
+<div class="card-badge" style="background:#060f25;color:#58a6ff;border:1px solid #2563eb33;">PRIMARY TOOL</div>
+</a>
+
+<a class="card" href="monitor.html">
+<div class="card-accent" style="background:linear-gradient(90deg,#22c55e,#3b82f6);"></div>
+<div class="card-icon">📡</div>
+<div class="card-title">Batch Monitor</div>
+<div class="card-desc">Live dashboard for TA-batch and IV-batch Edge Functions · Health checks · Suspend/resume controls · 7-day run history</div>
+<div class="card-badge" style="background:#052010;color:#22c55e;border:1px solid #22c55e33;">OPERATIONS</div>
+</a>
+</div>
+
+<div class="section-label">DATA MANAGEMENT</div>
+<div class="grid">
+<a class="card" href="companyinfo-builder.html">
+<div class="card-accent" style="background:linear-gradient(90deg,#f59e0b,#ef4444);"></div>
+<div class="card-icon">🏗️</div>
+<div class="card-title">CompanyInfo Builder</div>
+<div class="card-desc">Fetch all active tickers from Polygon · Volume filter · SIC sector mapping · Push to Supabase</div>
+<div class="card-badge" style="background:#1a1200;color:#f59e0b;border:1px solid #f59e0b33;">ADMIN</div>
+</a>
+
+<a class="card" href="universe-manager.html">
+<div class="card-accent" style="background:linear-gradient(90deg,#8b5cf6,#ec4899);"></div>
+<div class="card-icon">🌐</div>
+<div class="card-title">Universe Manager</div>
+<div class="card-desc">Manage TA and IV ticker universes · Rank by dollar volume · Push to app_config</div>
+<div class="card-badge" style="background:#150d28;color:#8b5cf6;border:1px solid #8b5cf633;">ADMIN</div>
+</a>
+
+<a class="card" href="gap-analyzer.html">
+<div class="card-accent" style="background:linear-gradient(90deg,#06b6d4,#3b82f6);"></div>
+<div class="card-icon">🔍</div>
+<div class="card-title">Gap Analyzer</div>
+<div class="card-desc">Compare COMPANY_INFO vs ta_cache vs options_iv_cache · Find missing tickers · Coverage report</div>
+<div class="card-badge" style="background:#071020;color:#06b6d4;border:1px solid #06b6d433;">DIAGNOSTICS</div>
+</a>
+</div>
+
+<div class="footer">
+OptionLens Pro · Built by Franklin · Supabase + Polygon.io
+</div>
+</div>
+
+<script>
+// Clock
+function updateClock(){
+const now = new Date();
+const et = now.toLocaleString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
+const local = now.toLocaleString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
+document.getElementById('clock').textContent = et + ' ET · ' + local + ' Local';
+}
+updateClock(); setInterval(updateClock, 1000);
+
+// Quick Supabase health check
+const SUPA_URL = 'https://hkamukkkkpqhdpcradau.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI5MDMxNjMsImV4cCI6MjA1ODQ3OTE2M30.sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81';
+const H = {'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Accept':'application/json'};
+
+async function checkHealth(){
+try{
+const r = await fetch(SUPA_URL+'/rest/v1/ta_cache?select=ticker&limit=1',{headers:H});
+if(r.ok){
+document.getElementById('supaChip').textContent = '● Supabase Connected';
+document.getElementById('supaChip').className = 'status-chip live';
+}
+// Get ticker count
+const r2 = await fetch(SUPA_URL+'/rest/v1/app_config?key=eq.company_info&select=value',{headers:H});
+if(r2.ok){
+const d = await r2.json();
+if(d?.[0]?.value){
+const ci = typeof d[0].value === 'string' ? JSON.parse(d[0].value) : d[0].value;
+const count = Object.keys(ci).length;
+document.getElementById('tickerChip').textContent = count.toLocaleString() + ' tickers';
+}
+}
+}catch(e){
+document.getElementById('supaChip').textContent = '✗ Supabase Error';
+document.getElementById('supaChip').style.color = '#ef4444';
+}
+}
+checkHealth();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "OptionLens Pro",
+  "short_name": "OptionLens",
+  "description": "Options Trading Decision Engine",
+  "start_url": "/optionlens/",
+  "display": "standalone",
+  "background_color": "#080c17",
+  "theme_color": "#080c17",
+  "icons": []
+}
