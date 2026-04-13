@@ -471,7 +471,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
 
 <script>
 const SUPA='https://hkamukkkkpqhdpcradau.supabase.co';
-const ANON='sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81';
+const ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY';
 const H={'apikey':ANON,'Authorization':'Bearer '+ANON};
 const INDS=['rsi','macd_h','ema9','ema20','ema50','sma50','sma200'];
 const INDS_BARS=['adx14','stoch_k']; // computed from price bars, not Polygon indicator API
@@ -516,7 +516,7 @@ const sb=p=>fetch(SUPA+p,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]);
 
 async function fetchBarsStats(){
   const SUPA_URL2='https://hkamukkkkpqhdpcradau.supabase.co';
-  const ANON2='sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81';
+  const ANON2='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY';
   const H2={'apikey':ANON2,'Authorization':'Bearer '+ANON2};
   // Use LATEST trading_date in ta_cache — NOT today's UTC date.
   // The batch writes trading_date based on ET market close, which can be
@@ -1734,7 +1734,7 @@ function showStatus(elId, msg, type){
 // ── Daily Extreme Signals ─────────────────────────────────────────────────
 function fetchExtremeSignals(){
   var SUPA = 'https://hkamukkkkpqhdpcradau.supabase.co';
-  var ANON = 'sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81';
+  var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY';
   var H = {'apikey':ANON,'Authorization':'Bearer '+ANON};
   return fetch(SUPA+'/rest/v1/ta_cache?select=trading_date&order=trading_date.desc&limit=1',{headers:H})
     .then(function(r){ return r.json(); })
@@ -1791,7 +1791,7 @@ function previewExtremeSignals(){
     if(!shorts.length&&!longs.length){
       // Compute avg RSI and MACD to explain why
       fetch('https://hkamukkkkpqhdpcradau.supabase.co/rest/v1/ta_cache?select=rsi,macd_h&trading_date=eq.'+date+'&rsi=not.is.null&macd_h=not.is.null&limit=200',
-        {headers:{'apikey':'sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81','Authorization':'Bearer sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81'}})
+        {headers:{'apikey':'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY','Authorization':'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY'}})
         .then(function(r){return r.json();})
         .then(function(rows){
           var avgRsi  = rows.length ? (rows.reduce(function(s,r){return s+(r.rsi||0);},0)/rows.length).toFixed(1) : '?';
@@ -1860,7 +1860,7 @@ var COMBO_REQS = [
 
 function fetchComboReadiness(){
   var SUPA = 'https://hkamukkkkpqhdpcradau.supabase.co';
-  var ANON = 'sb_publishable_1YB2hMIUtR46BDNeeI489Q_t9HJC-81';
+  var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY';
   var H = {'apikey':ANON,'Authorization':'Bearer '+ANON,'Prefer':'count=exact'};
   var fieldSet = ['adx14','macd_h','boll_pos','stoch_k','vol_ratio'];
   var allFetches = [

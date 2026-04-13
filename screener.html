@@ -2095,6 +2095,9 @@ if(arrow){ arrow.textContent='▾'; arrow.style.transform='rotate(0deg)'; }
     <button id="cmTTMBtn" onclick="cmToggleTTM(this)"
       style="background:transparent;border:1px solid #2d3d5a;color:#9ab0c4;padding:4px 10px;border-radius:4px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;"
       title="TTM Squeeze: BB inside KC = consolidation (orange dot), fired = momentum (green dot)">TTM</button>
+    <button id="cmTTMFcastBtn" onclick="toggleTTMForecast()"
+      style="background:transparent;border:1px solid #2d3d5a;color:#5c7080;padding:4px 8px;border-radius:4px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;display:none;"
+      title="Expand TTM with 5-bar forecast, support/resistance, and price targets">TTM▶</button>
     <button id="cmVixBtn" onclick="cmToggleVIX(this)"
       style="background:transparent;border:1px solid #2d3d5a;color:#9ab0c4;padding:4px 10px;border-radius:4px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;"
       title="VIX overlay: fire=fear&gt;30, aqua=calm&lt;15">VIX</button>
@@ -2105,6 +2108,11 @@ if(arrow){ arrow.textContent='▾'; arrow.style.transform='rotate(0deg)'; }
       title="Open full options chain analysis for this ticker">
       ◈ Options Analysis
     </button>
+    <button id="cmProBtn" onclick="toggleProChart()"
+      style="background:rgba(255,215,0,0.08);border:1px solid #ffd70044;color:#ffd700;
+        padding:4px 10px;border-radius:4px;cursor:pointer;
+        font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;"
+      title="Toggle Pro Chart rendering">✦ Pro</button>
     <div id="cmMTFBadge" style="display:none;font-family:'JetBrains Mono',monospace; font-size:12px;align-items:center;gap:6px;padding:3px 8px; border-radius:4px;border:1px solid #1c2538;background:rgba(4,7,12,0.8);">
     </div>
     <button onclick="closeChart()" style="background:transparent;border:1px solid #2d3d5a; color:#9ab0c4;padding:4px 10px;border-radius:4px;cursor:pointer; font-family:'JetBrains Mono',monospace;font-size:13px;">✕</button>
@@ -2157,10 +2165,10 @@ if(arrow){ arrow.textContent='▾'; arrow.style.transform='rotate(0deg)'; }
   </div>
   <div id="cmPredBanner" style="display:none;padding:0; border-bottom:2px solid #1c2538;font-family:'JetBrains Mono',monospace; flex-shrink:0;background:#07090e;overflow-y:auto;max-height:220px;">
   </div>
-  <div id="cmCanvasWrap" style="flex:1;position:relative;min-height:0;overflow:hidden;">
+  <div id="cmCanvasWrap" style="flex:1;position:relative;min-height:0;overflow-y:auto;overflow-x:hidden;">
     <div id="cmPredBar" style="display:none;padding:8px 16px; border-bottom:1px solid #1c2538;background:rgba(6,10,18,0.92); flex-wrap:wrap;gap:16px;align-items:center;">
     </div>
-    <canvas id="cmCanvas" style="width:100%;height:100%;display:block;cursor:crosshair;position:absolute;top:0;left:0;"></canvas>
+    <canvas id="cmCanvas" style="width:100%;display:block;cursor:crosshair;"></canvas>
     <div id="cmResizeHandle" style="height:6px;background:linear-gradient(transparent,#1c2538,transparent); cursor:ns-resize;flex-shrink:0;display:flex;align-items:center;justify-content:center;user-select:none;"
       title="Drag to resize chart height">
       <div style="width:40px;height:2px;background:#2d3d5a;border-radius:2px;"></div>
@@ -2200,6 +2208,8 @@ csPatterns:  {engulf:true, hammer:true, doji:true, inside:true, pinbar:true, sta
 ptPatterns:  {triangle:true, wedge:true, channel:true},
 sigFilter: {ES:true, SS:true, MS:true, ML:true, SL:true, EL:true},
 vixBars: [], vixLoading: false,
+proChart: false,
+ttmExpanded: false,
 };
 const POLY_CM = 'https://api.massive.com';
 function openChart(ticker){
@@ -2864,10 +2874,10 @@ const now=new Date(), to=now.toISOString().split('T')[0];
 const cfg={
 D:   {m:1,  s:'day',    from:new Date(now-550*86400000).toISOString().split('T')[0],  lim:400, view:252},
 W:   {m:1,  s:'week',   from:new Date(now-2600*86400000).toISOString().split('T')[0], lim:370, view:104},
-'60': {m:1,   s:'hour',   from:new Date(now-60*86400000).toISOString().split('T')[0],   lim:500, view:120},
-'240':{m:1,   s:'hour',   from:new Date(now-200*86400000).toISOString().split('T')[0],  lim:500, view:130, aggregate4H:true},
-'15':{m:15, s:'minute', from:new Date(now-25*86400000).toISOString().split('T')[0],   lim:500, view:100},
-'5': {m:5,  s:'minute', from:new Date(now-12*86400000).toISOString().split('T')[0],   lim:500, view:80},
+'60': {m:1,   s:'hour',   from:new Date(now-120*86400000).toISOString().split('T')[0],  lim:2000, view:200},
+'240':{m:1,   s:'hour',   from:new Date(now-300*86400000).toISOString().split('T')[0],  lim:2000, view:200, aggregate4H:true},
+'15':{m:15, s:'minute', from:new Date(now-45*86400000).toISOString().split('T')[0],   lim:2000, view:200},
+'5': {m:5,  s:'minute', from:new Date(now-20*86400000).toISOString().split('T')[0],   lim:2000, view:200},
 };
 const c = cfg[CM.tf]||cfg.D;
 try{
@@ -2934,6 +2944,20 @@ btn.style.color       = on ? '#ff9800' : '#5c6d80';
 btn.style.background  = on ? 'rgba(255,152,0,0.10)' : 'transparent';
 btn.style.borderColor = on ? '#ff980055' : '#2d3d5a';
 btn.style.fontWeight  = on ? '700' : '600';
+const fBtn = document.getElementById('cmTTMFcastBtn');
+if(fBtn) fBtn.style.display = on ? 'inline-block' : 'none';
+if(!on) CM.ttmExpanded = false;
+drawCM();
+}
+function toggleTTMForecast(){
+CM.ttmExpanded = !CM.ttmExpanded;
+const btn = document.getElementById('cmTTMFcastBtn');
+if(btn){
+btn.style.color = CM.ttmExpanded ? '#22d3ee' : '#5c7080';
+btn.style.background = CM.ttmExpanded ? 'rgba(34,211,238,0.12)' : 'transparent';
+btn.style.borderColor = CM.ttmExpanded ? '#22d3ee55' : '#2d3d5a';
+btn.textContent = CM.ttmExpanded ? 'TTM▶ ON' : 'TTM▶';
+}
 drawCM();
 }
 function computeTTMSqueeze(allBars){
@@ -2973,7 +2997,7 @@ return {sqz,mom,i};
 function drawTTMSqueeze(ctx,allBars,bars,px,P,W,H,cH){
 if(!CM.inds.ttm||allBars.length<25) return;
 const n=bars.length; if(!n) return;
-const pH = 90;
+const pH = CM.ttmExpanded ? 200 : 90;
 const vixH = (CM.inds.vix && CM.vixBars && CM.vixBars.length) ? 90 : 0;
 const pY = P.t + cH;  // TTM sits directly below price chart
 ctx.fillStyle='rgba(0,0,0,0.32)';
@@ -3009,6 +3033,247 @@ const col=last.sqz?'#ff6b35':'#3fb950';
 ctx.fillStyle=col;ctx.font='bold 9px JetBrains Mono,monospace';
 ctx.textAlign='right';
 ctx.fillText(last.sqz?'● SQUEEZE ON':'○ RELEASED',W-P.r-4,pY+10);
+}
+
+// ═══ TTM 5-BAR FORWARD PREDICTION ═══
+if(CM.ttmExpanded){
+const recent = visData.filter(d=>d!==null).slice(-10);
+if(recent.length >= 5){
+// Forecast zone positioning
+const _fZS = px(n) + 8, _fZE = W - P.r - 10, _fZW = _fZE - _fZS;
+const _pR = _fZW; // reference for scope
+const momVals = recent.map(d=>d.mom);
+const lastMom = momVals[momVals.length-1];
+// Linear regression slope of recent momentum (acceleration)
+const regN = momVals.length;
+const regMx = (regN-1)/2;
+const sxy = momVals.reduce((a,v,i)=>a+(i-regMx)*v, 0);
+const sxx = momVals.reduce((a,_,i)=>a+(i-regMx)**2, 0);
+const momSlope = sxx ? sxy/sxx : 0;
+// Momentum volatility for confidence band
+const momStd = Math.sqrt(momVals.reduce((a,v)=>a+(v-momVals.reduce((s,x)=>s+x,0)/regN)**2,0)/regN);
+// Squeeze trend: count recent squeeze bars
+const sqzCount = recent.filter(d=>d.sqz).length;
+const sqzTrend = sqzCount > regN*0.7 ? 'tightening' : sqzCount < regN*0.3 ? 'released' : 'mixed';
+// Project 5 bars forward
+const PRED_BARS = 5;
+const predMoms = [];
+for(let j=1; j<=PRED_BARS; j++){
+const predicted = lastMom + momSlope * j;
+// Decay toward zero (mean reversion of momentum)
+const decayed = predicted * Math.pow(0.92, j);
+predMoms.push(decayed);
+}
+const predMaxMom = Math.max(maxMom, ...predMoms.map(m=>Math.abs(m)));
+// Separator line
+const sepX = CM.ttmExpanded ? _fZS - 8 : px(n-1) + (px(1)-px(0))*0.5;
+ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+ctx.lineWidth = 0.5; ctx.setLineDash([2,3]);
+ctx.beginPath(); ctx.moveTo(sepX, pY+2); ctx.lineTo(sepX, pY+pH-2); ctx.stroke();
+ctx.setLineDash([]);
+// "FORECAST" label
+ctx.font = 'bold 7px JetBrains Mono,monospace';
+ctx.fillStyle = '#3a5070';
+ctx.textAlign = 'center';
+ctx.fillText('FORECAST', CM.ttmExpanded ? (_fZS+_fZE)/2 : sepX + (px(1)-px(0))*3, pY+pH-4);
+// Cloud (confidence zone)
+const cloudPts = [];
+for(let j=1; j<=PRED_BARS; j++){
+const x = CM.ttmExpanded ? _fZS + (j-0.5)*(_fZW/PRED_BARS) : px(n-1+j);
+const momH = predMoms[j-1] + momStd * j * 0.4;
+const momL = predMoms[j-1] - momStd * j * 0.4;
+const hPxH = (Math.abs(momH)/predMaxMom)*(pH/2-3);
+const hPxL = (Math.abs(momL)/predMaxMom)*(pH/2-3);
+const yH = momH >= 0 ? zeroY - hPxH : zeroY + hPxH;
+const yL = momL >= 0 ? zeroY - hPxL : zeroY + hPxL;
+cloudPts.push({x, yH, yL});
+}
+// Draw cloud
+if(cloudPts.length > 1){
+const cloudCol = predMoms[PRED_BARS-1] >= 0 ? 'rgba(34,211,238,0.08)' : 'rgba(244,114,182,0.08)';
+ctx.fillStyle = cloudCol;
+ctx.beginPath();
+cloudPts.forEach((p,j)=>j?ctx.lineTo(p.x,p.yH):ctx.moveTo(p.x,p.yH));
+[...cloudPts].reverse().forEach(p=>ctx.lineTo(p.x,p.yL));
+ctx.closePath(); ctx.fill();
+}
+// Ghosted bars
+// Ghosted bars with price labels
+const _curPrice = bars[n-1]?.c || 0;
+const _predDays = CM._predResult?.dayByDay || [];
+const _wbrDays = CM._wbrResult?.dayByDay || [];
+const _atrEst = bars.slice(-14).reduce((a,b,i,arr)=>i?a+Math.max(b.h-b.l,Math.abs(b.h-arr[i-1].c),Math.abs(b.l-arr[i-1].c)):a+b.h-b.l, 0)/Math.min(14,bars.length);
+// Expanded: evenly space bars across forecast zone
+const _fBW = CM.ttmExpanded ? Math.min(22, _fZW / PRED_BARS * 0.5) : bW;
+
+predMoms.forEach((mom, j)=>{
+const x = CM.ttmExpanded ? _fZS + (j+0.5)*(_fZW/PRED_BARS) : px(n-1+j+1);
+const hPx = Math.max(1,(Math.abs(mom)/predMaxMom)*(pH/2-3));
+const y = mom >= 0 ? zeroY - hPx : zeroY;
+const fade = Math.max(0.10, 0.40 - j*0.06);
+const prev = j > 0 ? predMoms[j-1] : lastMom;
+const rising = mom > prev;
+ctx.save(); ctx.globalAlpha = fade;
+if(mom >= 0){
+ctx.fillStyle = rising ? '#22d3ee' : '#0e7490';
+} else {
+ctx.fillStyle = rising ? '#9f1239' : '#f472b6';
+}
+ctx.fillRect(x-bW/2, y, bW, hPx);
+ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+ctx.lineWidth = 0.5;
+ctx.strokeRect(x-bW/2, y, bW, hPx);
+ctx.restore();
+
+// Price label for this bar
+let barPrice = null;
+if(_predDays[j]) barPrice = _predDays[j].mid;
+else if(_wbrDays[j]) barPrice = _wbrDays[j].price;
+else barPrice = _curPrice + (mom >= 0 ? 1 : -1) * _atrEst * (j+1) * 0.15;
+
+if(barPrice && _curPrice){
+const priceChg = ((barPrice - _curPrice) / _curPrice * 100).toFixed(1);
+const pCol = barPrice >= _curPrice ? '#22d3ee' : '#f472b6';
+ctx.save();
+ctx.globalAlpha = Math.max(0.25, 0.65 - j*0.08);
+ctx.font = CM.ttmExpanded ? 'bold 10px JetBrains Mono,monospace' : 'bold 8px JetBrains Mono,monospace';
+ctx.textAlign = 'center';
+ctx.fillStyle = pCol;
+const labelY = mom >= 0 ? y - (CM.ttmExpanded?8:4) : y + hPx + (CM.ttmExpanded?14:10);
+ctx.fillText('$'+barPrice.toFixed(barPrice<10?2:barPrice<100?1:0), x, labelY);
+ctx.fillStyle = '#64748b';
+ctx.font = CM.ttmExpanded ? '9px JetBrains Mono,monospace' : '7px JetBrains Mono,monospace';
+ctx.fillText((priceChg>=0?'+':'')+priceChg+'%', x, labelY + (mom>=0? (CM.ttmExpanded?-12:-9) : (CM.ttmExpanded?12:9)));
+
+// Date label (expanded only)
+if(CM.ttmExpanded){
+const isD = CM.tf==='D'||CM.tf==='W';
+const msPerBar = isD ? 86400000*(CM.tf==='W'?7:1) : parseInt(CM.tf||'60')*60000;
+const lastT = bars[n-1]?.t || Date.now();
+// Skip weekends for daily
+let futD;
+if(isD){
+const _holSet = new Set(['2025-01-01','2025-01-20','2025-02-17','2025-04-18','2025-05-26','2025-06-19','2025-07-04','2025-09-01','2025-11-27','2025-12-25','2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25','2026-06-19','2026-07-03','2026-09-07','2026-11-26','2026-12-25']);
+const _d = new Date(lastT);
+let cnt = 0;
+while(cnt < j+1){ _d.setDate(_d.getDate()+1); const dw=_d.getDay(); if(dw>=1&&dw<=5&&!_holSet.has(_d.toISOString().slice(0,10))) cnt++; }
+futD = _d;
+} else {
+futD = new Date(lastT + msPerBar*(j+1));
+}
+const dateLbl = isD ? futD.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
+: futD.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+ctx.fillStyle = '#3d5570';
+ctx.font = '8px JetBrains Mono,monospace';
+ctx.fillText(dateLbl, x, zeroY + (mom>=0 ? 14 : -8));
+}
+ctx.restore();
+}
+
+// Predicted dot (squeeze state)
+ctx.save();
+ctx.globalAlpha = Math.max(0.15, 0.50 - j*0.08);
+const willFire = sqzTrend === 'tightening' && Math.abs(mom) > Math.abs(lastMom) * 0.8;
+const dotCol = sqzTrend === 'released' ? '#22d3ee' : willFire ? '#22d3ee' : '#ff6b35';
+ctx.fillStyle = dotCol;
+ctx.beginPath(); ctx.arc(x, zeroY, 2.5, 0, Math.PI*2); ctx.fill();
+ctx.shadowColor = dotCol; ctx.shadowBlur = 4;
+ctx.beginPath(); ctx.arc(x, zeroY, 1.5, 0, Math.PI*2); ctx.fill();
+ctx.shadowBlur = 0;
+ctx.restore();
+});
+// Direction arrow at end with target price
+const finalMom = predMoms[PRED_BARS-1];
+const arrowX = CM.ttmExpanded ? _fZE + 10 : px(n-1+PRED_BARS+0.5);
+const arrowY = finalMom >= 0 ? zeroY - 15 : zeroY + 15;
+
+// ═══ SUPPORT / RESISTANCE LINES (expanded only) ═══
+if(CM.ttmExpanded && _curPrice > 0){
+// Compute S/R from recent swing highs/lows
+const lookback = Math.min(40, bars.length);
+const recentBars = bars.slice(-lookback);
+const swingH = [], swingL = [];
+for(let k=2; k<recentBars.length-2; k++){
+if(recentBars[k].h > recentBars[k-1].h && recentBars[k].h > recentBars[k-2].h &&
+   recentBars[k].h > recentBars[k+1].h && recentBars[k].h > recentBars[k+2].h)
+   swingH.push(recentBars[k].h);
+if(recentBars[k].l < recentBars[k-1].l && recentBars[k].l < recentBars[k-2].l &&
+   recentBars[k].l < recentBars[k+1].l && recentBars[k].l < recentBars[k+2].l)
+   swingL.push(recentBars[k].l);
+}
+// Also use pred cone H/L if available
+const predH = CM._predResult?.priceHigh;
+const predL = CM._predResult?.priceLow;
+// Find nearest resistance above and support below current price
+const resistance = [...swingH, ...(predH?[predH]:[])].filter(v=>v>_curPrice).sort((a,b)=>a-b)[0];
+const support = [...swingL, ...(predL?[predL]:[])].filter(v=>v<_curPrice).sort((a,b)=>b-a)[0];
+
+const fcastStartX = CM.ttmExpanded ? _fZS - 4 : px(n-0.5);
+const fcastEndX = CM.ttmExpanded ? _fZE + 4 : px(n-1+PRED_BARS+1);
+
+ctx.save();
+ctx.font = 'bold 9px JetBrains Mono,monospace';
+
+// Resistance line
+if(resistance){
+const resY = pY + 14;
+ctx.strokeStyle = '#f472b688';ctx.lineWidth = 1;ctx.setLineDash([6,3]);
+ctx.beginPath();ctx.moveTo(fcastStartX, resY);ctx.lineTo(fcastEndX, resY);ctx.stroke();
+ctx.setLineDash([]);
+// Label
+ctx.fillStyle = 'rgba(10,15,30,0.85)';
+const rLbl = 'R $'+resistance.toFixed(resistance<100?1:0);
+const rW = ctx.measureText(rLbl).width + 10;
+ctx.fillRect(fcastEndX+2, resY-8, rW, 16);
+ctx.strokeStyle = '#f472b644';ctx.lineWidth = 0.5;ctx.strokeRect(fcastEndX+2, resY-8, rW, 16);
+ctx.fillStyle = '#f472b6';ctx.textAlign = 'left';
+ctx.fillText(rLbl, fcastEndX+6, resY+4);
+}
+
+// Support line — at bottom of TTM panel
+if(support){
+const supY = pY + pH - 14;
+ctx.strokeStyle = '#22d3ee88';ctx.lineWidth = 1;ctx.setLineDash([6,3]);
+ctx.beginPath();ctx.moveTo(fcastStartX, supY);ctx.lineTo(fcastEndX, supY);ctx.stroke();
+ctx.setLineDash([]);
+// Label
+ctx.fillStyle = 'rgba(10,15,30,0.85)';
+const sLbl = 'S $'+support.toFixed(support<100?1:0);
+const sW = ctx.measureText(sLbl).width + 10;
+ctx.fillRect(fcastEndX+2, supY-8, sW, 16);
+ctx.strokeStyle = '#22d3ee44';ctx.lineWidth = 0.5;ctx.strokeRect(fcastEndX+2, supY-8, sW, 16);
+ctx.fillStyle = '#22d3ee';ctx.textAlign = 'left';
+ctx.fillText(sLbl, fcastEndX+6, supY+4);
+}
+
+// Current price reference line
+ctx.strokeStyle = '#ffffff22';ctx.lineWidth = 0.5;ctx.setLineDash([2,4]);
+ctx.beginPath();ctx.moveTo(fcastStartX, zeroY);ctx.lineTo(fcastEndX, zeroY);ctx.stroke();
+ctx.setLineDash([]);
+ctx.fillStyle = '#64748b';ctx.textAlign = 'left';ctx.font = '8px JetBrains Mono,monospace';
+ctx.fillText('$'+_curPrice.toFixed(_curPrice<100?1:0), fcastEndX+4, zeroY+3);
+
+ctx.restore();
+}
+let _targetPrice = null;
+if(_predDays[PRED_BARS-1]) _targetPrice = _predDays[PRED_BARS-1].mid;
+else if(_wbrDays[PRED_BARS-1]) _targetPrice = _wbrDays[PRED_BARS-1].price;
+else _targetPrice = _curPrice + (finalMom >= 0 ? 1 : -1) * _atrEst * PRED_BARS * 0.15;
+ctx.save();
+ctx.globalAlpha = 0.6;
+ctx.fillStyle = finalMom >= 0 ? '#22d3ee' : '#f472b6';
+ctx.font = 'bold 14px JetBrains Mono,monospace';
+ctx.textAlign = 'center';
+ctx.fillText(finalMom >= 0 ? '▲' : '▼', arrowX, arrowY+5);
+ctx.font = 'bold 9px JetBrains Mono,monospace';
+if(_targetPrice){
+ctx.fillText('$'+_targetPrice.toFixed(_targetPrice<10?2:_targetPrice<100?1:0), arrowX, arrowY + (finalMom>=0?-8:18));
+const tChg = ((_targetPrice - _curPrice) / _curPrice * 100).toFixed(1);
+ctx.fillStyle = '#64748b'; ctx.font = '8px JetBrains Mono,monospace';
+ctx.fillText((tChg>=0?'+':'')+tChg+'%', arrowX, arrowY + (finalMom>=0?-18:28));
+}
+ctx.restore();
+}
 }
 }
 function computeVolumeProfile(bars){
@@ -3872,6 +4137,7 @@ btn.style.fontWeight = on ? '700' : '600';
 drawCM();
 }
 function drawCM(){
+if(CM.proChart){ drawCMPro(); return; }
 const canvas = document.getElementById('cmCanvas');
 if(!canvas||!CM.bars.length) return;
 CM.vStart = Math.max(0, Math.min(CM.vStart, CM.bars.length-5));
@@ -3890,26 +4156,37 @@ const ctx = canvas.getContext('2d');
 ctx.scale(dpr, dpr);
 const _ttmOn = CM.inds.ttm;
 const _vixOn = CM.inds.vix && CM.vixBars && CM.vixBars.length;
-const SUB_H  = 90;   // fixed px per sub-panel (TTM, VIX)
+const SUB_H  = CM.ttmExpanded && CM.inds.ttm ? 200 : 90;
 const _subCount = (_ttmOn ? 1 : 0) + (_vixOn ? 1 : 0);
 const _pillsNeeded = CM.inds.pred || CM.inds.wbr;
 const _pillZoneH = _pillsNeeded ? Math.max(90, _subCount * SUB_H) : _subCount * SUB_H;
 const _subTotalH = _pillZoneH;
-const P = {t:30, r:96, b: 28 + _subTotalH, l:72};
-const cW = W-P.l-P.r;
-const cH = H-P.t-P.b;
+// Chart area uses full container minus small fixed margins
+// Sub-panels extend the canvas below
+const P = {t:30, r:96, b:28, l:72};
+const cH_raw = H - P.t - P.b;
+const cH = Math.max(200, cH_raw);
+const cW = W - P.l - P.r;
+// Extend canvas for sub-panels without compressing chart
+const _totalH = P.t + cH + P.b + _subTotalH;
+canvas.width = W * dpr;
+canvas.height = _totalH * dpr;
+canvas.style.height = _totalH + 'px';
+canvas.style.width = W + 'px';
+ctx.setTransform(1,0,0,1,0,0);
+ctx.scale(dpr, dpr);
 if(cW<=0||cH<=0) return;
 const rawPrices = bars.flatMap(b=>[b.h,b.l]);
 let lo = Math.min(...rawPrices), hi = Math.max(...rawPrices);
 const pad = (hi-lo)*0.09;
 lo -= pad; hi += pad;
 const py  = v => P.t + cH*(1-(v-lo)/(hi-lo));
-const _predReserve = (CM.inds.pred || CM.inds.wbr) ? Math.max(12, Math.floor(n * 0.28)) : 0;
+const _predReserve = (CM.inds.pred || CM.inds.wbr || CM.ttmExpanded) ? Math.max(12, Math.floor(n * 0.28)) : 0;
 const _displayN = n + _predReserve;
 const px  = i => P.l + (i+0.5)*(cW/_displayN);
 const bw  = Math.min(48, Math.max(1, cW/_displayN*0.65));
 ctx.fillStyle = '#06090f';
-ctx.fillRect(0,0,W,H);
+ctx.fillRect(0,0,W,_totalH);
 ctx.save();
 ctx.beginPath();
 ctx.rect(0, 0, W, P.t + cH + 18);  // 18px extra — allows acc/dist triangles below candles
@@ -4944,6 +5221,685 @@ requestAnimationFrame(updatePredBanner);
 updateMTFBadge();
 updatePredBar();
 }
+function toggleProChart(){
+CM.proChart = !CM.proChart;
+const btn = document.getElementById('cmProBtn');
+if(btn){
+btn.style.background = CM.proChart ? 'rgba(255,215,0,0.25)' : 'rgba(255,215,0,0.08)';
+btn.style.borderColor = CM.proChart ? '#ffd700' : '#ffd70044';
+btn.textContent = CM.proChart ? '✦ Pro ON' : '✦ Pro';
+}
+drawCM();
+}
+function niceStep(range, tgt){
+const r=range/tgt,m=Math.pow(10,Math.floor(Math.log10(r))),n=r/m;
+return (n<=1.5?1:n<=3?2:n<=7?5:10)*m;
+}
+function drawCMPro(){
+const canvas = document.getElementById('cmCanvas');
+if(!canvas||!CM.bars.length) return;
+CM.vStart = Math.max(0, Math.min(CM.vStart, CM.bars.length-5));
+CM.vEnd = Math.max(CM.vStart+5, Math.min(CM.vEnd, CM.bars.length));
+const bars = CM.bars.slice(CM.vStart, CM.vEnd);
+const n = bars.length, allBars = CM.bars;
+const dpr = window.devicePixelRatio||1;
+let _dim = canvas;
+while(_dim&&(_dim.clientWidth<=0||_dim.clientHeight<=0)) _dim=_dim.parentElement;
+const W = _dim?_dim.clientWidth:800, H = _dim?_dim.clientHeight:500;
+if(W<=0||H<=0) return;
+canvas.width=W*dpr; canvas.height=H*dpr;
+const ctx = canvas.getContext('2d');
+ctx.scale(dpr,dpr);
+const isDaily = CM.tf==='D'||CM.tf==='W';
+
+// ═══ LAYOUT — volume inline, TTM/VIX as sub-panels ═══
+const HDR_H = 60;
+const _ttmOn = CM.inds.ttm;
+const _vixOn = CM.inds.vix && CM.vixBars && CM.vixBars.length;
+const SUB_H = CM.ttmExpanded ? 200 : 70;
+const _subCount = (_ttmOn?1:0)+(_vixOn?1:0);
+const _pillsNeeded = CM.inds.pred || CM.inds.wbr;
+const _subTotalH = Math.max(_pillsNeeded?80:0, (_ttmOn?(CM.ttmExpanded?200:70):0)+(_vixOn?70:0));
+// Chart area uses full container minus small margins; canvas extends for sub-panels
+const P = {t:HDR_H, r:85, b:28, l:64};
+const cW = W-P.l-P.r;
+const cH = Math.max(200, H - P.t - P.b);
+const _totalH = P.t + cH + P.b + _subTotalH;
+canvas.width = W * dpr;
+canvas.height = _totalH * dpr;
+canvas.style.height = _totalH + 'px';
+canvas.style.width = W + 'px';
+ctx.setTransform(1,0,0,1,0,0);
+ctx.scale(dpr, dpr);
+if(cW<=0||cH<=0) return;
+
+// ═══ PRICE RANGE ═══
+const rp = bars.flatMap(b=>[b.h,b.l]);
+let lo=Math.min(...rp), hi=Math.max(...rp);
+const pad=(hi-lo)*0.06; lo-=pad; hi+=pad;
+const py=v=>P.t+cH*(1-(v-lo)/(hi-lo));
+const _pR=(CM.inds.pred||CM.inds.wbr||CM.ttmExpanded)?Math.max(8,Math.floor(n*0.22)):0;
+const _dN=n+_pR;
+const px=i=>P.l+(i+0.5)*(cW/_dN);
+const bw=Math.min(28,Math.max(1.5,cW/_dN*0.72));
+
+// ═══ BACKGROUND ═══
+ctx.fillStyle='#0a0f1e';
+ctx.fillRect(0,0,W,_totalH);
+// Dot grid
+ctx.fillStyle='rgba(30,50,80,0.25)';
+for(let gx=P.l;gx<W-P.r;gx+=40){
+for(let gy=P.t;gy<P.t+cH;gy+=40){
+ctx.beginPath();ctx.arc(gx,gy,0.6,0,Math.PI*2);ctx.fill();
+}}
+
+// ═══ HEADER ═══
+ctx.fillStyle='#0d1326';ctx.fillRect(0,0,W,HDR_H);
+const hbG=ctx.createLinearGradient(0,0,W,0);
+hbG.addColorStop(0,'rgba(34,211,238,0)');hbG.addColorStop(0.3,'rgba(34,211,238,0.4)');
+hbG.addColorStop(0.7,'rgba(34,211,238,0.4)');hbG.addColorStop(1,'rgba(34,211,238,0)');
+ctx.strokeStyle=hbG;ctx.lineWidth=1;
+ctx.beginPath();ctx.moveTo(0,HDR_H);ctx.lineTo(W,HDR_H);ctx.stroke();
+ctx.font='bold 22px JetBrains Mono,monospace';ctx.fillStyle='#ffffff';ctx.textAlign='left';
+ctx.fillText(CM.ticker||'',16,30);
+const tfL=CM.tf==='240'?'4H':CM.tf;
+const tfX=20+ctx.measureText(CM.ticker||'').width+12;
+ctx.font='bold 10px JetBrains Mono,monospace';
+ctx.fillStyle='#22d3ee';ctx.fillRect(tfX,14,ctx.measureText(tfL).width+14,16);
+ctx.fillStyle='#0a0f1e';ctx.fillText(tfL,tfX+6,27);
+// OHLCV
+const lb=bars[n-1];
+ctx.font='12px JetBrains Mono,monospace';
+let ox=16,oy=50;
+[{l:'O',v:lb.o,c:'#94a3b8'},{l:'H',v:lb.h,c:'#22d3ee'},{l:'L',v:lb.l,c:'#f472b6'},{l:'C',v:lb.c,c:'#ffffff'}].forEach(item=>{
+ctx.fillStyle='#475569';ctx.fillText(item.l,ox,oy);ox+=12;
+ctx.fillStyle=item.c;const vs='$'+item.v.toFixed(2);ctx.fillText(vs,ox,oy);ox+=ctx.measureText(vs).width+18;
+});
+ctx.fillStyle='#475569';ctx.fillText('Vol',ox,oy);ox+=26;
+ctx.fillStyle='#c084fc';ctx.fillText((lb.v||0).toLocaleString(),ox,oy);ox+=ctx.measureText((lb.v||0).toLocaleString()).width+18;
+const dayChg=n>1?((lb.c-bars[n-2].c)/bars[n-2].c*100):0;
+const chgLbl=(dayChg>=0?'+':'')+dayChg.toFixed(2)+'%';
+ctx.font='bold 13px JetBrains Mono,monospace';
+ctx.fillStyle=dayChg>=0?'#22d3ee':'#f472b6';
+ctx.fillText(chgLbl,ox,oy);
+
+// ═══ PRICE GRID ═══
+const gStep=niceStep(hi-lo,7);
+ctx.font='10px JetBrains Mono,monospace';ctx.textAlign='right';
+let bandIdx=0;
+for(let p=Math.ceil(lo/gStep)*gStep;p<hi;p+=gStep){
+const y=py(p);if(y<P.t+5||y>P.t+cH-5) continue;
+if(bandIdx%2===0){ctx.fillStyle='rgba(15,22,40,0.35)';const y2=py(p+gStep);ctx.fillRect(P.l,y,cW,Math.abs(y2-y));}
+bandIdx++;
+ctx.strokeStyle='rgba(40,60,90,0.25)';ctx.lineWidth=0.5;
+ctx.beginPath();ctx.moveTo(P.l,y);ctx.lineTo(W-P.r,y);ctx.stroke();
+ctx.fillStyle='#3d5570';ctx.fillText('$'+p.toFixed(p<10?2:p<100?1:0),P.l-8,y+3);
+}
+
+// ═══ CLIP for chart area ═══
+ctx.save();
+ctx.beginPath();ctx.rect(P.l-2,P.t,cW+4,cH+18);ctx.clip();
+
+// ═══ VOLUME OVERLAY — inline at bottom of chart ═══
+{
+const maxV=Math.max(...bars.map(b=>b.v||0),1);
+const volH=cH*0.18; // 18% of chart height
+bars.forEach((b,i)=>{
+const x=px(i),vol=b.v||0,h=Math.max(1,(vol/maxV)*volH);
+const bull=b.c>=b.o;
+const vG=ctx.createLinearGradient(0,P.t+cH-h,0,P.t+cH);
+if(bull){vG.addColorStop(0,'rgba(34,211,238,0.15)');vG.addColorStop(1,'rgba(34,211,238,0.03)');}
+else{vG.addColorStop(0,'rgba(244,114,182,0.15)');vG.addColorStop(1,'rgba(244,114,182,0.03)');}
+ctx.fillStyle=vG;ctx.fillRect(x-bw/2,P.t+cH-h,bw,h);
+});
+}
+
+// ═══ AREA FILL under close ═══
+ctx.save();
+const aG=ctx.createLinearGradient(0,P.t,0,P.t+cH);
+aG.addColorStop(0,'rgba(34,211,238,0.06)');aG.addColorStop(0.7,'rgba(34,211,238,0.01)');aG.addColorStop(1,'rgba(34,211,238,0)');
+ctx.fillStyle=aG;ctx.beginPath();ctx.moveTo(px(0),P.t+cH);
+bars.forEach((b,i)=>ctx.lineTo(px(i),py(b.c)));
+ctx.lineTo(px(n-1),P.t+cH);ctx.closePath();ctx.fill();ctx.restore();
+
+// ═══ BB ═══
+if(CM.inds.bb){
+const bbP=20,src=allBars.slice(0,CM.vEnd);
+if(src.length>=bbP){
+const uP=[],lP=[];
+for(let i=0;i<n;i++){
+const si=CM.vStart+i;if(si<bbP-1)continue;
+const sl=allBars.slice(si-bbP+1,si+1);
+const m=sl.reduce((a,b)=>a+b.c,0)/bbP;
+const sd=Math.sqrt(sl.reduce((a,b)=>a+(b.c-m)**2,0)/bbP);
+uP.push({x:px(i),y:py(m+2*sd)});lP.push({x:px(i),y:py(m-2*sd)});
+}
+if(uP.length>1){
+ctx.save();ctx.beginPath();
+uP.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
+[...lP].reverse().forEach(p=>ctx.lineTo(p.x,p.y));ctx.closePath();
+ctx.fillStyle='rgba(139,92,246,0.04)';ctx.fill();
+ctx.globalAlpha=0.25;ctx.strokeStyle='#8b5cf6';ctx.lineWidth=0.6;
+ctx.beginPath();uP.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();
+ctx.beginPath();lP.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();
+ctx.restore();
+}
+}
+}
+
+// ═══ MAs — neon glow ═══
+const drawMA=(key,period,color)=>{
+if(!CM.inds[key]) return;
+const src=allBars.slice(0,CM.vEnd);if(src.length<period) return;
+const pts=[];
+for(let i=0;i<n;i++){
+const si=CM.vStart+i;if(si<period-1)continue;
+let v;
+if(key.startsWith('sma')){const sl=allBars.slice(si-period+1,si+1);v=sl.reduce((a,b)=>a+b.c,0)/sl.length;}
+else{const k=2/(period+1);let e=allBars.slice(0,period).reduce((a,b)=>a+b.c,0)/period;for(let j=period;j<=si;j++)e=allBars[j].c*k+e*(1-k);v=e;}
+pts.push({x:px(i),y:py(v)});
+}
+if(!pts.length)return;
+ctx.save();
+ctx.shadowColor=color;ctx.shadowBlur=10;ctx.globalAlpha=0.12;ctx.strokeStyle=color;ctx.lineWidth=4;
+ctx.beginPath();pts.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();
+ctx.shadowBlur=0;ctx.globalAlpha=0.85;ctx.lineWidth=1.3;
+ctx.beginPath();pts.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();
+ctx.restore();
+};
+drawMA('sma50',50,'#c084fc');drawMA('sma200',200,'#f472b6');drawMA('sma20',20,'#fbbf24');
+
+// ═══ ORDER BLOCKS — Pro zones with labels ═══
+if(CM.inds.ob){
+const OBs = typeof computeOrderBlocks==='function' ? computeOrderBlocks(CM.bars) : [];
+OBs.forEach(ob=>{
+if(ob.hi<lo||ob.lo>hi) return;
+const yHi=Math.max(P.t,py(ob.hi)),yLo=Math.min(P.t+cH,py(ob.lo));
+const boxH=Math.max(4,yLo-yHi);
+const isBull=ob.type==='bull';
+const col=isBull?'#22d3ee':'#f472b6';
+const alpha=ob.used?0.12:0.25;
+ctx.save();
+// Gradient zone fill
+const obGrad=ctx.createLinearGradient(P.l,0,P.l+cW*0.3,0);
+obGrad.addColorStop(0,isBull?'rgba(34,211,238,'+alpha+')':'rgba(244,114,182,'+alpha+')');
+obGrad.addColorStop(1,'rgba(0,0,0,0)');
+ctx.fillStyle=obGrad;
+ctx.fillRect(P.l,yHi,cW,boxH);
+// Solid left bar (5px wide, strong color)
+ctx.fillStyle=col;
+ctx.globalAlpha=ob.used?0.3:0.7;
+ctx.fillRect(P.l,yHi,4,boxH);
+// Top border line
+ctx.globalAlpha=ob.used?0.2:0.45;
+ctx.strokeStyle=col;ctx.lineWidth=1;
+ctx.beginPath();ctx.moveTo(P.l+4,yHi);ctx.lineTo(P.l+cW*0.4,yHi);ctx.stroke();
+// Bottom dashed
+ctx.lineWidth=0.5;ctx.setLineDash([3,4]);
+ctx.beginPath();ctx.moveTo(P.l+4,yLo);ctx.lineTo(P.l+cW*0.4,yLo);ctx.stroke();
+ctx.setLineDash([]);
+// Label
+ctx.globalAlpha=ob.used?0.4:0.8;
+ctx.font='bold 9px JetBrains Mono,monospace';ctx.textAlign='left';
+ctx.fillStyle=col;
+const obLbl=(isBull?'▲ DEMAND':'▼ SUPPLY')+' $'+ob.lo.toFixed(1)+'–'+ob.hi.toFixed(1);
+ctx.fillText(obLbl,P.l+8,(yHi+yLo)/2+3);
+if(ob.used){ctx.fillStyle='#64748b';ctx.font='8px JetBrains Mono,monospace';ctx.fillText('(tested)',P.l+8,(yHi+yLo)/2+14);}
+ctx.restore();
+});
+}
+
+// ═══ CANDLESTICKS — hollow bull, filled bear ═══
+const _csOn = CM.inds.cstruct; // dim candle structure when patterns on
+bars.forEach((b,i)=>{
+const x=px(i),bull=b.c>=b.o;
+const bTop=py(Math.max(b.o,b.c)),bBot=py(Math.min(b.o,b.c));
+const bH=Math.max(1,bBot-bTop);
+const wTop=py(b.h),wBot=py(b.l);
+const bullCol='#22d3ee',bearCol='#f472b6';
+// Wick
+ctx.strokeStyle=bull?bullCol+'99':bearCol+'99';ctx.lineWidth=Math.max(0.8,bw*0.1);
+ctx.beginPath();ctx.moveTo(x,wTop);ctx.lineTo(x,bTop);ctx.moveTo(x,bBot);ctx.lineTo(x,wBot);ctx.stroke();
+if(bull){
+ctx.strokeStyle=bullCol;ctx.lineWidth=1.2;ctx.strokeRect(x-bw/2,bTop,bw,bH);
+ctx.fillStyle='rgba(34,211,238,0.06)';ctx.fillRect(x-bw/2+1,bTop+1,bw-2,bH-2);
+} else {
+const bG=ctx.createLinearGradient(0,bTop,0,bBot);
+bG.addColorStop(0,'#c2185b');bG.addColorStop(1,'#880e4f');
+ctx.fillStyle=bG;ctx.fillRect(x-bw/2,bTop,bw,bH);
+ctx.strokeStyle=bearCol+'88';ctx.lineWidth=0.5;ctx.strokeRect(x-bw/2,bTop,bw,bH);
+}
+if(bH>4){ctx.save();ctx.globalAlpha=0.18;
+const sh=ctx.createLinearGradient(0,bTop,0,bTop+bH*0.3);
+sh.addColorStop(0,bull?bullCol:bearCol);sh.addColorStop(1,'transparent');
+ctx.fillStyle=sh;ctx.fillRect(x-bw/2+1,bTop+0.5,bw-2,bH*0.3);ctx.restore();}
+});
+
+// ═══ CANDLE STRUCTURE — Pro clean badges ═══
+if(CM.inds.cstruct){
+const pats=CM.csPatterns||{engulf:true,hammer:true,doji:true,inside:true,pinbar:true,star:true};
+bars.forEach((b,i)=>{
+if(i<1) return;
+const prev=bars[i-1],x=px(i);
+const body=Math.abs(b.c-b.o),rng=b.h-b.l||0.001;
+const pBody=Math.abs(prev.c-prev.o);
+const uwick=b.h-Math.max(b.o,b.c),lwick=Math.min(b.o,b.c)-b.l;
+ctx.save();ctx.font='bold 8px JetBrains Mono,monospace';ctx.textAlign='center';
+if(pats.engulf){
+const bullE=b.c>b.o&&prev.c<prev.o&&b.o<prev.c&&b.c>prev.o&&body>pBody*0.9;
+const bearE=b.c<b.o&&prev.c>prev.o&&b.o>prev.c&&b.c<prev.o&&body>pBody*0.9;
+if(bullE||bearE){
+const col=bullE?'#22d3ee':'#f472b6';
+const y=bullE?py(b.l)+12:py(b.h)-8;
+ctx.globalAlpha=0.8;ctx.fillStyle='rgba(10,15,30,0.85)';
+const tw=ctx.measureText(bullE?'ENG▲':'ENG▼').width+8;
+ctx.fillRect(x-tw/2,y-9,tw,14);ctx.strokeStyle=col+'66';ctx.lineWidth=0.5;ctx.strokeRect(x-tw/2,y-9,tw,14);
+ctx.fillStyle=col;ctx.fillText(bullE?'ENG▲':'ENG▼',x,y+1);
+}
+}
+if(pats.doji&&body<rng*0.10){
+const y=py((b.o+b.c)/2);
+ctx.globalAlpha=0.7;ctx.fillStyle='rgba(10,15,30,0.85)';ctx.fillRect(x-12,y-16,24,12);
+ctx.strokeStyle='#fbbf2466';ctx.lineWidth=0.5;ctx.strokeRect(x-12,y-16,24,12);
+ctx.fillStyle='#fbbf24';ctx.fillText('DOJI',x,y-7);
+}
+if(pats.hammer&&lwick>=body*2&&uwick<=body*0.5&&body<rng*0.4){
+const y=py(b.l)+14;
+ctx.globalAlpha=0.7;ctx.fillStyle='rgba(10,15,30,0.85)';ctx.fillRect(x-8,y-9,16,14);
+ctx.strokeStyle='#22d3ee66';ctx.lineWidth=0.5;ctx.strokeRect(x-8,y-9,16,14);
+ctx.fillStyle='#22d3ee';ctx.fillText('H',x,y+1);
+}
+if(pats.star&&uwick>=body*2&&lwick<=body*0.5&&body<rng*0.4){
+const y=py(b.h)-10;
+ctx.globalAlpha=0.7;ctx.fillStyle='rgba(10,15,30,0.85)';ctx.fillRect(x-8,y-9,16,14);
+ctx.strokeStyle='#f472b666';ctx.lineWidth=0.5;ctx.strokeRect(x-8,y-9,16,14);
+ctx.fillStyle='#f472b6';ctx.fillText('S★',x,y+1);
+}
+if(pats.inside&&b.h<prev.h&&b.l>prev.l){
+ctx.globalAlpha=0.3;ctx.strokeStyle='#22d3ee';ctx.lineWidth=0.6;ctx.setLineDash([2,3]);
+ctx.strokeRect(x-bw*0.6,py(b.h)-2,bw*1.2,py(b.l)-py(b.h)+4);ctx.setLineDash([]);
+}
+ctx.restore();
+});
+}
+
+// ═══ CHART PATTERNS — dimmed when CS is active ═══
+if(CM.inds.patterns){
+ctx.save();
+if(CM.inds.cstruct) ctx.globalAlpha = 0.15;
+drawChartPatterns(ctx, bars, P, W, H, cH, n, px, py, lo, hi);
+ctx.restore();
+}
+
+// VPOC
+drawVolumeProfile(ctx, CM.bars.slice(CM.vStart, CM.vEnd), P, W, H, cH, lo, hi);
+
+// FIB
+if(CM.inds.fib&&n>=20){
+const sl=bars.slice(-20);
+const fH=Math.max(...sl.map(b=>b.h)),fL=Math.min(...sl.map(b=>b.l)),fR=fH-fL;
+[{r:0,l:'0%'},{r:0.236,l:'23.6%'},{r:0.382,l:'38.2%'},{r:0.5,l:'50%'},{r:0.618,l:'61.8%'},{r:1,l:'100%'}].forEach(f=>{
+const y=py(fH-fR*f.r);
+ctx.strokeStyle='rgba(234,179,8,0.15)';ctx.lineWidth=0.5;ctx.setLineDash([4,6]);
+ctx.beginPath();ctx.moveTo(P.l,y);ctx.lineTo(W-P.r,y);ctx.stroke();ctx.setLineDash([]);
+ctx.font='8px JetBrains Mono,monospace';ctx.fillStyle='#eab30833';ctx.textAlign='left';
+ctx.fillText(f.l,W-P.r+2,y+3);
+});
+}
+
+// VWAP
+if(CM.inds.vwap){
+let cVP=0,cV=0;ctx.save();ctx.strokeStyle='#eab308';ctx.lineWidth=1;ctx.globalAlpha=0.45;
+ctx.beginPath();let vs=false;
+bars.forEach((b,i)=>{cVP+=((b.h+b.l+b.c)/3)*(b.v||0);cV+=(b.v||0);
+if(cV>0){const vw=cVP/cV,x=px(i),y=py(vw);if(!vs){ctx.moveTo(x,y);vs=true;}else ctx.lineTo(x,y);}});
+ctx.stroke();ctx.restore();
+}
+
+// ═══ PREDICTION CONE ═══
+if(!CM.inds.pred) CM._predResult=null;
+if(CM.inds.pred&&n>=20){
+const tB=bars.slice(-20);
+const xs=tB.map((_,k)=>k),ys=tB.map(b=>b.c);
+const xm=xs.reduce((a,v)=>a+v)/xs.length,ym=ys.reduce((a,v)=>a+v)/ys.length;
+const num=xs.reduce((a,v,k)=>a+(v-xm)*(ys[k]-ym),0),den=xs.reduce((a,v)=>a+(v-xm)**2,0)||1;
+const tSlope=num/den;
+const atrV=bars.slice(-15).map((b,k,a)=>k?Math.max(b.h-b.l,Math.abs(b.h-a[k-1].c),Math.abs(b.l-a[k-1].c)):b.h-b.l).reduce((a,v)=>a+v)/Math.min(15,bars.length);
+const bb20=allBars.slice(CM.vEnd-20,CM.vEnd);
+const bbMid=bb20.reduce((a,v)=>a+v.c,0)/20;
+const bbStd=Math.sqrt(bb20.reduce((a,v)=>a+(v.c-bbMid)**2,0)/20);
+const bbUp=bbMid+2*bbStd,bbLo=bbMid-2*bbStd,bbRng=bbUp-bbLo;
+const price0=bars[n-1].c,bbPct=bbRng>0?(price0-bbLo)/bbRng:0.5;
+const meanRev=(bbMid-price0)/8,extremity=bbRng>0?Math.abs(bbPct-0.5)/0.5:0;
+const revW=Math.min(0.80,extremity*0.80),cSlope=tSlope*(1-revW)+meanRev*revW;
+const uncMult=1+extremity*0.5;
+const predCol=cSlope>0?'#22d3ee':'#f472b6';
+const fSteps=Math.min(20,Math.max(5,Math.floor(n*0.12)));
+const pts=Array.from({length:fSteps+1},(_,j)=>{const c=price0+cSlope*j;const unc=atrV*Math.sqrt(j+1)*0.65*uncMult;return{x:px(n-1+j),c,u:c+unc,l:c-unc};});
+// Yellow halo cone fill
+ctx.save();
+ctx.globalAlpha=0.08;ctx.fillStyle='#fbbf24';
+ctx.beginPath();pts.forEach((p,j)=>j?ctx.lineTo(p.x,py(p.u)):ctx.moveTo(p.x,py(p.u)));
+[...pts].reverse().forEach(p=>ctx.lineTo(p.x,py(p.l)));ctx.closePath();ctx.fill();
+// Yellow glow on edges
+ctx.shadowColor='#fbbf24';ctx.shadowBlur=12;ctx.globalAlpha=0.15;
+ctx.strokeStyle='#fbbf24';ctx.lineWidth=1.5;
+ctx.beginPath();pts.forEach((p,j)=>j?ctx.lineTo(p.x,py(p.u)):ctx.moveTo(p.x,py(p.u)));ctx.stroke();
+ctx.beginPath();pts.forEach((p,j)=>j?ctx.lineTo(p.x,py(p.l)):ctx.moveTo(p.x,py(p.l)));ctx.stroke();
+ctx.shadowBlur=0;
+// Center line (yellow dashed)
+ctx.globalAlpha=0.4;ctx.strokeStyle='#fbbf24';ctx.lineWidth=1;ctx.setLineDash([5,3]);
+ctx.beginPath();pts.forEach((p,j)=>j?ctx.lineTo(p.x,py(p.c)):ctx.moveTo(p.x,py(p.c)));ctx.stroke();ctx.setLineDash([]);
+ctx.restore();
+// White ghost candles inside cone
+const _gcBw = Math.max(2, Math.min(8, cW/_dN*0.5));
+for(let j=1; j<=fSteps; j++){
+const p = pts[j]; if(!p) continue;
+const unc = Math.max(0.001,(p.u-p.l)*0.5);
+const yBTop = py(p.c + unc*0.25);
+const yBBot = py(p.c - unc*0.25);
+const yWTop = py(p.u);
+const yWBot = py(p.l);
+const bH = Math.max(1, Math.abs(yBTop-yBBot));
+const fade = Math.max(0.06, 0.25 - j*0.012);
+ctx.save(); ctx.globalAlpha = fade;
+// White wick
+ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.6;
+ctx.beginPath(); ctx.moveTo(p.x, yWTop); ctx.lineTo(p.x, yBTop); ctx.stroke();
+ctx.beginPath(); ctx.moveTo(p.x, yBBot); ctx.lineTo(p.x, yWBot); ctx.stroke();
+// White body outline
+ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.8;
+ctx.strokeRect(p.x-_gcBw/2, Math.min(yBTop,yBBot), _gcBw, bH);
+ctx.fillStyle = 'rgba(255,255,255,0.05)';
+ctx.fillRect(p.x-_gcBw/2, Math.min(yBTop,yBBot), _gcBw, bH);
+ctx.restore();
+}
+// H/M/L price markers
+const predLast=pts[pts.length-1];
+ctx.save();ctx.font='bold 9px JetBrains Mono,monospace';ctx.textAlign='right';
+[{v:predLast.u,l:'H $'+predLast.u.toFixed(2),c:'#94a3b8'},{v:predLast.c,l:'▶ $'+predLast.c.toFixed(2),c:predCol},{v:predLast.l,l:'L $'+predLast.l.toFixed(2),c:'#94a3b8'}].forEach(item=>{
+const y=py(item.v);
+ctx.strokeStyle=item.c+'33';ctx.lineWidth=0.5;ctx.setLineDash([2,3]);
+ctx.beginPath();ctx.moveTo(predLast.x,y);ctx.lineTo(W-P.r,y);ctx.stroke();ctx.setLineDash([]);
+ctx.beginPath();ctx.arc(predLast.x,y,2,0,Math.PI*2);ctx.fillStyle=item.c+'66';ctx.fill();
+});
+ctx.restore();
+const predMode=cSlope>0?'↑ Bullish':'↓ Bearish';
+CM._predResult={mode:predMode,col:predCol,slope:cSlope,revWeight:Math.round(revW*100),trendWeight:Math.round((1-revW)*100),
+bbPct:Math.round(bbPct*100),extremity,fSteps,priceNow:price0,priceCentre:+predLast.c.toFixed(2),
+priceHigh:+predLast.u.toFixed(2),priceLow:+predLast.l.toFixed(2),bbMid:+bbMid.toFixed(2),bbUp:+bbUp.toFixed(2),bbLo:+bbLo.toFixed(2),
+dayByDay:pts.slice(1).map((p,j)=>({bar:j+1,hi:+p.u.toFixed(2),mid:+p.c.toFixed(2),lo:+p.l.toFixed(2)})),lastBarT:bars[n-1].t};
+CM._predPill={mode:predMode,col:predCol,hi:predLast.u.toFixed(2),mid:predLast.c.toFixed(2),lo:predLast.l.toFixed(2),
+chgPct:((predLast.c-price0)/price0*100).toFixed(1),sign:predLast.c>=price0?'+':'',
+conf:CM._backtestPredConf||Math.min(92,Math.round(40+extremity*35)),
+confLbl:(CM._backtestPredConf||Math.min(92,Math.round(40+extremity*35)))>=70?'HIGH':'MOD',
+confCol:(CM._backtestPredConf||Math.min(92,Math.round(40+extremity*35)))>=70?'#22d3ee':'#fbbf24',
+revPct:revW>0.1?Math.round(revW*100):0};
+}
+
+// ═══ WBR ═══
+if(!CM.inds.wbr) CM._wbrResult=null;
+if(CM.inds.wbr&&n>=5){
+const FCAST_LEN=10,TOL=0.40,curIdx=CM.vEnd-1,curB=allBars[curIdx];
+if(curB){const curBody=Math.abs(curB.c-curB.o)||0.001,curRng=curB.h-curB.l||0.001;
+if(curBody/curRng>=0.05){
+const curWBR=(Math.min(curB.o,curB.c)-curB.l)/curBody-(curB.h-Math.max(curB.o,curB.c))/curBody;
+const LB=Math.min(200,curIdx),mPaths=[];
+for(let i=Math.max(0,curIdx-LB);i<curIdx-FCAST_LEN;i++){
+const b=allBars[i],bo=Math.abs(b.c-b.o)||0.001,rn=b.h-b.l||0.001;
+if(bo/rn<0.05) continue;
+const wr=(Math.min(b.o,b.c)-b.l)/bo-(b.h-Math.max(b.o,b.c))/bo;
+if(Math.abs(wr-curWBR)<=TOL){const pa=[];for(let j=1;j<=FCAST_LEN;j++){const fb=allBars[i+j];if(fb)pa.push((fb.c-b.c)/b.c);}if(pa.length===FCAST_LEN)mPaths.push(pa);}
+}
+if(mPaths.length>=2){
+const avgP=Array.from({length:FCAST_LEN},(_,j)=>mPaths.reduce((s,p)=>s+p[j],0)/mPaths.length);
+const baseP=curB.c,fPts=avgP.map((chg,j)=>({x:px(n-1+j+1),y:py(baseP*(1+chg))}));
+const wCol=avgP[FCAST_LEN-1]>0?'#22d3ee':'#f472b6';
+ctx.save();ctx.globalAlpha=0.7;ctx.strokeStyle=wCol;ctx.lineWidth=2.5;ctx.lineCap='round';ctx.lineJoin='round';
+ctx.beginPath();ctx.moveTo(px(n-1),py(baseP));
+fPts.forEach((p,j)=>{if(j===0)ctx.lineTo(p.x,p.y);else{const pr=fPts[j-1];ctx.quadraticCurveTo(pr.x,pr.y,(pr.x+p.x)/2,(pr.y+p.y)/2);}});
+ctx.lineTo(fPts[fPts.length-1].x,fPts[fPts.length-1].y);ctx.stroke();
+const lp=fPts[fPts.length-1],pp=fPts.length>1?fPts[fPts.length-2]:{x:px(n-1),y:py(baseP)};
+const ang=Math.atan2(lp.y-pp.y,lp.x-pp.x);
+ctx.globalAlpha=0.8;ctx.lineWidth=2.5;ctx.beginPath();
+ctx.moveTo(lp.x,lp.y);ctx.lineTo(lp.x-12*Math.cos(ang-0.45),lp.y-12*Math.sin(ang-0.45));
+ctx.moveTo(lp.x,lp.y);ctx.lineTo(lp.x-12*Math.cos(ang+0.45),lp.y-12*Math.sin(ang+0.45));ctx.stroke();ctx.restore();
+// Price marker
+const wFP=baseP*(1+(avgP[avgP.length-1]||0));
+ctx.save();ctx.strokeStyle=wCol+'66';ctx.lineWidth=0.8;ctx.setLineDash([3,3]);
+ctx.beginPath();ctx.moveTo(lp.x,lp.y);ctx.lineTo(W-P.r,lp.y);ctx.stroke();ctx.setLineDash([]);
+ctx.font='bold 10px JetBrains Mono,monospace';const ptL='$'+wFP.toFixed(2),ptW=ctx.measureText(ptL).width+14;
+ctx.fillStyle=wCol;ctx.fillRect(W-P.r-ptW,lp.y-9,ptW,18);ctx.fillStyle='#0a0f1e';ctx.textAlign='left';ctx.fillText(ptL,W-P.r-ptW+4,lp.y+4);
+ctx.beginPath();ctx.arc(lp.x,lp.y,3,0,Math.PI*2);ctx.fillStyle=wCol;ctx.fill();ctx.restore();
+const bull=curWBR>0;
+CM._wbrResult={bull,wbr:curWBR,matches:mPaths.length,label:(bull?'Bullish':'Bearish')+' '+Math.abs(curWBR).toFixed(2)+'×',
+priceNow:+baseP.toFixed(2),priceTarget:+wFP.toFixed(2),fcastBars:FCAST_LEN,
+dayByDay:avgP.map((chg,j)=>({bar:j+1,price:+(baseP*(1+chg)).toFixed(2),chgPct:+(chg*100).toFixed(2)})),lastBarT:curB.t};
+const _wC=CM._backtestWbrConf||Math.min(95,Math.round(mPaths.length/Math.max(1,n-FCAST_LEN)*100*3));
+CM._wbrPill={bull,col:wCol,price:wFP.toFixed(2),chgPct:((wFP-baseP)/baseP*100).toFixed(1),sign:wFP>=baseP?'+':'',
+conf:_wC,confLbl:_wC>=70?'HIGH':_wC>=40?'MOD':'LOW',confCol:_wC>=70?'#22d3ee':_wC>=40?'#fbbf24':'#f472b6',matches:mPaths.length};
+}
+}}
+}
+
+// Signal marker
+if(CM.inds.sig&&CM.rec){
+const sB=CM.rec.signal==='LONG',sR=CM.rec.signal==='SHORT';
+if(sB||sR){
+const lx=px(n-1),ly=py(bars[n-1].c);
+ctx.save();ctx.globalAlpha=0.7;ctx.font='bold 12px JetBrains Mono,monospace';ctx.textAlign='center';
+ctx.fillStyle=sB?'#22d3ee':'#f472b6';
+ctx.fillText(sB?'▲':'▼',lx,sB?py(bars[n-1].l)+16:py(bars[n-1].h)-8);ctx.restore();
+}
+}
+
+// ═══ CURRENT PRICE ═══
+const cur=bars[n-1],curY=py(cur.c),curBull=cur.c>=cur.o;
+const cc=curBull?'#22d3ee':'#f472b6';
+ctx.save();ctx.shadowColor=cc;ctx.shadowBlur=6;
+ctx.strokeStyle=cc+'88';ctx.lineWidth=1;ctx.setLineDash([8,4]);
+ctx.beginPath();ctx.moveTo(P.l,curY);ctx.lineTo(W-P.r,curY);ctx.stroke();ctx.setLineDash([]);ctx.shadowBlur=0;
+const ptL2='$'+cur.c.toFixed(cur.c<10?3:2);ctx.font='bold 11px JetBrains Mono,monospace';const ptW2=ctx.measureText(ptL2).width+14;
+ctx.shadowColor=cc;ctx.shadowBlur=10;ctx.fillStyle=cc;ctx.fillRect(W-P.r+1,curY-11,ptW2,22);ctx.shadowBlur=0;
+ctx.fillStyle='#0a0f1e';ctx.textAlign='left';ctx.fillText(ptL2,W-P.r+6,curY+4);
+ctx.beginPath();ctx.arc(W-P.r,curY,4,0,Math.PI*2);ctx.fillStyle=cc;ctx.shadowColor=cc;ctx.shadowBlur=8;ctx.fill();ctx.shadowBlur=0;
+ctx.restore();
+
+ctx.restore(); // restore clip
+
+// ═══ PRED CONE PRICE MARKERS (outside clip) ═══
+if(CM._predResult && CM.inds.pred){
+const pr=CM._predResult;
+ctx.save();ctx.font='bold 10px JetBrains Mono,monospace';
+[{v:pr.priceHigh,l:'H $'+pr.priceHigh.toFixed(2),c:'#94a3b8'},
+{v:pr.priceCentre,l:'\u25b6 $'+pr.priceCentre.toFixed(2),c:pr.col},
+{v:pr.priceLow,l:'L $'+pr.priceLow.toFixed(2),c:'#94a3b8'}].forEach(item=>{
+const y=py(item.v);
+if(y>P.t&&y<P.t+cH){
+// Dashed line to price axis
+ctx.strokeStyle=item.c+'44';ctx.lineWidth=0.6;ctx.setLineDash([3,4]);
+ctx.beginPath();ctx.moveTo(W-P.r-60,y);ctx.lineTo(W-P.r,y);ctx.stroke();ctx.setLineDash([]);
+// Price label on right edge
+ctx.textAlign='left';ctx.fillStyle='rgba(10,15,30,0.9)';
+const tw=ctx.measureText(item.l).width+10;
+ctx.fillRect(W-P.r+1,y-8,tw,16);
+ctx.strokeStyle=item.c+'55';ctx.lineWidth=0.5;ctx.strokeRect(W-P.r+1,y-8,tw,16);
+ctx.fillStyle=item.c;ctx.fillText(item.l,W-P.r+5,y+4);
+// Dot at chart edge
+ctx.beginPath();ctx.arc(W-P.r,y,2.5,0,Math.PI*2);ctx.fillStyle=item.c;ctx.fill();
+}
+});
+ctx.restore();
+}
+
+// ═══ TTM + VIX SUB-PANELS ═══
+if(_ttmOn) drawTTMSqueeze(ctx, CM.bars, bars, px, P, W, H, cH);
+drawVIXOverlay(ctx, bars, px, P, W, H, cH);
+
+// ═══ PRED/WBR PILLS — side by side, opposite TTM forecast ═══
+{
+const _pillW=130,_pillH=82;
+// Determine TTM forecast direction for pill positioning
+let _ttmBullish = true; // default
+if(CM.ttmExpanded && CM._predResult){
+_ttmBullish = CM._predResult.slope > 0;
+} else if(CM._wbrResult){
+_ttmBullish = CM._wbrResult.bull;
+}
+// When TTM expanded: place pills in opposite half of sub-panel
+const _ttmPanelY = P.t + cH;
+const _ttmPanelH = CM.ttmExpanded ? 200 : (_ttmOn ? 70 : 0);
+const _ttmZeroY = _ttmPanelY + _ttmPanelH/2;
+let _pillY;
+if(CM.ttmExpanded){
+// TTM expanded: pills at LEFT side, top of sub-panel — forecast bars are on right
+_pillY = _ttmPanelY + 4;
+} else {
+_pillY = P.t+cH+4;
+}
+const _hasBoth=CM._wbrPill&&CM._predPill;
+let _pill2X, _pill1X;
+if(CM.ttmExpanded){
+// When TTM expanded: pills go to LEFT side, away from forecast bars
+_pill1X = P.l + 4;
+_pill2X = P.l + _pillW + 10;
+} else {
+_pill2X=W-P.r-_pillW-2;
+_pill1X=_hasBoth?_pill2X-_pillW-6:_pill2X;
+}
+if(CM._wbrPill){
+const w=CM._wbrPill,bx=CM.ttmExpanded?_pill1X:(_hasBoth?_pill1X:_pill2X);
+ctx.fillStyle='rgba(10,15,30,0.92)';ctx.fillRect(bx,_pillY,_pillW,_pillH);
+ctx.strokeStyle=w.col+'44';ctx.lineWidth=0.8;ctx.strokeRect(bx,_pillY,_pillW,_pillH);
+ctx.textAlign='left';ctx.fillStyle='#475569';ctx.font='bold 8px JetBrains Mono,monospace';
+ctx.fillText('◈ WBR PATTERN',bx+6,_pillY+12);
+ctx.fillStyle=w.col;ctx.font='bold 12px JetBrains Mono,monospace';
+ctx.fillText(w.bull?'↑ Bullish':'↓ Bearish',bx+6,_pillY+28);
+ctx.fillStyle='#64748b';ctx.font='8px JetBrains Mono,monospace';ctx.fillText(w.matches+' matches',bx+_pillW-56,_pillY+28);
+ctx.strokeStyle='rgba(150,170,200,0.1)';ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(bx+6,_pillY+34);ctx.lineTo(bx+_pillW-6,_pillY+34);ctx.stroke();
+ctx.fillStyle=w.col;ctx.font='bold 10px JetBrains Mono,monospace';ctx.fillText('▶ Target',bx+6,_pillY+48);
+ctx.fillStyle='#e2e8f0';ctx.font='bold 11px JetBrains Mono,monospace';ctx.fillText('$'+w.price,bx+68,_pillY+48);
+ctx.fillStyle=w.sign==='+'?'#22d3ee':'#f472b6';ctx.font='bold 10px JetBrains Mono,monospace';ctx.fillText(w.sign+w.chgPct+'%',bx+6,_pillY+63);
+ctx.fillStyle=w.confCol;ctx.fillText(w.conf+'% '+w.confLbl,bx+60,_pillY+63);
+CM._wbrPill=null;
+}
+if(CM._predPill){
+const p=CM._predPill,bx=_pill2X;
+ctx.fillStyle='rgba(10,15,30,0.92)';ctx.fillRect(bx,_pillY,_pillW,_pillH);
+ctx.strokeStyle=p.col+'44';ctx.lineWidth=0.8;ctx.strokeRect(bx,_pillY,_pillW,_pillH);
+ctx.textAlign='left';ctx.fillStyle='#475569';ctx.font='bold 8px JetBrains Mono,monospace';
+ctx.fillText('◈ PRED CONE',bx+6,_pillY+12);
+ctx.fillStyle=p.col;ctx.font='bold 12px JetBrains Mono,monospace';
+ctx.fillText(p.mode,bx+6,_pillY+28);
+if(p.revPct>0){ctx.fillStyle='#64748b';ctx.font='9px JetBrains Mono,monospace';ctx.fillText(p.revPct+'% rev',bx+_pillW-42,_pillY+28);}
+ctx.strokeStyle='rgba(150,170,200,0.1)';ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(bx+6,_pillY+34);ctx.lineTo(bx+_pillW-6,_pillY+34);ctx.stroke();
+ctx.font='bold 9px JetBrains Mono,monospace';
+ctx.fillStyle='#64748b';ctx.fillText('H',bx+6,_pillY+47);ctx.fillStyle='#d0e8f5';ctx.fillText('$'+p.hi,bx+16,_pillY+47);
+ctx.fillStyle=p.col;ctx.fillText('▶ $'+p.mid,bx+6,_pillY+60);
+ctx.fillStyle=p.sign==='+'?'#22d3ee':'#f472b6';ctx.fillText(p.sign+p.chgPct+'%',bx+72,_pillY+60);
+ctx.fillStyle='#64748b';ctx.fillText('L',bx+6,_pillY+73);ctx.fillStyle='#d0e8f5';ctx.fillText('$'+p.lo,bx+16,_pillY+73);
+ctx.fillStyle=p.confCol;ctx.font='bold 10px JetBrains Mono,monospace';ctx.fillText(p.conf+'% '+p.confLbl,bx+72,_pillY+73);
+CM._predPill=null;
+}
+}
+
+// ═══ LEGEND PILLS ═══
+{
+ctx.save();ctx.font='9px JetBrains Mono,monospace';
+let lx=P.l+4,ly=P.t+14;
+const legs=[];
+if(CM.inds.sma20) legs.push({c:'#fbbf24',l:'SMA20'});
+if(CM.inds.sma50) legs.push({c:'#c084fc',l:'SMA50'});
+if(CM.inds.sma200) legs.push({c:'#f472b6',l:'SMA200'});
+if(CM.inds.bb) legs.push({c:'#8b5cf6',l:'BB'});
+if(CM.inds.pred) legs.push({c:'#22d3ee',l:'PRED'});
+if(CM.inds.wbr) legs.push({c:'#22d3ee',l:'WBR'});
+legs.forEach(item=>{
+const tw=ctx.measureText(item.l).width+20;
+ctx.fillStyle='rgba(10,15,30,0.8)';ctx.fillRect(lx,ly-10,tw,16);
+ctx.strokeStyle=item.c+'33';ctx.lineWidth=0.5;ctx.strokeRect(lx,ly-10,tw,16);
+ctx.fillStyle=item.c;ctx.fillRect(lx+4,ly-4,8,3);
+ctx.fillStyle='#64748b';ctx.textAlign='left';ctx.fillText(item.l,lx+16,ly);
+lx+=tw+4;
+});
+ctx.restore();
+}
+
+// ═══ IV RANK ═══
+if(CM.ticker&&_ivDailyCache[CM.ticker]){
+const iv=_ivDailyCache[CM.ticker];
+if(iv.atmIV>0){
+const em=cur.c*iv.atmIV*Math.sqrt(30/365);
+ctx.save();ctx.font='bold 10px JetBrains Mono,monospace';ctx.textAlign='right';
+ctx.fillStyle=iv.ivRank>70?'#f472b6':iv.ivRank<30?'#22d3ee':'#fbbf24';
+ctx.fillText('IV '+iv.ivRank+'%',W-P.r-6,P.t+14);
+ctx.fillStyle='#22d3ee88';ctx.font='9px JetBrains Mono,monospace';
+ctx.fillText('EM ±$'+em.toFixed(1),W-P.r-6,P.t+26);
+ctx.restore();
+const emHi=cur.c+em,emLo=cur.c-em;
+if(emHi>lo&&emLo<hi){
+ctx.save();ctx.globalAlpha=0.04;ctx.fillStyle='#22d3ee';
+ctx.fillRect(P.l,py(emHi),cW,py(emLo)-py(emHi));
+ctx.globalAlpha=0.15;ctx.strokeStyle='#22d3ee';ctx.lineWidth=0.5;ctx.setLineDash([3,5]);
+ctx.beginPath();ctx.moveTo(P.l,py(emHi));ctx.lineTo(W-P.r,py(emHi));ctx.stroke();
+ctx.beginPath();ctx.moveTo(P.l,py(emLo));ctx.lineTo(W-P.r,py(emLo));ctx.stroke();
+ctx.setLineDash([]);ctx.restore();
+}
+}
+}
+
+// ═══ CROSSHAIR ═══
+const vBot=H-P.b+_subTotalH;
+if(CM.mouseX>P.l&&CM.mouseX<W-P.r&&CM.mouseY>P.t&&CM.mouseY<P.t+cH){
+const bIdx=Math.round((CM.mouseX-P.l)/(cW/_dN)-0.5);
+if(bIdx>=0&&bIdx<n){
+const b=bars[bIdx],bx=px(bIdx);
+ctx.save();
+const vG=ctx.createLinearGradient(0,P.t,0,P.t+cH);
+vG.addColorStop(0,'rgba(34,211,238,0)');vG.addColorStop(0.05,'rgba(34,211,238,0.25)');
+vG.addColorStop(0.95,'rgba(34,211,238,0.25)');vG.addColorStop(1,'rgba(34,211,238,0)');
+ctx.strokeStyle=vG;ctx.lineWidth=0.8;ctx.beginPath();ctx.moveTo(bx,P.t);ctx.lineTo(bx,P.t+cH);ctx.stroke();
+const hG=ctx.createLinearGradient(P.l,0,W-P.r,0);
+hG.addColorStop(0,'rgba(34,211,238,0)');hG.addColorStop(0.05,'rgba(34,211,238,0.2)');
+hG.addColorStop(0.95,'rgba(34,211,238,0.2)');hG.addColorStop(1,'rgba(34,211,238,0)');
+ctx.strokeStyle=hG;ctx.lineWidth=0.8;ctx.beginPath();ctx.moveTo(P.l,CM.mouseY);ctx.lineTo(W-P.r,CM.mouseY);ctx.stroke();
+ctx.fillStyle='#22d3ee';ctx.beginPath();ctx.moveTo(bx,CM.mouseY-4);ctx.lineTo(bx+4,CM.mouseY);ctx.lineTo(bx,CM.mouseY+4);ctx.lineTo(bx-4,CM.mouseY);ctx.closePath();ctx.fill();
+const pAY=lo+(1-(CM.mouseY-P.t)/cH)*(hi-lo);
+ctx.fillStyle='#22d3ee';ctx.fillRect(W-P.r+1,CM.mouseY-10,P.r-2,20);
+ctx.fillStyle='#0a0f1e';ctx.font='bold 10px JetBrains Mono,monospace';ctx.textAlign='left';
+ctx.fillText('$'+pAY.toFixed(pAY<10?3:2),W-P.r+6,CM.mouseY+4);
+const d=new Date(b.t);
+const dl=isDaily?d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
+:d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+ctx.font='9px JetBrains Mono,monospace';ctx.textAlign='center';const dw=ctx.measureText(dl).width+14;
+ctx.fillStyle='#22d3ee';ctx.fillRect(bx-dw/2,P.t+cH+2,dw,16);
+ctx.fillStyle='#0a0f1e';ctx.fillText(dl,bx,P.t+cH+13);
+ctx.restore();
+const chg=bIdx>0?((b.c-bars[bIdx-1].c)/bars[bIdx-1].c*100):0;
+const tip=document.getElementById('cmTooltip');tip.style.display='block';
+tip.innerHTML=`<b style="color:#e2e8f0">${dl}</b>
+O: <b>$${b.o?.toFixed(2)}</b>  H: <b style="color:#22d3ee">$${b.h?.toFixed(2)}</b>  L: <b style="color:#f472b6">$${b.l?.toFixed(2)}</b>  C: <b>$${b.c?.toFixed(2)}</b>
+Vol: ${(b.v||0).toLocaleString()} &nbsp; Chg: <b style="color:${chg>=0?'#22d3ee':'#f472b6'}">${chg>=0?'+':''}${chg.toFixed(2)}%</b>`;
+const tx=CM.mouseX+14,ty=CM.mouseY-60;
+tip.style.left=(tx+tip.offsetWidth>W?tx-tip.offsetWidth-20:tx)+'px';
+tip.style.top=Math.max(P.t,Math.min(H-P.b-80,ty))+'px';
+}
+} else { document.getElementById('cmTooltip').style.display='none'; }
+
+// Time axis
+ctx.save();ctx.font='9px JetBrains Mono,monospace';ctx.textAlign='center';ctx.fillStyle='#2d4460';
+const tStep=Math.max(1,Math.floor(n/7));
+for(let i=tStep;i<n;i+=tStep){const x=px(i),d=new Date(bars[i].t);
+ctx.fillText(isDaily?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false}),x,H-6);
+}
+ctx.restore();
+
+ctx.strokeStyle='rgba(30,50,80,0.5)';ctx.lineWidth=0.5;ctx.strokeRect(P.l,P.t,cW,cH);
+requestAnimationFrame(updatePredBanner);
+updateMTFBadge();
+updatePredBar();
+}
+
 let _docMove = null, _docUp = null;
 function onMouseDown(e){
 if(!CM.bars.length) return;
@@ -4974,8 +5930,16 @@ const dx  = e.clientX - CM.dragX;
 if(!CM.dragIsCtrl){
 const bpp   = CM.dragWinSize / cW;
 const delta = Math.round(dx * bpp);
+if(delta > 0){
+// Dragging right → show more bars (zoom out), keep right edge anchored
+const newStart = Math.max(0, CM.dragVStart - delta);
+CM.vStart = newStart;
+CM.vEnd   = CM.bars.length; // always show up to latest bar
+} else {
+// Dragging left → normal pan, keep window size
 CM.vStart = Math.max(0, Math.min(CM.bars.length - CM.dragWinSize, CM.dragVStart - delta));
-CM.vEnd   = CM.vStart + CM.dragWinSize;
+CM.vEnd   = Math.min(CM.bars.length, CM.vStart + CM.dragWinSize);
+}
 } else {
 const pct     = dx / cW;  // drag right → positive → bigger window → zoom out
 const newSize = Math.max(10, Math.min(CM.bars.length,
