@@ -167,63 +167,64 @@ ORDER BY jobname;
 --     For a strict diff against THAT list, you'd extract from the JSON; the
 --     ticker_reference comparison below is the pragmatic operational query.
 --
--- Replace 'YYYY-MM-DD' with the trading_date from QUERY 3's top row.
-
--- List missing tickers (top 50, active reference only)
--- SELECT tr.symbol
--- FROM ticker_reference tr
--- LEFT JOIN ta_cache t
---   ON t.ticker = tr.symbol AND t.trading_date = 'YYYY-MM-DD'
--- WHERE t.ticker IS NULL
---   AND tr.missing_since IS NULL
--- ORDER BY tr.symbol
--- LIMIT 50;
-
--- Or just the count (faster):
--- SELECT COUNT(*) AS missing_from_cache
--- FROM ticker_reference tr
--- LEFT JOIN ta_cache t
---   ON t.ticker = tr.symbol AND t.trading_date = 'YYYY-MM-DD'
--- WHERE t.ticker IS NULL
---   AND tr.missing_since IS NULL;
-
 -- ─────────────────────────────────────────────────────────────────────────
 -- IMPORTANT INTERPRETATION NOTE (verified 2026-05-04):
--- The above query returns a LARGE number (~5,900 on a normal day).
--- That is NOT a problem — `ticker_reference` is the broader master list
--- (~10K active tickers). `ta-batch` only processes a curated subset (~4.8K)
--- defined in `app_config[key='ta_ticker_universe']` — filtered for liquidity,
--- market cap, history, etc. Most of the "missing" 5,900 were never in scope.
+-- A `ticker_reference` ↔ `ta_cache` diff returns ~5,900 missing tickers on a
+-- normal day. That is NOT a problem — `ticker_reference` is the broader
+-- master list (~10K active tickers). `ta-batch` only processes a curated
+-- subset (~4.8K) defined in `app_config[key='ta_ticker_universe']` — filtered
+-- for liquidity, market cap, and history. Most of the ~5,900 were never in scope.
 --
 -- The OPERATIONALLY MEANINGFUL gap is between the curated list and ta_cache —
--- typically ~100-150 tickers per day. That smaller delta is what you actually
--- want to investigate for processing failures. Use the query below for that.
+-- typically ~100-150 tickers per day. Both queries below are below; use
+-- QUERY 5b for the actual processing-failure signal.
 -- ─────────────────────────────────────────────────────────────────────────
 
--- Better: diff against the curated list ta-batch actually processes
--- (extracts from app_config JSON; ~131 expected on a healthy day)
---
--- Note: `app_config.value` is stored as TEXT, not jsonb — explicit cast required.
--- The CASE handles both shapes (array vs. object with `tickers` key).
---
--- WITH processed AS (
---   SELECT jsonb_array_elements_text(
---            CASE WHEN jsonb_typeof(value::jsonb) = 'array' THEN value::jsonb
---                 ELSE (value::jsonb) -> 'tickers' END
---          ) AS ticker
---   FROM app_config
---   WHERE key = 'ta_ticker_universe'
--- )
--- SELECT COUNT(*) AS attempted_but_missing
--- FROM processed p
--- LEFT JOIN ta_cache t
---   ON t.ticker = p.ticker AND t.trading_date = 'YYYY-MM-DD'
--- WHERE t.ticker IS NULL;
+-- ── QUERY 5a: Tickers in ticker_reference NOT in ta_cache (broad diff) ──
+-- Self-updating date (uses MAX(trading_date) from ta_cache).
 
--- If the cast above errors (value isn't valid JSON), peek at the format first:
+SELECT tr.symbol
+FROM ticker_reference tr
+LEFT JOIN ta_cache t
+  ON t.ticker = tr.symbol
+ AND t.trading_date = (SELECT MAX(trading_date) FROM ta_cache)
+WHERE t.ticker IS NULL
+  AND tr.missing_since IS NULL
+ORDER BY tr.symbol
+LIMIT 50;
+
+-- Count form:
+SELECT COUNT(*) AS missing_from_cache
+FROM ticker_reference tr
+LEFT JOIN ta_cache t
+  ON t.ticker = tr.symbol
+ AND t.trading_date = (SELECT MAX(trading_date) FROM ta_cache)
+WHERE t.ticker IS NULL
+  AND tr.missing_since IS NULL;
+
+
+-- ── QUERY 5b: Tickers ta-batch ATTEMPTED but didn't land in ta_cache ──
+-- This is the operationally meaningful gap. Healthy = ~100-150 per day.
+-- Reads the curated processing list from app_config JSON (stored as TEXT, ::jsonb cast required).
+
+WITH processed AS (
+  SELECT jsonb_array_elements_text(
+           CASE WHEN jsonb_typeof(value::jsonb) = 'array' THEN value::jsonb
+                ELSE (value::jsonb) -> 'tickers' END
+         ) AS ticker
+  FROM app_config
+  WHERE key = 'ta_ticker_universe'
+)
+SELECT COUNT(*) AS attempted_but_missing
+FROM processed p
+LEFT JOIN ta_cache t
+  ON t.ticker = p.ticker
+ AND t.trading_date = (SELECT MAX(trading_date) FROM ta_cache)
+WHERE t.ticker IS NULL;
+
+-- If 5b errors with a JSON cast issue, peek at the value format:
 -- SELECT pg_typeof(value), length(value) AS chars, LEFT(value, 200) AS preview
--- FROM app_config
--- WHERE key = 'ta_ticker_universe';
+-- FROM app_config WHERE key = 'ta_ticker_universe';
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
