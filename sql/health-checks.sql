@@ -202,10 +202,14 @@ ORDER BY jobname;
 
 -- Better: diff against the curated list ta-batch actually processes
 -- (extracts from app_config JSON; ~131 expected on a healthy day)
+--
+-- Note: `app_config.value` is stored as TEXT, not jsonb — explicit cast required.
+-- The CASE handles both shapes (array vs. object with `tickers` key).
+--
 -- WITH processed AS (
 --   SELECT jsonb_array_elements_text(
---            CASE WHEN jsonb_typeof(value) = 'array' THEN value
---                 ELSE value->'tickers' END
+--            CASE WHEN jsonb_typeof(value::jsonb) = 'array' THEN value::jsonb
+--                 ELSE (value::jsonb) -> 'tickers' END
 --          ) AS ticker
 --   FROM app_config
 --   WHERE key = 'ta_ticker_universe'
@@ -215,6 +219,11 @@ ORDER BY jobname;
 -- LEFT JOIN ta_cache t
 --   ON t.ticker = p.ticker AND t.trading_date = 'YYYY-MM-DD'
 -- WHERE t.ticker IS NULL;
+
+-- If the cast above errors (value isn't valid JSON), peek at the format first:
+-- SELECT pg_typeof(value), length(value) AS chars, LEFT(value, 200) AS preview
+-- FROM app_config
+-- WHERE key = 'ta_ticker_universe';
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
