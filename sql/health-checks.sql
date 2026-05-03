@@ -187,6 +187,35 @@ ORDER BY jobname;
 -- WHERE t.ticker IS NULL
 --   AND tr.missing_since IS NULL;
 
+-- ─────────────────────────────────────────────────────────────────────────
+-- IMPORTANT INTERPRETATION NOTE (verified 2026-05-04):
+-- The above query returns a LARGE number (~5,900 on a normal day).
+-- That is NOT a problem — `ticker_reference` is the broader master list
+-- (~10K active tickers). `ta-batch` only processes a curated subset (~4.8K)
+-- defined in `app_config[key='ta_ticker_universe']` — filtered for liquidity,
+-- market cap, history, etc. Most of the "missing" 5,900 were never in scope.
+--
+-- The OPERATIONALLY MEANINGFUL gap is between the curated list and ta_cache —
+-- typically ~100-150 tickers per day. That smaller delta is what you actually
+-- want to investigate for processing failures. Use the query below for that.
+-- ─────────────────────────────────────────────────────────────────────────
+
+-- Better: diff against the curated list ta-batch actually processes
+-- (extracts from app_config JSON; ~131 expected on a healthy day)
+-- WITH processed AS (
+--   SELECT jsonb_array_elements_text(
+--            CASE WHEN jsonb_typeof(value) = 'array' THEN value
+--                 ELSE value->'tickers' END
+--          ) AS ticker
+--   FROM app_config
+--   WHERE key = 'ta_ticker_universe'
+-- )
+-- SELECT COUNT(*) AS attempted_but_missing
+-- FROM processed p
+-- LEFT JOIN ta_cache t
+--   ON t.ticker = p.ticker AND t.trading_date = 'YYYY-MM-DD'
+-- WHERE t.ticker IS NULL;
+
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WHEN TO ESCALATE
