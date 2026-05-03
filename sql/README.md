@@ -19,8 +19,21 @@ These files are **not Supabase migrations** (deliberately). The schema currently
 | `ta-cache-updated-at-trigger.sql` | ✅ applied | ta_cache update trigger |
 | `phase-a-watchlist.sql` | ⏳ pending | Phase A — watchlist Supabase migration |
 | `phase1-vizor-tables.sql` | ⏳ pending | Phase D — VizorBuys/VizorShorts tables |
+| `health-checks.sql` | 🔍 read-only | Operational diagnostics — does NOT modify data; safe to run any time |
 
 If you apply something, change the status. If you discover something marked applied is actually not, fix it — this table is the source of truth for "what's in prod."
+
+## Operational diagnostics
+
+**`health-checks.sql`** is the runtime health-check runbook. Five queries covering cron run history, `batch_run` state, `ta_cache` freshness, cron schedule, and a universe-vs-cache gap diagnostic. Each query has inline commentary on what "healthy" looks like vs. red flags.
+
+When to run:
+- The dashboard `/v` shows stale prices during market hours
+- You suspect batch jobs are stalled or failing silently
+- Periodic operational read on cron / cache freshness
+- First-line triage for "things look slow / wrong" tickets
+
+These queries are read-only — no risk to production data. Run them in the Supabase SQL editor.
 
 ## Security note
 
