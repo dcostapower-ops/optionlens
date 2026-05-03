@@ -45,7 +45,7 @@ A full deploy applies changes in this order:
 2. **Edge Functions** — `supabase functions deploy <name> --project-ref hkamukkkkpqhdpcradau`
 3. **Cloudflare Worker + assets** — `wrangler deploy`
 
-A `docs/deploy_full_stack.md` runbook with exact commands and verification steps is forthcoming.
+See **[`docs/deploy_full_stack.md`](docs/deploy_full_stack.md)** for the full runbook — exact commands, verification steps, and rollback procedure for each layer.
 
 ## Project context
 
