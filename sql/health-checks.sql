@@ -149,28 +149,36 @@ ORDER BY jobname;
 
 
 -- ═══════════════════════════════════
--- QUERY 5 (optional): universe vs ta_cache gap
+-- QUERY 5 (optional): ticker_reference vs ta_cache gap
 -- ═══════════════════════════════════
--- Identifies tickers in the universe that didn't make it into ta_cache for a given date.
--- Some gap is normal (newly listed, halted, illiquid); a sudden growth in the gap suggests
--- a processing issue.
+-- Identifies tickers in the master reference list that didn't make it into ta_cache
+-- for a given date. Some gap is normal (newly listed, halted, illiquid, insufficient
+-- history for indicators); a sudden growth in the gap suggests a processing issue.
 --
--- Adjust the date and the universe table name to your schema. Replace 'YYYY-MM-DD'
--- with the trading_date from QUERY 3's top row.
+-- Schema notes (verified 2026-05-04):
+--   - The master ticker reference table is `ticker_reference` (NOT `universe`).
+--     This table is maintained by the `universe-fan-out` edge function.
+--   - The smaller working list that `ta-batch` actually processes is stored as a JSON
+--     blob in `app_config` where `key = 'ta_ticker_universe'` — not a relational table.
+--     If you need to diff against THAT list specifically, you'll need to extract from
+--     app_config.value JSON, which is more work than the ticker_reference comparison.
+--
+-- Replace 'YYYY-MM-DD' with the trading_date from QUERY 3's top row.
 
--- SELECT u.ticker
--- FROM universe u
+-- List the missing tickers (top 50)
+-- SELECT tr.ticker
+-- FROM ticker_reference tr
 -- LEFT JOIN ta_cache t
---   ON t.ticker = u.ticker AND t.trading_date = 'YYYY-MM-DD'
+--   ON t.ticker = tr.ticker AND t.trading_date = 'YYYY-MM-DD'
 -- WHERE t.ticker IS NULL
--- ORDER BY u.ticker
+-- ORDER BY tr.ticker
 -- LIMIT 50;
 
--- For a count instead of a list:
+-- Or just the count (faster):
 -- SELECT COUNT(*) AS missing_from_cache
--- FROM universe u
+-- FROM ticker_reference tr
 -- LEFT JOIN ta_cache t
---   ON t.ticker = u.ticker AND t.trading_date = 'YYYY-MM-DD'
+--   ON t.ticker = tr.ticker AND t.trading_date = 'YYYY-MM-DD'
 -- WHERE t.ticker IS NULL;
 
 
