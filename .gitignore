@@ -1,0 +1,24 @@
+# Supabase CLI state — local-only project link, do not commit
+supabase/.temp/
+supabase/.branches/
+
+# Environment files — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node (in case any tooling drags it in)
+node_modules/
+npm-debug.log*
