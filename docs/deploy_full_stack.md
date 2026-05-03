@@ -195,6 +195,79 @@ wrangler deploy
 
 ---
 
+## Secrets — required environment variables
+
+Both layers run on injected secrets. **None of these belong in the repo.** The Cloudflare Worker and Supabase Edge Functions read from separate secret stores; some values are duplicated across both stores under different names.
+
+### Cloudflare Worker
+
+Set via `wrangler secret put <NAME>` — interactive prompt; the value is not echoed.
+
+| Name | Purpose | Used by |
+|---|---|---|
+| `POLYGON_KEY` | Polygon API key (proxied via `/api/polygon/*`) | `src/index.js` `handlePolygon` |
+| `SUPABASE_URL` | Supabase project URL (proxied via `/api/db/*`) | `src/index.js` `handleSupabaseDB` |
+| `SUPABASE_ANON_KEY` | Supabase anon JWT | `src/index.js` `handleSupabaseDB` |
+
+```bash
+# List
+wrangler secret list
+
+# Set or update (paste value at prompt)
+wrangler secret put POLYGON_KEY
+
+# Delete
+wrangler secret delete POLYGON_KEY
+```
+
+### Supabase Edge Functions
+
+Supabase **auto-injects** these — never set manually:
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_DB_URL`
+
+These **must be set manually** (CLI or Dashboard):
+
+| Name | Used by |
+|---|---|
+| `POLYGON_API_KEY` | `iv-batch`, `movers-fan-out`, `quote-fan-out`, `ta-batch`, `universe-fan-out` |
+| `EODHD_API_KEY` | `news-fan-out` |
+| `FRANK-API-ANTHROPIC` | `ai-summary` (Claude Haiku 4.5) |
+
+```bash
+# List
+supabase secrets list --project-ref hkamukkkkpqhdpcradau
+
+# Set or update
+supabase secrets set POLYGON_API_KEY=<value> --project-ref hkamukkkkpqhdpcradau
+
+# Delete
+supabase secrets unset POLYGON_API_KEY --project-ref hkamukkkkpqhdpcradau
+```
+
+Dashboard: https://supabase.com/dashboard/project/hkamukkkkpqhdpcradau/functions/secrets
+
+### Cross-store gotchas
+
+- **Polygon key has two names**: `POLYGON_KEY` (Worker) vs. `POLYGON_API_KEY` (edge functions). Same value, two stores. Rotate in both, simultaneously, or you get silent breakage in one layer.
+- **Anthropic key name** is `FRANK-API-ANTHROPIC` (hyphens, not underscores). Don't normalize when setting.
+- **`SUPABASE_URL`** is set in Worker manually and auto-injected in edge functions. Same value, different setup paths.
+
+### When to rotate
+
+- After any potential exposure (secret in git, shared in chat, screenshot, etc.)
+- Quarterly hygiene
+- When a collaborator with access loses access
+
+After rotation:
+1. Update both stores if the secret crosses layers (especially Polygon)
+2. No code changes — values are read at runtime
+3. No redeploy needed: `wrangler secret put` and `supabase secrets set` update the live Worker / functions immediately on next invocation
+
+---
+
 ## Coordinated full-stack deploy
 
 When a single change touches all three layers (e.g. a new feature with new SQL, new edge function, and new frontend code):
