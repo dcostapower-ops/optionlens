@@ -156,30 +156,36 @@ ORDER BY jobname;
 -- history for indicators); a sudden growth in the gap suggests a processing issue.
 --
 -- Schema notes (verified 2026-05-04):
---   - The master ticker reference table is `ticker_reference` (NOT `universe`).
---     This table is maintained by the `universe-fan-out` edge function.
---   - The smaller working list that `ta-batch` actually processes is stored as a JSON
---     blob in `app_config` where `key = 'ta_ticker_universe'` — not a relational table.
---     If you need to diff against THAT list specifically, you'll need to extract from
---     app_config.value JSON, which is more work than the ticker_reference comparison.
+--   - Master ticker reference table: `ticker_reference` (NOT `universe`).
+--     Maintained by the `universe-fan-out` edge function.
+--   - The IDENTIFIER COLUMN IN ticker_reference IS `symbol`, NOT `ticker`.
+--     (ta_cache uses `ticker`. The JOIN is `t.ticker = tr.symbol`.)
+--   - `ticker_reference.missing_since` is non-null for tickers that have dropped out
+--     of the active universe — exclude them with `WHERE tr.missing_since IS NULL`.
+--   - The smaller working list `ta-batch` actually processes is a JSON blob in
+--     `app_config` where `key = 'ta_ticker_universe'` — not a relational table.
+--     For a strict diff against THAT list, you'd extract from the JSON; the
+--     ticker_reference comparison below is the pragmatic operational query.
 --
 -- Replace 'YYYY-MM-DD' with the trading_date from QUERY 3's top row.
 
--- List the missing tickers (top 50)
--- SELECT tr.ticker
+-- List missing tickers (top 50, active reference only)
+-- SELECT tr.symbol
 -- FROM ticker_reference tr
 -- LEFT JOIN ta_cache t
---   ON t.ticker = tr.ticker AND t.trading_date = 'YYYY-MM-DD'
+--   ON t.ticker = tr.symbol AND t.trading_date = 'YYYY-MM-DD'
 -- WHERE t.ticker IS NULL
--- ORDER BY tr.ticker
+--   AND tr.missing_since IS NULL
+-- ORDER BY tr.symbol
 -- LIMIT 50;
 
 -- Or just the count (faster):
 -- SELECT COUNT(*) AS missing_from_cache
 -- FROM ticker_reference tr
 -- LEFT JOIN ta_cache t
---   ON t.ticker = tr.ticker AND t.trading_date = 'YYYY-MM-DD'
--- WHERE t.ticker IS NULL;
+--   ON t.ticker = tr.symbol AND t.trading_date = 'YYYY-MM-DD'
+-- WHERE t.ticker IS NULL
+--   AND tr.missing_since IS NULL;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
