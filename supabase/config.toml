@@ -1,0 +1,7 @@
+# Supabase project configuration for StockVizor.
+# Used by `supabase link` and `supabase functions deploy`.
+# This is a minimal config — local-dev sections (api/db/studio/auth) are
+# omitted because we deploy directly to the remote project, not to a local
+# Supabase stack. Add them later if you ever want to run `supabase start`.
+
+project_id = "hkamukkkkpqhdpcradau"

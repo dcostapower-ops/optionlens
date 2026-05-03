@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockVizor™ — Smart Signals for Stocks & Options</title>
+<meta name="description" content="AI-powered stock and options signals with tracked accuracy. See every forecast's result — ✓ or ✗. No black boxes.">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<meta property="og:title" content="StockVizor — Analyze, Forecast, Invest">
+<meta property="og:description" content="Smart signals for stocks & options with tracked accuracy. $19/mo.">
+<meta property="og:image" content="hero.jpg">
+<meta property="og:type" content="website">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root {
+  --bg: #050a12;
+  --bg2: #080e1a;
+  --bg3: #0b1222;
+  --surface: #0e1628;
+  --surface2: #121d33;
+  --border: #1a2744;
+  --border2: #243352;
+  --text: #e8edf5;
+  --text2: #9badc4;
+  --text3: #5a6f8a;
+  --accent: #6366f1;
+  --accent2: #818cf8;
+  --accent-glow: rgba(99,102,241,0.15);
+  --green: #22c55e;
+  --green-bg: rgba(34,197,94,0.08);
+  --red: #ef4444;
+  --red-bg: rgba(239,68,68,0.08);
+  --gold: #f59e0b;
+  --cyan: #22d3ee;
+  --purple: #8b5cf6;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ═══ BACKGROUND EFFECTS ═══ */
+.bg-grid {
+  position: fixed; inset: 0; z-index: 0;
+  background-image:
+    linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+.bg-glow {
+  position: fixed; top: -200px; left: 50%; transform: translateX(-50%);
+  width: 800px; height: 600px; z-index: 0;
+  background: radial-gradient(ellipse, rgba(99,102,241,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* ═══ NAV ═══ */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  padding: 16px 40px;
+  display: flex; align-items: center; justify-content: space-between;
+  background: rgba(5,10,18,0.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-logo {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none;
+}
+.logo-mark {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 800; color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  box-shadow: 0 0 20px rgba(99,102,241,0.3);
+}
+.logo-text {
+  font-size: 22px; font-weight: 800; color: var(--text);
+  letter-spacing: -0.5px;
+}
+.logo-sub {
+  font-size: 11px; color: var(--text3); font-weight: 400;
+  margin-top: -2px;
+}
+.nav-links { display: flex; gap: 28px; align-items: center; }
+.nav-links a {
+  color: var(--text2); text-decoration: none; font-size: 14px;
+  font-weight: 500; transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--text); }
+.nav-cta {
+  display: flex; gap: 10px; align-items: center;
+}
+.btn {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px; font-weight: 600;
+  padding: 10px 22px; border-radius: 8px;
+  cursor: pointer; transition: all 0.2s;
+  text-decoration: none; border: none;
+}
+.btn-ghost {
+  background: transparent; border: 1px solid var(--border2);
+  color: var(--text2);
+}
+.btn-ghost:hover { border-color: var(--accent); color: var(--text); }
+.btn-primary {
+  background: var(--accent); color: #fff;
+  box-shadow: 0 0 20px rgba(99,102,241,0.3);
+}
+.btn-primary:hover {
+  background: var(--accent2);
+  box-shadow: 0 0 30px rgba(99,102,241,0.4);
+}
+
+/* ═══ HERO ═══ */
+.hero {
+  position: relative; z-index: 1;
+  padding: 160px 40px 80px;
+  text-align: center;
+  max-width: 900px; margin: 0 auto;
+}
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 16px; border-radius: 20px;
+  background: var(--accent-glow);
+  border: 1px solid rgba(99,102,241,0.2);
+  font-size: 13px; color: var(--accent2); font-weight: 500;
+  margin-bottom: 24px;
+}
+.hero-badge .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+.hero h1 {
+  font-size: 56px; font-weight: 900; line-height: 1.1;
+  letter-spacing: -2px; margin-bottom: 20px;
+  background: linear-gradient(135deg, #fff 30%, var(--accent2) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hero p {
+  font-size: 19px; color: var(--text2); max-width: 620px;
+  margin: 0 auto 36px; line-height: 1.7;
+}
+.hero-cta { display: flex; gap: 14px; justify-content: center; }
+.hero-cta .btn { padding: 14px 32px; font-size: 16px; }
+.hero-stats {
+  display: flex; gap: 40px; justify-content: center;
+  margin-top: 48px; padding-top: 40px;
+  border-top: 1px solid var(--border);
+}
+.hero-stat {
+  text-align: center;
+}
+.hero-stat .val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 28px; font-weight: 700; color: var(--text);
+}
+.hero-stat .val.green { color: var(--green); }
+.hero-stat .val.purple { color: var(--purple); }
+.hero-stat .val.cyan { color: var(--cyan); }
+.hero-stat .lbl {
+  font-size: 13px; color: var(--text3); margin-top: 4px;
+}
+
+/* ═══ PREVIEW SECTION ═══ */
+.preview {
+  position: relative; z-index: 1;
+  max-width: 1100px; margin: 40px auto 80px;
+  padding: 0 40px;
+}
+.preview-window {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(99,102,241,0.05);
+}
+.preview-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.preview-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+}
+.preview-body {
+  padding: 24px;
+  display: flex; gap: 16px; min-height: 260px;
+}
+.preview-chart {
+  flex: 2; background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px;
+  position: relative; overflow: hidden;
+}
+.preview-chart canvas { width: 100%; height: 200px; display: block; }
+.preview-sidebar {
+  flex: 1; display: flex; flex-direction: column; gap: 10px;
+}
+.preview-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px;
+}
+.preview-card .title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text3); margin-bottom: 8px;
+}
+.signal-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+.signal-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.signal-ticker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 600; color: var(--text);
+  width: 48px;
+}
+.signal-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 4px;
+}
+.signal-badge.buy { background: var(--green-bg); color: var(--green); border: 1px solid rgba(34,197,94,0.2); }
+.signal-badge.sell { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+
+/* ═══ FEATURES ═══ */
+.features {
+  position: relative; z-index: 1;
+  max-width: 1100px; margin: 0 auto;
+  padding: 80px 40px;
+}
+.section-label {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 2px;
+  color: var(--accent2); font-weight: 600; text-align: center;
+  margin-bottom: 12px;
+}
+.section-title {
+  font-size: 40px; font-weight: 800; text-align: center;
+  letter-spacing: -1px; margin-bottom: 16px;
+}
+.section-desc {
+  font-size: 17px; color: var(--text2); text-align: center;
+  max-width: 600px; margin: 0 auto 48px;
+}
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.feature-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  transition: all 0.3s;
+}
+.feature-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 30px rgba(99,102,241,0.08);
+  transform: translateY(-2px);
+}
+.feature-icon {
+  font-size: 28px; margin-bottom: 14px;
+}
+.feature-card h3 {
+  font-size: 16px; font-weight: 700; margin-bottom: 8px;
+  color: var(--text);
+}
+.feature-card p {
+  font-size: 14px; color: var(--text2); line-height: 1.6;
+}
+
+/* ═══ TRACK RECORD ═══ */
+.track-record {
+  position: relative; z-index: 1;
+  max-width: 1100px; margin: 0 auto;
+  padding: 80px 40px;
+}
+.tr-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 48px;
+  text-align: center;
+}
+.tr-box h2 {
+  font-size: 36px; font-weight: 800; margin-bottom: 12px;
+}
+.tr-box .sub {
+  font-size: 16px; color: var(--text2); margin-bottom: 36px;
+}
+.tr-stats {
+  display: flex; justify-content: center; gap: 24px;
+  margin-bottom: 32px;
+}
+.tr-stat {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 32px;
+  min-width: 160px;
+}
+.tr-stat .num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 36px; font-weight: 800;
+}
+.tr-stat .label {
+  font-size: 13px; color: var(--text3); margin-top: 4px;
+}
+.tr-note {
+  font-size: 12px; color: var(--text3);
+  font-style: italic;
+}
+
+/* ═══ PRICING ═══ */
+.pricing {
+  position: relative; z-index: 1;
+  max-width: 900px; margin: 0 auto;
+  padding: 80px 40px;
+}
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+.price-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 36px;
+  position: relative;
+}
+.price-card.featured {
+  border-color: var(--accent);
+  box-shadow: 0 0 40px rgba(99,102,241,0.1);
+}
+.price-card.featured::before {
+  content: 'MOST POPULAR';
+  position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: #fff;
+  font-size: 10px; font-weight: 700; letter-spacing: 1px;
+  padding: 4px 14px; border-radius: 10px;
+}
+.price-card .tier {
+  font-size: 14px; color: var(--text3); text-transform: uppercase;
+  letter-spacing: 1px; font-weight: 600; margin-bottom: 8px;
+}
+.price-card .amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 44px; font-weight: 800; color: var(--text);
+}
+.price-card .amount span {
+  font-size: 16px; color: var(--text3); font-weight: 400;
+}
+.price-card .yearly {
+  font-size: 13px; color: var(--green); margin-bottom: 24px;
+}
+.price-card ul {
+  list-style: none; margin-bottom: 28px;
+}
+.price-card li {
+  font-size: 14px; color: var(--text2);
+  padding: 6px 0;
+  display: flex; align-items: center; gap: 10px;
+}
+.price-card li::before {
+  content: '✓'; color: var(--green); font-weight: 700;
+  font-size: 14px; width: 18px;
+}
+.price-card li.disabled {
+  color: var(--text3);
+}
+.price-card li.disabled::before {
+  content: '—'; color: var(--text3);
+}
+.price-btn {
+  width: 100%; padding: 14px; border-radius: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px; font-weight: 700;
+  cursor: pointer; border: none;
+}
+.price-btn.primary {
+  background: var(--accent); color: #fff;
+  box-shadow: 0 0 20px rgba(99,102,241,0.2);
+}
+.price-btn.secondary {
+  background: transparent; color: var(--text2);
+  border: 1px solid var(--border2);
+}
+.addon-note {
+  text-align: center; margin-top: 24px;
+  font-size: 14px; color: var(--text2);
+}
+.addon-note strong { color: var(--gold); }
+
+/* ═══ FOOTER ═══ */
+footer {
+  position: relative; z-index: 1;
+  border-top: 1px solid var(--border);
+  padding: 40px;
+  text-align: center;
+  color: var(--text3); font-size: 13px;
+}
+footer a { color: var(--text2); text-decoration: none; }
+footer a:hover { color: var(--accent2); }
+
+/* ═══ AUTH MODAL ═══ */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(5,10,18,0.9);
+  z-index: 200;
+  align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  padding: 36px 40px;
+  width: 400px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.modal-box .logo-row {
+  display: flex; align-items: center; gap: 10px;
+  justify-content: center; margin-bottom: 24px;
+}
+.modal-tabs {
+  display: flex; margin-bottom: 20px;
+  border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.modal-tab {
+  flex: 1; padding: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px; font-weight: 600;
+  background: var(--bg); color: var(--text3);
+  border: none; cursor: pointer;
+  transition: all 0.2s;
+}
+.modal-tab.active {
+  background: var(--surface2); color: var(--accent2);
+}
+.modal-input {
+  width: 100%; padding: 12px 16px; margin-bottom: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px; outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.modal-input:focus { border-color: var(--accent); }
+.modal-input::placeholder { color: var(--text3); }
+.modal-error {
+  display: none; padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  background: var(--red-bg);
+  border: 1px solid rgba(239,68,68,0.2);
+  color: var(--red); font-size: 13px;
+}
+.modal-submit {
+  width: 100%; padding: 13px;
+  border: none; border-radius: 8px;
+  background: var(--accent); color: #fff;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px; font-weight: 700;
+  cursor: pointer; transition: background 0.2s;
+}
+.modal-submit:hover { background: var(--accent2); }
+.modal-footer {
+  text-align: center; margin-top: 16px;
+  font-size: 11px; color: var(--text3);
+}
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width: 768px) {
+  nav { padding: 12px 20px; }
+  .nav-links { display: none; }
+  .hero { padding: 120px 20px 60px; }
+  .hero h1 { font-size: 36px; }
+  .hero p { font-size: 16px; }
+  .hero-stats { flex-direction: column; gap: 20px; }
+  .feature-grid { grid-template-columns: 1fr; }
+  .pricing-grid { grid-template-columns: 1fr; }
+  .preview-body { flex-direction: column; }
+  .tr-stats { flex-direction: column; align-items: center; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+
+<!-- ═══ NAVIGATION ═══ -->
+<nav>
+  <a href="#" class="nav-logo">
+    <img src="logo-icon.png" alt="StockVizor" style="height:52px;width:52px;border-radius:12px;object-fit:cover;box-shadow:0 2px 12px rgba(0,229,255,0.15);">
+    <div>
+      <div class="logo-text">StockVizor</div>
+      <div class="logo-sub">Analyze, Forecast, Invest</div>
+    </div>
+  </a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#track-record">Track Record</a>
+    <a href="#pricing">Pricing</a>
+  </div>
+  <div class="nav-cta">
+    <button class="btn btn-ghost" onclick="openModal('login')">Sign In</button>
+    <button class="btn btn-primary" onclick="openModal('signup')">Get Started Free</button>
+  </div>
+</nav>
+
+<!-- ═══ HERO ═══ -->
+<section class="hero" style="position:relative;overflow:hidden;margin:0 -40px;padding:160px 80px 80px;max-width:none;border-bottom:1px solid var(--border);background:#050a12;">
+  <!-- Video background — 5x slower (30s loop), real trading floor -->
+  <video autoplay muted loop playsinline id="heroBgVideo"
+    style="position:absolute;top:50%;left:50%;min-width:100%;min-height:100%;width:auto;height:auto;transform:translate(-50%,-50%);object-fit:cover;z-index:0;filter:saturate(1.1) brightness(0.95);">
+    <source src="hero-bg.mp4" type="video/mp4">
+  </video>
+  <!-- Subtle darkening gradient — just enough for text readability -->
+  <div style="position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(180deg,rgba(5,10,20,0.25) 0%,rgba(5,10,20,0.35) 40%,rgba(5,10,18,0.7) 80%,rgba(5,10,18,0.95) 100%);z-index:1;"></div>
+  <!-- Vignette — cinematic frame -->
+  <div style="position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 50%,rgba(0,0,0,0.4) 100%);z-index:1;"></div>
+
+  <!-- Scrolling ticker tape overlay -->
+  <div class="hero-ticker-tape" style="position:absolute;bottom:28%;left:0;width:100%;overflow:hidden;z-index:2;height:22px;">
+    <div class="hero-ticker-scroll" style="display:flex;gap:40px;animation:tickerScroll 25s linear infinite;white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;">
+      <span style="color:rgba(34,197,94,0.6);">AAPL +1.2%</span>
+      <span style="color:rgba(239,68,68,0.6);">NVDA -0.8%</span>
+      <span style="color:rgba(34,197,94,0.6);">TSLA +3.1%</span>
+      <span style="color:rgba(34,197,94,0.6);">MSFT +0.4%</span>
+      <span style="color:rgba(239,68,68,0.6);">MRVL -2.1%</span>
+      <span style="color:rgba(34,197,94,0.6);">GOOGL +0.9%</span>
+      <span style="color:rgba(34,197,94,0.6);">AMZN +1.7%</span>
+      <span style="color:rgba(239,68,68,0.6);">META -0.3%</span>
+      <span style="color:rgba(34,197,94,0.6);">SPY +0.5%</span>
+      <span style="color:rgba(34,197,94,0.6);">QQQ +0.8%</span>
+      <span style="color:rgba(239,68,68,0.6);">AMD -1.4%</span>
+      <span style="color:rgba(34,197,94,0.6);">NFLX +2.2%</span>
+      <!-- Duplicate for seamless loop -->
+      <span style="color:rgba(34,197,94,0.6);">AAPL +1.2%</span>
+      <span style="color:rgba(239,68,68,0.6);">NVDA -0.8%</span>
+      <span style="color:rgba(34,197,94,0.6);">TSLA +3.1%</span>
+      <span style="color:rgba(34,197,94,0.6);">MSFT +0.4%</span>
+      <span style="color:rgba(239,68,68,0.6);">MRVL -2.1%</span>
+      <span style="color:rgba(34,197,94,0.6);">GOOGL +0.9%</span>
+      <span style="color:rgba(34,197,94,0.6);">AMZN +1.7%</span>
+      <span style="color:rgba(239,68,68,0.6);">META -0.3%</span>
+    </div>
+  </div>
+
+  <!-- Pulsing signal dots -->
+  <div style="position:absolute;top:18%;left:15%;z-index:2;animation:signalPulse 3s ease-in-out infinite;">
+    <div style="width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 12px #22c55e,0 0 24px rgba(34,197,94,0.3);"></div>
+  </div>
+  <div style="position:absolute;top:25%;right:20%;z-index:2;animation:signalPulse 3s ease-in-out 1s infinite;">
+    <div style="width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 12px #ef4444,0 0 24px rgba(239,68,68,0.3);"></div>
+  </div>
+  <div style="position:absolute;top:35%;left:30%;z-index:2;animation:signalPulse 3s ease-in-out 2s infinite;">
+    <div style="width:6px;height:6px;border-radius:50%;background:#22c55e;box-shadow:0 0 10px #22c55e;"></div>
+  </div>
+  <div style="position:absolute;top:15%;right:35%;z-index:2;animation:signalPulse 3s ease-in-out 0.5s infinite;">
+    <div style="width:6px;height:6px;border-radius:50%;background:#00e5ff;box-shadow:0 0 10px #00e5ff;"></div>
+  </div>
+
+  <!-- Main content -->
+  <div style="max-width:900px;margin:0 auto;text-align:center;position:relative;z-index:3;">
+  <div style="margin-bottom:12px;"></div>
+  <div class="hero-badge">
+    <span class="dot"></span>
+    Signals updating in real-time
+  </div>
+  <h1>See the signals.<br>Prove the edge.</h1>
+  <p>AI-powered stock and options analysis with the only signal system that tracks every forecast — and shows you the results. No black boxes. Just ✓ or ✗.</p>
+  <div class="hero-cta">
+    <button class="btn btn-primary" onclick="openModal('signup')">Start Free →</button>
+    <a href="#features" class="btn btn-ghost">See How It Works</a>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <div class="val mono">706+</div>
+      <div class="lbl">Tickers Scanned</div>
+    </div>
+    <div class="hero-stat">
+      <div class="val mono green">15+</div>
+      <div class="lbl">Technical Indicators</div>
+    </div>
+    <div class="hero-stat">
+      <div class="val mono purple">Smart</div>
+      <div class="lbl">Buy/Sell Signals</div>
+    </div>
+    <div class="hero-stat">
+      <div class="val mono cyan">✓/✗</div>
+      <div class="lbl">Every Signal Tracked</div>
+    </div>
+  </div>
+  </div>
+</section>
+<style>
+@keyframes tickerScroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes signalPulse {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.8); }
+}
+</style>
+<section class="preview">
+  <div class="preview-window">
+    <div class="preview-bar">
+      <div class="preview-dot" style="background:#ff5f57;"></div>
+      <div class="preview-dot" style="background:#febc2e;"></div>
+      <div class="preview-dot" style="background:#28c840;"></div>
+      <span style="margin-left:12px;font-size:12px;color:var(--text3);">StockVizor — Pro Chart</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;" id="slideLabel">Candlestick Analysis</span>
+    </div>
+    <div class="preview-body">
+      <div class="preview-chart" style="position:relative;overflow:hidden;">
+        <!-- Rotating chart slideshow -->
+        <div id="chartSlideshow" style="position:relative;width:100%;height:220px;">
+          <img src="chart-1.jpg" class="chart-slide active" alt="Candlestick Analysis" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;border-radius:6px;transition:opacity 1.5s ease;opacity:1;">
+          <img src="chart-2.jpg" class="chart-slide" alt="Price Action & Volume" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;border-radius:6px;transition:opacity 1.5s ease;opacity:0;">
+          <img src="chart-3.jpg" class="chart-slide" alt="Technical Indicators" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;border-radius:6px;transition:opacity 1.5s ease;opacity:0;">
+          <img src="chart-4.jpg" class="chart-slide" alt="Multi-Timeframe View" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;border-radius:6px;transition:opacity 1.5s ease;opacity:0;">
+        </div>
+        <!-- Slide indicators -->
+        <div style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:5;">
+          <div class="slide-dot active" onclick="goSlide(0)" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.8);cursor:pointer;transition:all 0.3s;"></div>
+          <div class="slide-dot" onclick="goSlide(1)" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.3);cursor:pointer;transition:all 0.3s;"></div>
+          <div class="slide-dot" onclick="goSlide(2)" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.3);cursor:pointer;transition:all 0.3s;"></div>
+          <div class="slide-dot" onclick="goSlide(3)" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.3);cursor:pointer;transition:all 0.3s;"></div>
+        </div>
+      </div>
+      <div class="preview-sidebar">
+        <div class="preview-card">
+          <div class="title">Live Signals</div>
+          <div class="signal-row">
+            <div class="signal-dot" style="background:var(--green);"></div>
+            <div class="signal-ticker">NVDA</div>
+            <div class="signal-badge buy">STRONG BUY</div>
+          </div>
+          <div class="signal-row">
+            <div class="signal-dot" style="background:var(--red);"></div>
+            <div class="signal-ticker">TSLA</div>
+            <div class="signal-badge sell">SELL</div>
+          </div>
+          <div class="signal-row">
+            <div class="signal-dot" style="background:var(--green);"></div>
+            <div class="signal-ticker">AAPL</div>
+            <div class="signal-badge buy">BUY</div>
+          </div>
+          <div class="signal-row">
+            <div class="signal-dot" style="background:var(--red);"></div>
+            <div class="signal-ticker">MRVL</div>
+            <div class="signal-badge sell">STRONG SELL</div>
+          </div>
+        </div>
+        <div class="preview-card">
+          <div class="title">Track Record</div>
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="font-size:32px;font-weight:800;color:var(--green);font-family:'JetBrains Mono',monospace;">B+</div>
+            <div>
+              <div style="font-size:12px;color:var(--text2);">67% win rate</div>
+              <div style="font-size:11px;color:var(--text3);">142 forecasts evaluated</div>
+            </div>
+          </div>
+        </div>
+        <div class="preview-card">
+          <div class="title">WBR vs TTM</div>
+          <div style="display:flex;gap:8px;">
+            <div style="flex:1;text-align:center;">
+              <div style="font-size:10px;color:#00e5ff;margin-bottom:2px;">WBR</div>
+              <div style="font-size:18px;font-weight:800;color:#22c55e;font-family:'JetBrains Mono',monospace;">72%</div>
+            </div>
+            <div style="width:1px;background:var(--border);"></div>
+            <div style="flex:1;text-align:center;">
+              <div style="font-size:10px;color:#f472b6;margin-bottom:2px;">TTM</div>
+              <div style="font-size:18px;font-weight:800;color:#fbbf24;font-family:'JetBrains Mono',monospace;">58%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<script>
+// Chart slideshow — auto-rotate every 4 seconds
+(function(){
+  const slides = document.querySelectorAll('.chart-slide');
+  const dots = document.querySelectorAll('.slide-dot');
+  const labels = ['Candlestick Analysis','Price Action & Volume','Technical Indicators','Multi-Timeframe View'];
+  const labelEl = document.getElementById('slideLabel');
+  let current = 0;
+  let timer;
+
+  window.goSlide = function(idx){
+    slides[current].style.opacity = '0';
+    dots[current].style.background = 'rgba(255,255,255,0.3)';
+    current = idx;
+    slides[current].style.opacity = '1';
+    dots[current].style.background = 'rgba(255,255,255,0.8)';
+    if(labelEl) labelEl.textContent = labels[current];
+    clearInterval(timer);
+    timer = setInterval(next, 4000);
+  };
+
+  function next(){ window.goSlide((current + 1) % slides.length); }
+  timer = setInterval(next, 4000);
+})();
+</script>
+
+<!-- ═══ FEATURES ═══ -->
+<section class="features" id="features">
+  <div class="section-label">Why StockVizor</div>
+  <div class="section-title">Everything a serious trader needs</div>
+  <div class="section-desc">From screening 706+ tickers to tracking every forecast — built by a trader, for traders.</div>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🐂🐻</div>
+      <h3>Smart Buy/Sell Signals</h3>
+      <p>Multi-indicator confluence detection clusters BB, Fibonacci, VWAP, Order Blocks, and SMAs into actionable BUY/SELL diamonds with confidence scoring.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎯</div>
+      <h3>Track Record</h3>
+      <p>Every signal is logged with a target price and date. When the date arrives, we check: did it hit? Green ✓ or red ✗ — drawn right on the chart. No hiding.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📡</div>
+      <h3>Prediction Cone</h3>
+      <p>Forward-looking price envelope with high/center/low targets. See where price is likely heading before the move happens.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">◈</div>
+      <h3>Options Analyzer</h3>
+      <p>Full chain analysis with PCR, GEX, Max Pain, gamma pin, IV skew, and LEAP scoring. Entry timing signals built in.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🤖</div>
+      <h3>AI Stock Analysis</h3>
+      <p>Ask any question about any ticker. Get instant analysis combining technicals, fundamentals, and market context in plain English.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📱</div>
+      <h3>Telegram Alerts</h3>
+      <p>Real-time STRONG BUY/SELL signals delivered straight to your phone. Never miss a high-conviction trade setup again.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ TRACK RECORD ═══ -->
+<section class="track-record" id="track-record">
+  <div class="tr-box">
+    <div class="section-label">Accountability</div>
+    <h2>We track every forecast.<br>No exceptions.</h2>
+    <div class="sub">Most signal providers hide their misses. We show everything — wins and losses — so you can judge for yourself.</div>
+    <div class="tr-stats">
+      <div class="tr-stat">
+        <div class="num" style="color:var(--green);">✓</div>
+        <div class="label">Wins logged on-chart</div>
+      </div>
+      <div class="tr-stat">
+        <div class="num" style="color:var(--red);">✗</div>
+        <div class="label">Misses shown honestly</div>
+      </div>
+      <div class="tr-stat">
+        <div class="num" style="color:var(--cyan);">◌</div>
+        <div class="label">Pending forecasts visible</div>
+      </div>
+    </div>
+    <div class="tr-note">Track Record builds over time as forecasts mature. Start free to watch signals accumulate.</div>
+  </div>
+</section>
+
+<!-- ═══ PRICING ═══ -->
+<section class="pricing" id="pricing">
+  <div class="section-label">Pricing</div>
+  <div class="section-title">Simple, honest pricing</div>
+  <div class="section-desc">Start free. Upgrade when you're ready.</div>
+  <div class="pricing-grid">
+    <div class="price-card">
+      <div class="tier">Free</div>
+      <div class="amount">$0</div>
+      <div class="yearly" style="color:var(--text3);">Free forever</div>
+      <ul>
+        <li>Screener with 50 tickers</li>
+        <li>Standard chart with indicators</li>
+        <li>Signal Feed (15-min delay)</li>
+        <li>3 watchlist slots</li>
+        <li class="disabled">Pro Chart & Smart Signals</li>
+        <li class="disabled">Options Analyzer</li>
+        <li class="disabled">AI Stock Analysis</li>
+        <li class="disabled">Track Record</li>
+      </ul>
+      <button class="price-btn secondary" onclick="openModal('signup')">Create Free Account</button>
+    </div>
+    <div class="price-card featured">
+      <div class="tier">Pro</div>
+      <div class="amount">$19<span>/month</span></div>
+      <div class="yearly">or $149/year — save $79</div>
+      <ul>
+        <li>Full screener — 706+ tickers</li>
+        <li>Pro Chart with Smart Signals</li>
+        <li>Prediction Cone & WBR</li>
+        <li>Options Chain Analyzer</li>
+        <li>AI Stock Analysis</li>
+        <li>Track Record with ✓/✗</li>
+        <li>Multi-Timeframe Dashboard</li>
+        <li>Unlimited watchlist</li>
+      </ul>
+      <button class="price-btn primary" onclick="openModal('signup')">Start Pro →</button>
+    </div>
+  </div>
+  <div class="addon-note">
+    📱 <strong>Telegram Alerts</strong> — add real-time signal delivery for +$9/month
+  </div>
+</section>
+
+<!-- ═══ FOOTER ═══ -->
+<footer>
+  <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;justify-content:center;">
+    <img src="logo-icon.png" alt="StockVizor" style="height:28px;width:28px;border-radius:6px;object-fit:cover;">
+    <span style="font-weight:700;color:var(--text);">StockVizor™</span>
+    <span style="color:var(--border2);">·</span>
+    <span>Analyze, Forecast, Invest</span>
+  </div>
+  <div style="margin-bottom:16px;">
+    <a href="#features" style="margin:0 12px;">Features</a>
+    <a href="#track-record" style="margin:0 12px;">Track Record</a>
+    <a href="#pricing" style="margin:0 12px;">Pricing</a>
+  </div>
+  <div style="font-size:11px;color:var(--text3);max-width:600px;margin:0 auto;">
+    ⚠ StockVizor provides algorithmic analysis for educational purposes only. Not financial advice.
+    Trading stocks and options involves risk. Past signal performance does not guarantee future results.
+  </div>
+  <div style="margin-top:16px;">© 2026 StockVizor™. All rights reserved.</div>
+</footer>
+
+<!-- ═══ AUTH MODAL ═══ -->
+<div class="modal-overlay" id="authModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="logo-row">
+      <img src="logo-icon.png" alt="StockVizor" style="height:56px;width:56px;border-radius:12px;object-fit:cover;box-shadow:0 4px 16px rgba(0,0,0,0.3);">
+      <div>
+        <div style="font-size:18px;font-weight:800;">StockVizor</div>
+        <div style="font-size:10px;color:var(--text3);">Analyze, Forecast, Invest</div>
+      </div>
+    </div>
+    <div class="modal-tabs">
+      <button class="modal-tab active" id="tabLogin" onclick="switchTab('login')">Sign In</button>
+      <button class="modal-tab" id="tabSignup" onclick="switchTab('signup')">Create Account</button>
+    </div>
+    <input class="modal-input" id="authEmail" type="email" placeholder="Email address">
+    <input class="modal-input" id="authPass" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')submitAuth()">
+    <div id="nameRow" style="display:none;">
+      <input class="modal-input" id="authName" type="text" placeholder="Display name (optional)">
+    </div>
+    <div class="modal-error" id="authError"></div>
+    <button class="modal-submit" id="authSubmitBtn" onclick="submitAuth()">Sign In</button>
+    <div class="modal-footer">Upon signing in, you will be asked to accept our <span onclick="showDisclaimerPreviewIdx()" style="color:#58a6ff;cursor:pointer;text-decoration:underline;">Disclaimer & Terms</span></div>
+  </div>
+</div>
+
+<!-- Disclaimer overlay for index.html -->
+<div id="idxDisclaimer" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:99999;display:none;align-items:center;justify-content:center;padding:20px;">
+</div>
+
+<script>
+// ═══ AUTH LOGIC ═══
+const SUPA_URL='https://hkamukkkkpqhdpcradau.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY';
+const _sb=window.supabase?window.supabase.createClient(SUPA_URL,SUPA_KEY):null;
+
+let authMode='login';
+
+// Check if already logged in → check consent → redirect
+(async function(){
+if(!_sb)return;
+const{data}=await _sb.auth.getSession();
+if(data?.session?.user){
+  const uid = data.session.user.id;
+  const _sessEmail = data.session.user.email;
+  if(_sessEmail === 'guest@stockvizor.com'){ window.location.href='/dashboard'; return; }
+  // Fast path: cached consent
+  if(localStorage.getItem('sv_consent_ok') === 'true'){ window.location.href='/dashboard'; return; }
+  try{
+    const{data:consent}=await _sb.from('user_consents').select('id').eq('user_id',uid).eq('consent_type','disclaimer').limit(1);
+    if(consent && consent.length > 0){ localStorage.setItem('sv_consent_ok','true'); window.location.href='/dashboard'; return; }
+  }catch(e){}
+  await _sb.auth.signOut();
+}
+})();
+
+function openModal(mode){
+authMode=mode||'login';
+switchTab(authMode);
+document.getElementById('authModal').classList.add('open');
+setTimeout(()=>document.getElementById('authEmail').focus(),100);
+}
+function closeModal(){
+document.getElementById('authModal').classList.remove('open');
+document.getElementById('authError').style.display='none';
+}
+function switchTab(tab){
+authMode=tab;
+document.getElementById('tabLogin').classList.toggle('active',tab==='login');
+document.getElementById('tabSignup').classList.toggle('active',tab==='signup');
+document.getElementById('nameRow').style.display=tab==='signup'?'block':'none';
+document.getElementById('authSubmitBtn').textContent=tab==='login'?'Sign In':'Create Account';
+document.getElementById('authError').style.display='none';
+}
+async function submitAuth(){
+if(!_sb)return;
+const email=document.getElementById('authEmail').value.trim();
+const pass=document.getElementById('authPass').value;
+const err=document.getElementById('authError');
+const btn=document.getElementById('authSubmitBtn');
+if(!email||!pass){err.textContent='Please enter email and password';err.style.display='block';return;}
+btn.textContent='◌ Please wait...';btn.disabled=true;
+err.style.display='none';
+try{
+if(authMode==='login'){
+const{error}=await _sb.auth.signInWithPassword({email,password:pass});
+if(error)throw error;
+}else{
+const{data,error}=await _sb.auth.signUp({email,password:pass});
+if(error)throw error;
+const name=document.getElementById('authName')?.value?.trim();
+if(name&&data?.user) await _sb.from('user_profiles').update({display_name:name}).eq('id',data.user.id);
+}
+// Check consent before redirecting
+const _loginEmail = email.toLowerCase();
+if(_loginEmail === 'guest@stockvizor.com'){
+  window.location.href='/dashboard'; // Guest skips consent
+} else {
+  // Fast path: check cached consent
+  const _cachedConsent = localStorage.getItem('sv_consent_ok');
+  if(_cachedConsent === 'true'){
+    window.location.href='/dashboard';
+  } else {
+    const uid = (await _sb.auth.getSession())?.data?.session?.user?.id;
+    if(uid){
+    try{
+      const{data:consent}=await _sb.from('user_consents').select('id').eq('user_id',uid).eq('consent_type','disclaimer').limit(1);
+      if(consent && consent.length > 0){ localStorage.setItem('sv_consent_ok','true'); window.location.href='/dashboard'; }
+      else { closeModal(); showIdxDisclaimer(uid); }
+    }catch(e){ closeModal(); showIdxDisclaimer(uid); }
+  } else { window.location.href='/dashboard'; }
+  }
+}
+}catch(e){
+err.textContent=e.message||'Authentication failed';
+err.style.display='block';
+}
+btn.textContent=authMode==='login'?'Sign In':'Create Account';btn.disabled=false;
+}
+
+// ═══ DISCLAIMER ON LANDING PAGE ═══
+function showDisclaimerPreviewIdx(){
+const m=document.createElement('div');m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:999999;display:flex;align-items:center;justify-content:center;padding:20px;';
+m.onclick=e=>{if(e.target===m)m.remove();};
+m.innerHTML=`<div style="background:#0b1020;border:1px solid #2d3d5a;border-radius:12px;padding:28px 32px;width:520px;max-height:80vh;overflow-y:auto;font-family:'IBM Plex Mono',monospace;">
+<div style="text-align:center;margin-bottom:16px;"><div style="font-size:16px;font-weight:700;color:#cdd9e5;">⚖️ Disclaimer & Terms</div></div>
+<div style="background:#0e1525;border:1px solid #1c2538;border-radius:8px;padding:16px;font-size:11px;color:#9ab0c4;line-height:1.8;margin-bottom:16px;">
+<p style="margin-bottom:12px;">The content, tools, and materials provided on this portal are for educational and informational purposes only and do not constitute financial, investment, legal, tax, or any other form of professional advice. Nothing on this portal should be interpreted as a recommendation or solicitation to buy, sell, or hold any security, derivative, or financial instrument, including but not limited to stocks and options.</p>
+<p style="margin-bottom:12px;">Users acknowledge and agree that any investment decisions they make are made solely at their own risk and based on their own independent research, judgment, and, where appropriate, consultation with a qualified financial, legal, or tax adviser. This portal, its owners, operators, and contributors shall not be liable for any losses, damages, or consequences arising from the use of, or reliance on, any information or materials provided herein.</p>
+<p>By accessing and using this portal, you represent and warrant that you are at least 18 years of age (or the age of majority in your jurisdiction, if higher) and that you understand and accept the risks associated with trading and investing in financial instruments, including the potential loss of your entire investment.</p>
+</div>
+<div style="text-align:center;"><button onclick="this.closest('div[style]').parentElement.remove()" style="padding:8px 24px;border:1px solid #2d3d5a;border-radius:6px;background:transparent;color:#9ab0c4;font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer;">Close</button></div>
+</div>`;
+document.body.appendChild(m);
+}
+
+let _idxUid = null;
+function showIdxDisclaimer(uid){
+_idxUid = uid;
+const declines = parseInt(localStorage.getItem('sv_disclaimer_declines')||'0');
+if(declines >= 3){ showIdxDeclineNotice(); return; }
+const el = document.getElementById('idxDisclaimer');
+el.style.display='flex';
+el.innerHTML=`<div style="background:#0b1020;border:1px solid #2d3d5a;border-radius:12px;padding:28px 32px;width:520px;max-height:85vh;overflow-y:auto;font-family:'IBM Plex Mono',monospace;box-shadow:0 16px 48px rgba(0,0,0,.6);">
+<div style="text-align:center;margin-bottom:20px;">
+<div style="font-size:28px;margin-bottom:6px;">⚖️</div>
+<div style="font-size:16px;font-weight:700;color:#cdd9e5;">Terms & Disclaimer</div>
+<div style="font-size:10px;color:#64748b;margin-top:4px;">Please read carefully before proceeding</div>
+</div>
+<div style="background:#0e1525;border:1px solid #1c2538;border-radius:8px;padding:16px;margin-bottom:16px;font-size:11px;color:#9ab0c4;line-height:1.8;max-height:280px;overflow-y:auto;">
+<p style="margin-bottom:12px;">The content, tools, and materials provided on this portal are for educational and informational purposes only and do not constitute financial, investment, legal, tax, or any other form of professional advice. Nothing on this portal should be interpreted as a recommendation or solicitation to buy, sell, or hold any security, derivative, or financial instrument, including but not limited to stocks and options.</p>
+<p style="margin-bottom:12px;">Users acknowledge and agree that any investment decisions they make are made solely at their own risk and based on their own independent research, judgment, and, where appropriate, consultation with a qualified financial, legal, or tax adviser. This portal, its owners, operators, and contributors shall not be liable for any losses, damages, or consequences arising from the use of, or reliance on, any information or materials provided herein.</p>
+<p>By accessing and using this portal, you represent and warrant that you are at least 18 years of age (or the age of majority in your jurisdiction, if higher) and that you understand and accept the risks associated with trading and investing in financial instruments, including the potential loss of your entire investment.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:11px;color:#9ab0c4;">
+<input type="checkbox" id="idxCheck1" onchange="idxCheckBoth()" style="margin-top:2px;accent-color:#3b82f6;">
+<span>I acknowledge that this portal is for <strong style="color:#e2e8f0;">educational and informational purposes only</strong> and does not constitute financial, investment, or professional advice. I accept full responsibility for my own investment decisions.</span>
+</label>
+<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:11px;color:#9ab0c4;">
+<input type="checkbox" id="idxCheck2" onchange="idxCheckBoth()" style="margin-top:2px;accent-color:#3b82f6;">
+<span>I represent and warrant that I am at least <strong style="color:#e2e8f0;">18 years of age</strong> (or the age of majority in my jurisdiction) and understand and accept the risks associated with trading and investing, including the potential loss of my entire investment.</span>
+</label>
+</div>
+<div id="idxDisclaimerErr" style="display:none;padding:8px 12px;margin-bottom:10px;border-radius:6px;background:#1a0505;border:1px solid #ef444444;color:#f87171;font-size:11px;"></div>
+<div style="display:flex;gap:8px;">
+<button onclick="idxDecline()" style="flex:1;padding:10px;border:1px solid #2d3d5a;border-radius:6px;background:transparent;color:#9ab0c4;font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer;">I Do Not Agree</button>
+<button id="idxAcceptBtn" onclick="idxAccept()" disabled style="flex:1;padding:10px;border:none;border-radius:6px;background:#2d3d5a;color:#5c7080;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;cursor:not-allowed;">I Agree & Continue</button>
+</div>
+<div style="text-align:center;margin-top:10px;font-size:9px;color:#3d4f60;">Your consent will be recorded and stored securely</div>
+</div>`;
+}
+
+function idxCheckBoth(){
+const c1=document.getElementById('idxCheck1')?.checked;
+const c2=document.getElementById('idxCheck2')?.checked;
+const btn=document.getElementById('idxAcceptBtn');
+if(btn){
+  const ok=c1&&c2;
+  btn.disabled=!ok;
+  btn.style.background=ok?'#2563eb':'#2d3d5a';
+  btn.style.color=ok?'#fff':'#5c7080';
+  btn.style.cursor=ok?'pointer':'not-allowed';
+}
+}
+
+async function idxAccept(){
+if(!_idxUid||!_sb)return;
+try{
+  await _sb.from('user_consents').insert({
+    user_id:_idxUid, consent_type:'disclaimer',
+    consent_text:'User accepted educational disclaimer and confirmed 18+ age',
+    user_agent:navigator.userAgent, accepted_at:new Date().toISOString()
+  });
+  localStorage.removeItem('sv_disclaimer_declines');
+  document.getElementById('idxDisclaimer').style.display='none';
+  // Show plan selection AFTER disclaimer accepted
+  showPlanSelection();
+}catch(e){
+  const err=document.getElementById('idxDisclaimerErr');
+  if(err){err.textContent='Error: '+e.message;err.style.display='block';}
+}
+}
+
+function showPlanSelection(){
+const el=document.getElementById('idxDisclaimer');
+el.style.display='flex';
+el.innerHTML=`<div style="background:#0b1020;border:1px solid #2d3d5a;border-radius:12px;padding:28px 32px;width:640px;max-height:90vh;overflow-y:auto;font-family:'IBM Plex Mono',monospace;box-shadow:0 16px 48px rgba(0,0,0,.6);">
+<div style="text-align:center;margin-bottom:20px;">
+<div style="font-size:28px;margin-bottom:6px;">🚀</div>
+<div style="font-size:18px;font-weight:700;color:#cdd9e5;">Choose Your Plan</div>
+<div style="font-size:11px;color:#64748b;margin-top:4px;">Select how you'd like to get started</div>
+</div>
+<div style="display:flex;gap:12px;margin-bottom:20px;">
+
+<!-- FREE TRIAL -->
+<div style="flex:1;background:#0e1525;border:1px solid #22c55e44;border-radius:8px;padding:16px;text-align:center;">
+<div style="font-size:13px;font-weight:700;color:#22c55e;margin-bottom:8px;">🎁 FREE TRIAL</div>
+<div style="font-size:28px;font-weight:800;color:#22c55e;">$0</div>
+<div style="font-size:10px;color:#5c7080;margin-bottom:12px;">5 days · Full Premium access</div>
+<div style="font-size:10px;color:#9ab0c4;text-align:left;line-height:1.8;margin-bottom:12px;">
+• All Premium features unlocked<br>
+• Smart Signals & AI Query<br>
+• Prediction Cone & WBR Forecast<br>
+• Options Analyzer<br>
+• No credit card required
+</div>
+<button onclick="startFreeTrial()" style="width:100%;padding:10px;border:none;border-radius:6px;background:#22c55e;color:#000;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;cursor:pointer;">Start Free Trial →</button>
+</div>
+
+<!-- PRO -->
+<div style="flex:1;background:#0e1525;border:1px solid #3b82f644;border-radius:8px;padding:16px;text-align:center;">
+<div style="font-size:13px;font-weight:700;color:#3b82f6;margin-bottom:8px;">✦ PRO</div>
+<div style="font-size:28px;font-weight:800;color:#3b82f6;">$99</div>
+<div style="font-size:10px;color:#5c7080;margin-bottom:12px;">per 3 months</div>
+<div style="font-size:10px;color:#9ab0c4;text-align:left;line-height:1.8;margin-bottom:12px;">
+• All 7 timeframes<br>
+• VWAP, Fibonacci, Order Blocks<br>
+• Smart Signals & Patterns<br>
+• Track Record & Multi-TF<br>
+• Unlimited watchlist
+</div>
+<button onclick="subscribePlan('pro',99)" style="width:100%;padding:10px;border:none;border-radius:6px;background:#3b82f6;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;cursor:pointer;">Subscribe to Pro →</button>
+</div>
+
+<!-- PREMIUM -->
+<div style="flex:1;background:#0e1525;border:1px solid #8a2be244;border-radius:8px;padding:16px;text-align:center;position:relative;">
+<div style="position:absolute;top:-8px;right:10px;background:#8a2be2;color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;">BEST VALUE</div>
+<div style="font-size:13px;font-weight:700;color:#8a2be2;margin-bottom:8px;">◆ PREMIUM</div>
+<div style="font-size:28px;font-weight:800;color:#8a2be2;">$199</div>
+<div style="font-size:10px;color:#5c7080;margin-bottom:12px;">per 3 months</div>
+<div style="font-size:10px;color:#9ab0c4;text-align:left;line-height:1.8;margin-bottom:12px;">
+• Everything in Pro<br>
+• Prediction Cone & WBR Forecast<br>
+• TTM Squeeze + Forward<br>
+• Options Analyzer & AI Query<br>
+• VIX Overlay & Premium Chart
+</div>
+<button onclick="subscribePlan('premium',199)" style="width:100%;padding:10px;border:none;border-radius:6px;background:#8a2be2;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;cursor:pointer;">Subscribe to Premium →</button>
+</div>
+
+</div>
+<div style="text-align:center;font-size:10px;color:#3d4f60;">All paid plans are for 3-month billing cycles · Contact <a href="mailto:info@stockvizor.com" style="color:#58a6ff;">info@stockvizor.com</a> for questions</div>
+</div>`;
+}
+
+async function startFreeTrial(){
+if(!_idxUid||!_sb)return;
+try{
+  const trialStart = new Date(Date.now()+86400000); // next calendar day
+  const trialEnd = new Date(Date.now()+6*86400000); // 5 days from tomorrow
+  await _sb.from('user_profiles').update({
+    tier_id:'premium',
+    subscription_status:'first_time',
+    trial_start: trialStart.toISOString().slice(0,10),
+    trial_end: trialEnd.toISOString().slice(0,10),
+    trial_used: false,
+    tier_expires_at: trialEnd.toISOString()
+  }).eq('id',_idxUid);
+  // Log in history
+  await _sb.from('subscription_history').insert({
+    user_id:_idxUid, action:'first_time', tier_id:'premium', amount_paid:0,
+    subscription_start:trialStart.toISOString().slice(0,10),
+    subscription_end:trialEnd.toISOString().slice(0,10),
+    notes:'5-day premium trial started'
+  });
+  window.location.href='/dashboard';
+}catch(e){
+  alert('Error starting trial: '+e.message);
+}
+}
+
+async function subscribePlan(tier, amount){
+if(!_idxUid||!_sb)return;
+const tierLabel = tier==='premium'?'◆ Premium':'✦ Pro';
+const el=document.getElementById('idxDisclaimer');
+el.innerHTML=`<div style="background:#0b1020;border:1px solid #2d3d5a;border-radius:12px;padding:28px 32px;width:420px;font-family:'IBM Plex Mono',monospace;text-align:center;">
+<div style="font-size:32px;margin-bottom:8px;">💳</div>
+<div style="font-size:16px;font-weight:700;color:#cdd9e5;margin-bottom:10px;">Redirecting to Payment...</div>
+<div style="font-size:12px;color:#9ab0c4;margin-bottom:16px;">Connecting to Stripe secure checkout for ${tierLabel} ($${amount}/3 months)</div>
+<div style="color:#f59e0b;font-size:11px;">◌ Please wait...</div>
+</div>`;
+try{
+  // Get user email
+  const { data:userData } = await _sb.auth.getUser();
+  const userEmail = userData?.user?.email || '';
+  
+  const r = await fetch('https://stockvizor-api.fdcosta.workers.dev/api/checkout', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ tier, user_id: _idxUid, email: userEmail })
+  });
+  const d = await r.json();
+  if(d.success && d.url){
+    // Redirect to Stripe Checkout
+    window.location.href = d.url;
+  } else {
+    throw new Error(d.error || 'Checkout failed');
+  }
+}catch(e){
+  el.innerHTML=`<div style="background:#0b1020;border:1px solid #ef444444;border-radius:12px;padding:28px 32px;width:460px;font-family:'IBM Plex Mono',monospace;text-align:center;">
+  <div style="font-size:28px;margin-bottom:8px;">⚠️</div>
+  <div style="font-size:15px;font-weight:700;color:#ef4444;margin-bottom:10px;">Payment Setup Error</div>
+  <div style="font-size:12px;color:#9ab0c4;margin-bottom:16px;line-height:1.6;">
+  ${e.message}<br><br>Please contact us to complete your subscription:
+  </div>
+  <div style="background:#0e1525;border:1px solid #1c2538;border-radius:6px;padding:12px;margin-bottom:16px;">
+  <a href="mailto:info@stockvizor.com?subject=${encodeURIComponent(tierLabel+' Subscription')}" style="color:#58a6ff;font-size:14px;font-weight:600;text-decoration:none;">📧 info@stockvizor.com</a>
+  </div>
+  <div style="display:flex;gap:8px;">
+  <button onclick="startFreeTrial()" style="flex:1;padding:10px;border:none;border-radius:6px;background:#22c55e;color:#000;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;cursor:pointer;">Start Free Trial Instead</button>
+  <button onclick="document.getElementById('idxDisclaimer').style.display='none';showPlanSelection()" style="flex:1;padding:10px;border:1px solid #2d3d5a;border-radius:6px;background:transparent;color:#9ab0c4;font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer;">← Back</button>
+  </div>
+  </div>`;
+}
+}
+
+async function idxDecline(){
+const declines=parseInt(localStorage.getItem('sv_disclaimer_declines')||'0')+1;
+localStorage.setItem('sv_disclaimer_declines',declines.toString());
+try{
+  if(_idxUid) await _sb.from('user_profiles').delete().eq('id',_idxUid);
+  await _sb.auth.signOut();
+}catch(e){}
+if(declines>=3){ showIdxDeclineNotice(); }
+else { document.getElementById('idxDisclaimer').style.display='none'; location.reload(); }
+}
+
+function showIdxDeclineNotice(){
+const el=document.getElementById('idxDisclaimer');
+el.style.display='flex';
+el.innerHTML=`<div style="background:#0b1020;border:1px solid #ef444444;border-radius:12px;padding:28px 32px;width:420px;font-family:'IBM Plex Mono',monospace;text-align:center;">
+<div style="font-size:28px;margin-bottom:10px;">🚫</div>
+<div style="font-size:15px;font-weight:700;color:#ef4444;margin-bottom:10px;">Access Restricted</div>
+<div style="font-size:12px;color:#9ab0c4;margin-bottom:16px;line-height:1.7;">
+You have declined the Terms & Disclaimer multiple times.<br><br>To request access, please contact:
+</div>
+<div style="background:#0e1525;border:1px solid #1c2538;border-radius:6px;padding:12px;margin-bottom:16px;">
+<a href="mailto:info@stockvizor.com" style="color:#58a6ff;font-size:14px;font-weight:600;text-decoration:none;">info@stockvizor.com</a>
+</div>
+<button onclick="document.getElementById('idxDisclaimer').style.display='none'" style="padding:10px 24px;border:1px solid #2d3d5a;border-radius:6px;background:transparent;color:#9ab0c4;font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer;">Close</button>
+</div>`;
+}
+</script>
+</body>
+</html>

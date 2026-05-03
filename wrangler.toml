@@ -1,0 +1,7 @@
+name = "lingering-sun-c298"
+compatibility_date = "2026-04-18"
+main = "src/index.js"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"

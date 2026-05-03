@@ -3,55 +3,55 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>OptionLens · Batch Monitor</title>
+<title>StockVizor · Admin Console</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#09090f;color:#f0f0fa;font-family:'Segoe UI',system-ui,sans-serif;padding:0;min-height:100vh}
-.topbar{background:#0d0d17;border-bottom:1px solid #1e1e2e;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
-.brand{font-size:15px;font-weight:700;letter-spacing:.3px}.brand span{color:#a78bfa}
+.topbar{background:#0d0d17;border-bottom:1px solid #2a1a0e;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.brand{font-size:15px;font-weight:700;letter-spacing:.3px}.brand span{color:#e5792a}
 .topbar-right{display:flex;align-items:center;gap:14px}
 .countdown{font-family:'Courier New',monospace;font-size:11px;color:#8888aa;display:flex;align-items:center;gap:6px}
 .live-dot{width:7px;height:7px;border-radius:50%;background:#00e5a8;animation:blink 1.4s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 @keyframes alertPulse{0%,100%{border-color:rgba(255,51,85,.3)}50%{border-color:rgba(255,51,85,.6)}}
-.btn-ref{background:#3d6eff;color:#fff;border:none;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer}
+.btn-ref{background:#e5792a;color:#fff;border:none;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer}
 .btn-ref:hover{opacity:.85}
 .wrap{padding:20px 24px 60px;max-width:1400px;margin:0 auto}
 
 /* STATUS BAR */
 .status-bar{background:#111118;border:1px solid #1e1e2e;border-radius:14px;padding:20px 24px;margin-bottom:18px;display:flex;align-items:center;gap:24px;flex-wrap:wrap}
 .big-pct{font-family:'Courier New',monospace;font-size:52px;font-weight:700;letter-spacing:-2px;line-height:1;min-width:110px}
-.big-pct.run{color:#3d6eff}.big-pct.done{color:#00e5a8}.big-pct.pend{color:#555570}
+.big-pct.run{color:#e5792a}.big-pct.done{color:#00e5a8}.big-pct.pend{color:#555570}
 .status-info{flex:1;min-width:220px}
 .badge{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-family:'Courier New',monospace;font-size:10px;font-weight:700;letter-spacing:.5px;margin-bottom:8px}
-.badge.run{background:rgba(61,110,255,.15);color:#3d6eff;border:1px solid rgba(61,110,255,.3)}
+.badge.run{background:rgba(61,110,255,.15);color:#e5792a;border:1px solid rgba(61,110,255,.3)}
 .badge.done{background:rgba(0,229,168,.12);color:#00e5a8;border:1px solid rgba(0,229,168,.25)}
 .badge.pend{background:rgba(85,85,112,.15);color:#8888aa;border:1px solid #1e1e2e}
 .status-meta{font-size:12px;color:#8888aa;line-height:2}
 .status-meta strong{color:#f0f0fa}
 .status-eta{font-family:'Courier New',monospace;font-size:11px;color:#ffaa00;margin-top:6px}
 .prog-bar{height:10px;background:#1e1e2e;border-radius:5px;margin-top:16px;overflow:hidden}
-.prog-fill{height:100%;border-radius:5px;background:linear-gradient(90deg,#3d6eff,#00e5a8);transition:width .7s}
+.prog-fill{height:100%;border-radius:5px;background:linear-gradient(90deg,#e5792a,#00e5a8);transition:width .7s}
 .prog-fill.done{background:#00e5a8}
 
 /* INDICATOR GRID */
-.sec-label{font-family:'Courier New',monospace;font-size:9px;font-weight:700;letter-spacing:2px;color:#a78bfa;margin-bottom:10px}
+.sec-label{font-family:'Courier New',monospace;font-size:9px;font-weight:700;letter-spacing:2px;color:#e5792a;margin-bottom:10px}
 .ind-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:18px}
 @media(max-width:700px){.ind-grid{grid-template-columns:repeat(4,1fr)}}
 .ic{background:#111118;border:1px solid #1e1e2e;border-radius:10px;padding:12px 6px 10px;text-align:center;transition:all .3s}
 .ic.done{background:rgba(0,229,168,.05);border-color:rgba(0,229,168,.2)}
 .ic.active{background:rgba(61,110,255,.06);border-color:rgba(61,110,255,.25)}
 .ic-name{font-family:'Courier New',monospace;font-size:9px;font-weight:700;letter-spacing:.5px;color:#8888aa;margin-bottom:6px}
-.ic.done .ic-name{color:#00e5a8}.ic.active .ic-name{color:#3d6eff}
+.ic.done .ic-name{color:#00e5a8}.ic.active .ic-name{color:#e5792a}
 .ic-count{font-family:'Courier New',monospace;font-size:14px;font-weight:700;margin-bottom:4px}
-.ic-count.d{color:#00e5a8}.ic-count.a{color:#3d6eff}.ic-count.p{color:#8888aa}
+.ic-count.d{color:#00e5a8}.ic-count.a{color:#e5792a}.ic-count.p{color:#8888aa}
 .ic-tag{font-size:8px;font-weight:700;font-family:'Courier New',monospace;padding:2px 6px;border-radius:3px;display:inline-block}
 .ic-tag.d{background:rgba(0,229,168,.12);color:#00e5a8}
-.ic-tag.a{background:rgba(61,110,255,.12);color:#3d6eff}
+.ic-tag.a{background:rgba(61,110,255,.12);color:#e5792a}
 .ic-tag.p{background:rgba(68,68,96,.2);color:#8888aa}
 .mini-bar{height:3px;background:#1e1e2e;border-radius:2px;margin-top:7px;overflow:hidden}
 .mini-fill{height:100%;border-radius:2px;transition:width .5s}
-.mini-fill.d{background:#00e5a8}.mini-fill.a{background:#3d6eff}
+.mini-fill.d{background:#00e5a8}.mini-fill.a{background:#e5792a}
 
 /* 2-COL */
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
@@ -69,7 +69,7 @@ body{background:#09090f;color:#f0f0fa;font-family:'Segoe UI',system-ui,sans-seri
 .db-card{background:#111118;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;margin-bottom:18px}
 .db-hdr{padding:12px 16px;background:#16161f;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
 .db-date{font-family:'Courier New',monospace;font-size:13px;font-weight:700;color:#f0f0fa}
-.db-date em{color:#a78bfa;font-style:normal}
+.db-date em{color:#e5792a;font-style:normal}
 .db-meta{font-family:'Courier New',monospace;font-size:10px;color:#8888aa;margin-top:2px}
 .db-status{font-family:'Courier New',monospace;font-size:11px;font-weight:700}
 .ind-row{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:#1e1e2e}
@@ -78,7 +78,7 @@ body{background:#09090f;color:#f0f0fa;font-family:'Segoe UI',system-ui,sans-seri
 .ind-cell.cpart{background:rgba(61,110,255,.04)}
 .ind-cname{font-family:'Courier New',monospace;font-size:8px;font-weight:700;letter-spacing:.5px;color:#555570;margin-bottom:5px}
 .ind-cn{font-family:'Courier New',monospace;font-size:15px;font-weight:700}
-.ind-cn.full{color:#00e5a8}.ind-cn.part{color:#3d6eff}.ind-cn.zero{color:#7777aa}
+.ind-cn.full{color:#00e5a8}.ind-cn.part{color:#e5792a}.ind-cn.zero{color:#7777aa}
 .ind-csub{font-family:'Courier New',monospace;font-size:9px;margin-top:2px}
 .ind-csub.full{color:rgba(0,229,168,.5)}.ind-csub.part{color:rgba(61,110,255,.6)}.ind-csub.zero{color:#7777aa}
 .sum-row{display:flex;border-top:1px solid #1e1e2e}
@@ -98,9 +98,9 @@ body{background:#09090f;color:#f0f0fa;font-family:'Segoe UI',system-ui,sans-seri
 .tbl-hdr{padding:10px 14px;background:#16161f;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
 .filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #1e1e2e}
 .filters input{background:#16161f;border:1px solid #1e1e2e;color:#f0f0fa;padding:6px 10px;border-radius:7px;font-size:12px;outline:none;width:160px}
-.filters input:focus{border-color:#3d6eff}
+.filters input:focus{border-color:#e5792a}
 .chip{padding:4px 10px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e1e2e;color:#8888aa;background:transparent;transition:all .15s}
-.chip.on{border-color:#3d6eff;color:#3d6eff;background:rgba(61,110,255,.08)}
+.chip.on{border-color:#e5792a;color:#e5792a;background:rgba(61,110,255,.08)}
 .chip:hover:not(.on){border-color:#555570}
 .tbl-sc{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:11px}
@@ -111,7 +111,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .tok{color:#00e5a8}.tnu{color:#7777aa}
 .pager{display:flex;align-items:center;gap:8px;padding:10px 14px;font-family:'Courier New',monospace;font-size:11px;color:#555570}
 .pager button{padding:3px 9px;border-radius:5px;background:#16161f;border:1px solid #1e1e2e;color:#8888aa;font-size:11px;cursor:pointer}
-.pager button:hover{border-color:#3d6eff;color:#3d6eff}
+.pager button:hover{border-color:#e5792a;color:#e5792a}
 .pager button:disabled{opacity:.3;cursor:not-allowed}
 .btn-csv{background:transparent;border:1px solid #1e1e2e;color:#8888aa;padding:5px 10px;border-radius:7px;font-size:11px;cursor:pointer}
 .btn-csv:hover{border-color:#00e5a8;color:#00e5a8}
@@ -119,21 +119,118 @@ tr:hover td{background:rgba(255,255,255,.015)}
   .stat-val{font-size:22px;font-weight:800;color:#e0eaf4;font-family:'JetBrains Mono',monospace;}
   .stat-lbl{font-size:11px;color:#8ab4ce;margin-top:3px;font-family:'JetBrains Mono',monospace;}
   .ts-bar{font-family:'Courier New',monospace;font-size:10px;color:#8888aa;padding:8px 0 16px}
+  .login-spin{display:inline-block;animation:spinAnim 1s linear infinite;}
+  @keyframes spinAnim{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+  .admin-tab{font-family:'Courier New',monospace;font-size:12px;font-weight:600;padding:8px 18px;border:none;cursor:pointer;background:transparent;color:#8888aa;border-bottom:2px solid transparent;transition:all .2s;}
+  .admin-tab:hover{color:#f0f0fa;}
+  .admin-tab.active{color:#e5792a;border-bottom-color:#e5792a;}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
+<!-- AUTH GATE — must sign in as admin -->
+<div id="adminLoginGate" style="display:flex;align-items:center;justify-content:center;min-height:100vh;">
+  <!-- ── PANEL 1: Email / Password ──────────────────────────── -->
+  <div id="mfaLoginPanel" style="background:#111118;border:1px solid #1e1e2e;border-radius:12px;padding:32px 36px;width:380px;">
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:24px;margin-bottom:6px;">🛡</div>
+      <div style="font-size:18px;font-weight:700;">StockVizor Admin</div>
+      <div style="font-size:11px;color:#8888aa;margin-top:4px;">Sign in with admin credentials</div>
+    </div>
+    <input id="adminEmail" type="email" placeholder="Admin email"
+      style="width:100%;padding:10px 14px;margin-bottom:10px;background:#09090f;border:1px solid #1e1e2e;border-radius:6px;color:#f0f0fa;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;outline:none;box-sizing:border-box;"
+      onfocus="this.style.borderColor='#e5792a'" onblur="this.style.borderColor='#1e1e2e'"/>
+    <input id="adminPass" type="password" placeholder="Password"
+      style="width:100%;padding:10px 14px;margin-bottom:10px;background:#09090f;border:1px solid #1e1e2e;border-radius:6px;color:#f0f0fa;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;outline:none;box-sizing:border-box;"
+      onfocus="this.style.borderColor='#e5792a'" onblur="this.style.borderColor='#1e1e2e'"
+      onkeydown="if(event.key==='Enter')adminLogin()"/>
+    <div id="adminError" style="display:none;padding:8px 12px;margin-bottom:10px;border-radius:6px;background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,.2);color:#ff6b7a;font-size:12px;"></div>
+    <button id="adminLoginBtn" onclick="adminLogin()" style="width:100%;padding:12px;border:none;border-radius:6px;background:#e5792a;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">Sign In</button>
+  </div>
+
+  <!-- ── PANEL 2: MFA Enrollment (one-time, when no factor exists) ──────────────────────────── -->
+  <div id="mfaEnrollPanel" style="display:none;background:#111118;border:1px solid #1e1e2e;border-radius:12px;padding:32px 36px;width:440px;">
+    <div style="text-align:center;margin-bottom:18px;">
+      <div style="font-size:24px;margin-bottom:6px;">🔐</div>
+      <div style="font-size:18px;font-weight:700;">Set up Two-Factor Authentication</div>
+      <div style="font-size:11px;color:#8888aa;margin-top:4px;">Required for admin access. One-time setup.</div>
+    </div>
+
+    <div style="font-size:12px;color:#cdd9e5;margin-bottom:14px;line-height:1.5;">
+      <strong style="color:#e5792a;">Step 1:</strong> Open your authenticator app (Google Authenticator, Authy, 1Password, etc.) and scan this QR code.<br>
+      <span style="font-size:11px;color:#9ab0c4;">Inside the app, tap <strong>+</strong> → <strong>"Scan a QR code"</strong>. Don't use your phone's regular camera app.</span>
+    </div>
+
+    <div id="mfaQrContainer" style="text-align:center;background:#fff;padding:16px;border-radius:8px;margin-bottom:14px;min-height:200px;display:flex;align-items:center;justify-content:center;">
+      <span style="color:#888;font-size:12px;">Generating QR code…</span>
+    </div>
+
+    <details style="margin-bottom:14px;font-size:11px;color:#9ab0c4;">
+      <summary style="cursor:pointer;padding:6px 0;">Can't scan? Tap to show secret key</summary>
+      <div style="background:#09090f;padding:10px 12px;border-radius:6px;margin-top:6px;">
+        <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Manually enter this in your app:</div>
+        <code id="mfaSecret" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#e3b341;word-break:break-all;user-select:all;">…</code>
+        <div style="font-size:10px;color:#f85149;margin-top:8px;">⚠ Save this secret in a password manager as backup. If you lose your authenticator app, this is the only way to recover access.</div>
+      </div>
+    </details>
+
+    <div style="font-size:12px;color:#cdd9e5;margin-bottom:8px;line-height:1.5;">
+      <strong style="color:#e5792a;">Step 2:</strong> Enter the 6-digit code from your app:
+    </div>
+    <input id="mfaEnrollCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000"
+      style="width:100%;padding:10px 14px;margin-bottom:10px;background:#09090f;border:1px solid #1e1e2e;border-radius:6px;color:#f0f0fa;font-family:'JetBrains Mono',monospace;font-size:18px;letter-spacing:6px;text-align:center;outline:none;box-sizing:border-box;"
+      onfocus="this.style.borderColor='#e5792a'" onblur="this.style.borderColor='#1e1e2e'"
+      onkeydown="if(event.key==='Enter')mfaCompleteEnroll()"
+      oninput="this.value=this.value.replace(/\D/g,'')"/>
+    <div id="mfaEnrollError" style="display:none;padding:8px 12px;margin-bottom:10px;border-radius:6px;background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,.2);color:#ff6b7a;font-size:12px;"></div>
+    <button id="mfaEnrollBtn" onclick="mfaCompleteEnroll()" style="width:100%;padding:12px;border:none;border-radius:6px;background:#e5792a;color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:8px;">Verify & Enable</button>
+    <button onclick="mfaCancel()" style="width:100%;padding:8px;border:1px solid #1e1e2e;background:transparent;color:#8888aa;font-size:12px;cursor:pointer;border-radius:6px;">Cancel</button>
+  </div>
+
+  <!-- ── PANEL 3: MFA Challenge (every login, after enrollment) ──────────────────────────── -->
+  <div id="mfaChallengePanel" style="display:none;background:#111118;border:1px solid #1e1e2e;border-radius:12px;padding:32px 36px;width:380px;">
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:24px;margin-bottom:6px;">🔐</div>
+      <div style="font-size:18px;font-weight:700;">Two-Factor Verification</div>
+      <div style="font-size:11px;color:#8888aa;margin-top:4px;">Enter the 6-digit code from your authenticator app</div>
+    </div>
+    <input id="mfaChallengeCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000"
+      style="width:100%;padding:10px 14px;margin-bottom:10px;background:#09090f;border:1px solid #1e1e2e;border-radius:6px;color:#f0f0fa;font-family:'JetBrains Mono',monospace;font-size:18px;letter-spacing:6px;text-align:center;outline:none;box-sizing:border-box;"
+      onfocus="this.style.borderColor='#e5792a'" onblur="this.style.borderColor='#1e1e2e'"
+      onkeydown="if(event.key==='Enter')mfaCompleteChallenge()"
+      oninput="this.value=this.value.replace(/\D/g,'')"/>
+    <div id="mfaChallengeError" style="display:none;padding:8px 12px;margin-bottom:10px;border-radius:6px;background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,.2);color:#ff6b7a;font-size:12px;"></div>
+    <button id="mfaChallengeBtn" onclick="mfaCompleteChallenge()" style="width:100%;padding:12px;border:none;border-radius:6px;background:#e5792a;color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:8px;">Verify</button>
+    <button onclick="mfaCancel()" style="width:100%;padding:8px;border:1px solid #1e1e2e;background:transparent;color:#8888aa;font-size:12px;cursor:pointer;border-radius:6px;">Cancel & Sign Out</button>
+  </div>
+</div>
+
+<!-- MAIN ADMIN (hidden until auth) -->
+<div id="adminMain" style="display:none;">
+
 <div class="topbar">
-  <div class="brand">⚡ OptionLens · <span>Batch Monitor</span></div>
+  <div class="brand">🛡 StockVizor · <span>Admin Console</span></div>
   <div class="topbar-right">
+    <span id="adminUserLabel" style="font-size:11px;color:#8888aa;font-family:'Courier New',monospace;"></span>
     <div class="countdown">
       <div class="live-dot"></div>
       <span id="cdText">Loading...</span>
     </div>
     <button class="btn-ref" onclick="doRefresh()">↻ Refresh Now</button>
     <button class="btn-ref" id="invokeBtn" onclick="startAuto()" style="background:#00e5a8;color:#000;font-weight:700;margin-left:8px;">▶ Auto-Run</button>
+    <button class="btn-ref" onclick="adminSignOut()" style="background:transparent;border:1px solid #ff3355;color:#ff3355;margin-left:8px;">🚪 Sign Out</button>
   </div>
 </div>
+
+<!-- ADMIN TABS -->
+<div style="background:#0d0d17;border-bottom:1px solid #1e1e2e;padding:0 24px;display:flex;gap:0;">
+  <button class="admin-tab active" id="tabBatch" onclick="switchAdminTab('batch')">📊 Batch Monitor</button>
+  <button class="admin-tab" id="tabUsers" onclick="switchAdminTab('users')">👥 Users</button>
+</div>
+
+<div id="panelBatch">
 
 <div class="wrap">
   <!-- ALERT BANNER (shown when health check finds issues) -->
@@ -258,17 +355,77 @@ tr:hover td{background:rgba(255,255,255,.015)}
   <br>
 
   <!-- INDICATOR GRID -->
-  <div style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:12px;padding:14px 20px;margin-bottom:18px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
-    <div style="font-family:'Courier New',monospace;font-size:9px;font-weight:700;letter-spacing:2px;color:#a78bfa;">⚙ BATCH CONFIG</div>
-    <div style="font-family:'Courier New',monospace;font-size:11px;color:#e2e8f0;">
-      <span style="color:#555570;">Call gap:</span> <strong id="cfgGapDisplay">700ms</strong>
-      &nbsp;·&nbsp;
-      <span style="color:#555570;">Batch size:</span> <strong id="cfgBatchDisplay">10</strong>
-      &nbsp;·&nbsp;
-      <span style="color:#555570;">Rate:</span> <strong id="cfgCpmDisplay">~66 calls/min</strong>
+  <style>
+    @keyframes bcfgPulse {
+      0%   { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.5); }
+      70%  { box-shadow: 0 0 0 6px rgba(63, 185, 80, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+    }
+    .bcfg-pulse { animation: bcfgPulse 0.9s ease-out 1; }
+    @keyframes bcfgDot {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 1; }
+    }
+    .bcfg-live-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #3fb950;
+      margin-right: 5px;
+      animation: bcfgDot 1.5s ease-in-out infinite;
+    }
+    /* Field-level flash — fires only when a field's underlying value actually changes */
+    @keyframes bcfgFlash {
+      0%   { background: rgba(227, 179, 65, 0.55); color: #ffd966; }
+      40%  { background: rgba(227, 179, 65, 0.35); color: #ffd966; }
+      100% { background: transparent; }
+    }
+    .bcfg-flash {
+      animation: bcfgFlash 1.6s ease-out 1;
+      border-radius: 3px;
+      padding: 0 4px;
+      margin: 0 -4px;
+    }
+  </style>
+  <div id="batchConfigCard" style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:12px;padding:14px 20px;margin-bottom:18px;transition:box-shadow 0.3s ease;">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;">
+      <div style="font-family:'Courier New',monospace;font-size:9px;font-weight:700;letter-spacing:2px;color:#e5792a;">⚙ BATCH CONFIG</div>
+      <div id="bcfgHealthPill" style="display:inline-block;padding:2px 10px;border-radius:10px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;background:#1c2538;color:#9ab0c4;">⏳ loading…</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#64748b;">
+        <span class="bcfg-live-dot" id="bcfgLiveDot"></span><span id="bcfgFreshness">live</span>
+      </div>
+      <div style="flex:1;"></div>
+      <div style="font-family:'Courier New',monospace;font-size:9px;color:#555570;" id="bcfgFnVersion">function v?</div>
     </div>
-    <div style="font-family:'Courier New',monospace;font-size:9px;color:#555570;">
-      To change: edit BATCH_SIZE in ta-batch.ts → redeploy
+
+    <!-- Row 1: Static config from app_config.ta_batch_config -->
+    <div style="font-family:'Courier New',monospace;font-size:11px;color:#e2e8f0;margin-bottom:6px;">
+      <span style="color:#555570;">Sleep:</span> <strong id="cfgGapDisplay">…</strong>
+      &nbsp;·&nbsp;
+      <span style="color:#555570;">Batch:</span> <strong id="cfgBatchDisplay">…</strong>
+      &nbsp;·&nbsp;
+      <span style="color:#555570;">Theoretical:</span> <strong id="cfgCpmDisplay">…</strong>
+      &nbsp;·&nbsp;
+      <span style="color:#555570;">Budget:</span> <strong id="cfgBudgetDisplay">…</strong>
+    </div>
+
+    <!-- Row 2: Cron schedule + last fired -->
+    <div style="font-family:'Courier New',monospace;font-size:11px;color:#cdd9e5;margin-bottom:6px;">
+      <span style="color:#555570;">ta-batch cron:</span> <strong id="bcfgCronSched">…</strong>
+      &nbsp;·&nbsp;
+      <span style="color:#555570;">Last fired:</span> <strong id="bcfgLastFired">…</strong>
+      &nbsp;·&nbsp;
+      <span style="color:#555570;">Status:</span> <strong id="bcfgLastStatus">…</strong>
+    </div>
+
+    <!-- Row 3: Live throughput / last write -->
+    <div style="font-family:'Courier New',monospace;font-size:11px;color:#cdd9e5;">
+      <span style="color:#555570;">Live writes (5min):</span> <strong id="bcfgWritesPer5">…</strong>
+      &nbsp;·&nbsp;
+      <span style="color:#555570;">Last write:</span> <strong id="bcfgLastWrite">…</strong>
+      &nbsp;·&nbsp;
+      <span style="color:#555570;">Batch state:</span> <strong id="bcfgBatchStatus">…</strong>
     </div>
   </div>
 
@@ -331,42 +488,34 @@ tr:hover td{background:rgba(255,255,255,.015)}
         ▶ BATCH CONTROL
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;">
-        <div style="display:flex;gap:6px;">
-          <button onclick="triggerBatch('ta')"
-            style="flex:1;background:#0b1020;border:1px solid #3fb950;color:#3fb950;font-size:11px;
-              font-family:'JetBrains Mono',monospace;padding:6px 10px;border-radius:4px;
-              cursor:pointer;text-align:left;">
-            ▶ Run TA
-          </button>
-          <button onclick="triggerBatch('iv')"
-            style="flex:1;background:#0b1020;border:1px solid #58a6ff;color:#58a6ff;font-size:11px;
-              font-family:'JetBrains Mono',monospace;padding:6px 10px;border-radius:4px;
-              cursor:pointer;text-align:left;">
-            ▶ Run IV
-          </button>
-        </div>
         <button onclick="runAllBatches()"
           style="background:#0b1020;border:1px solid #e3b341;color:#e3b341;font-size:12px;
             font-family:'JetBrains Mono',monospace;padding:6px 12px;border-radius:4px;
             cursor:pointer;font-weight:700;">
-          ▶▶ Run ALL Batches
+          ▶▶ Run All Batches
         </button>
         <div style="display:flex;gap:6px;">
-          <button id="suspendBtn" onclick="suspendAllBatches()"
+          <button id="cronPauseBtn" onclick="pauseCron()"
             style="flex:1;background:#1a0808;border:1px solid #f85149;color:#f85149;font-size:11px;
               font-family:'JetBrains Mono',monospace;padding:6px 10px;border-radius:4px;
               cursor:pointer;font-weight:700;">
-            ⏸ Suspend All
+            ⏸ Pause Cron
           </button>
-          <button id="resumeBtn" onclick="resumeAllBatches()"
+          <button id="cronResumeBtn" onclick="resumeCron()"
             style="flex:1;background:#041808;border:1px solid #3fb950;color:#3fb950;font-size:11px;
               font-family:'JetBrains Mono',monospace;padding:6px 10px;border-radius:4px;
               cursor:pointer;font-weight:700;">
-            ▶ Resume All
+            ▶ Resume Cron
           </button>
         </div>
+        <button onclick="resetTodayBatch()"
+          style="background:#1a0808;border:1px solid #f85149;color:#f85149;font-size:11px;
+            font-family:'JetBrains Mono',monospace;padding:6px 12px;border-radius:4px;
+            cursor:pointer;font-weight:700;">
+          🔄 Reset Today's Batch
+        </button>
         <div id="triggerStatus" style="font-size:11px;color:#9ab0c4;margin-top:2px;"></div>
-        <div id="suspendStatus" style="font-size:11px;color:#9ab0c4;"></div>
+        <div id="cronStatus" style="font-size:11px;color:#9ab0c4;"></div>
       </div>
     </div>
   </div>
@@ -661,27 +810,6 @@ async function fetchOptionsIVStats(){
   }
 }
 
-async function triggerBatch(mode){
-  const statusEl = document.getElementById('triggerStatus');
-  if(statusEl) statusEl.textContent = '\u23F3 Triggering ' + mode + ' batch...';
-  try{
-    const endpoint = mode === 'iv' ? '/functions/v1/iv-batch' : '/functions/v1/ta-batch';
-    const r = await fetch(SUPA+endpoint, {
-      method:'POST',
-      headers:{...H, 'Content-Type':'application/json'},
-      body: JSON.stringify(mode === 'iv' ? {} : {mode})
-    });
-    const d = await r.json();
-    const msg = d.status || JSON.stringify(d).substring(0,80);
-    if(statusEl) statusEl.innerHTML = '<span style="color:#3fb950;">✓ '+mode+': '+msg+'</span>';
-    log('Triggered '+mode+': '+msg, 'ok');
-    setTimeout(doRefresh, 3000);
-  }catch(e){
-    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;">✗ '+e.message+'</span>';
-    log('Trigger error: '+e.message, 'e');
-  }
-}
-
 async function runAllBatches(){
   const statusEl = document.getElementById('triggerStatus');
   if(statusEl) statusEl.innerHTML = '⏳ Running TA batch...';
@@ -711,125 +839,419 @@ async function runAllBatches(){
   setTimeout(doRefresh, 3000);
 }
 
-async function suspendAllBatches(){
-  const statusEl = document.getElementById('suspendStatus');
-  if(statusEl) statusEl.innerHTML = '⏳ Suspending...';
+// ── CRON PAUSE/RESUME ─────────────────────────────────────────────
+// Pauses all batch crons (jobs 13 [ta-batch */2] and any iv-batch cron)
+// by changing their schedule to "0 0 31 2 *" (Feb 31 = never fires).
+// The previous schedule is saved to app_config.cron_pause_state for restore.
+async function pauseCron(){
+  const statusEl = document.getElementById('cronStatus');
+  if(statusEl) statusEl.innerHTML = '⏳ Pausing cron jobs...';
+  if(!confirm('Pause all batch crons? Daily TA/IV batches will NOT run automatically until you Resume.')) {
+    if(statusEl) statusEl.innerHTML = '<span style="color:#9ab0c4;">cancelled</span>';
+    return;
+  }
   try{
-    // Get current trading date from batch_state
-    const bsR = await fetch(SUPA+'/rest/v1/batch_state?select=trading_date&order=trading_date.desc&limit=1', {headers:H}).then(r=>r.json());
-    const tradingDate = bsR?.[0]?.trading_date || new Date().toISOString().slice(0,10);
+    // Read current cron schedules so we can restore them
+    const cronRes = await fetch(SUPA+'/rest/v1/rpc/get_batch_cron_jobs', {
+      method:'POST', headers:{...H, 'Content-Type':'application/json'}, body:'{}'
+    }).then(r => r.ok ? r.json() : null).catch(()=>null);
 
-    // Set TA batch_state to 'suspended'
-    await fetch(SUPA+'/rest/v1/batch_state?trading_date=eq.'+tradingDate, {
-      method:'PATCH',
-      headers:{...H, 'Content-Type':'application/json', 'Prefer':'return=minimal'},
-      body: JSON.stringify({status:'complete', indicator_index:99, ticker_index:99999})
-    });
+    // Save state — fallback to known defaults if RPC unavailable
+    const saved = (cronRes && cronRes.length) ? cronRes : [{jobid:13, schedule:'*/2 * * * *'}];
 
-    // Set IV batch state to 'complete' (stops cron from processing)
-    const ivState = {status:'complete', trading_date:tradingDate, ticker_index:99999, suspended:true};
-    await fetch(SUPA+'/rest/v1/app_config?key=eq.iv_batch_state', {
-      method:'PATCH',
-      headers:{...H, 'Content-Type':'application/json', 'Prefer':'return=minimal'},
-      body: JSON.stringify({value:ivState})
-    });
-
-    // Write suspend flag to app_config
     await fetch(SUPA+'/rest/v1/app_config', {
       method:'POST',
       headers:{...H, 'Content-Type':'application/json', 'Prefer':'resolution=merge-duplicates'},
-      body: JSON.stringify({key:'batch_suspended', value:{suspended:true, at:new Date().toISOString(), date:tradingDate}})
+      body: JSON.stringify({key:'cron_pause_state', value:{paused:true, at:new Date().toISOString(), saved}})
     });
 
-    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;font-weight:700;">⏸ ALL BATCHES SUSPENDED</span>';
-    document.getElementById('suspendBtn').style.opacity = '0.4';
-    document.getElementById('resumeBtn').style.opacity = '1';
-    log('All batches suspended for '+tradingDate, 'w');
+    // Pause each cron job by altering its schedule via RPC
+    for(const job of saved){
+      await fetch(SUPA+'/rest/v1/rpc/pause_cron_job', {
+        method:'POST',
+        headers:{...H, 'Content-Type':'application/json'},
+        body: JSON.stringify({p_jobid: job.jobid})
+      });
+    }
+
+    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;font-weight:700;">⏸ CRON PAUSED</span> at '+new Date().toLocaleTimeString();
+    document.getElementById('cronPauseBtn').style.opacity = '0.4';
+    document.getElementById('cronResumeBtn').style.opacity = '1';
+    log('Cron jobs paused: '+saved.map(j=>j.jobid).join(','), 'w');
     setTimeout(doRefresh, 2000);
   }catch(e){
-    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;">✗ Suspend error: '+e.message+'</span>';
-    log('Suspend error: '+e.message, 'e');
+    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;">✗ Pause error: '+e.message+'</span>';
+    log('Pause cron error: '+e.message, 'e');
   }
 }
 
-async function resumeAllBatches(){
-  const statusEl = document.getElementById('suspendStatus');
-  if(statusEl) statusEl.innerHTML = '⏳ Resuming services...';
+async function resumeCron(){
+  const statusEl = document.getElementById('cronStatus');
+  if(statusEl) statusEl.innerHTML = '⏳ Resuming cron jobs...';
   try{
-    const bsR = await fetch(SUPA+'/rest/v1/batch_state?select=trading_date&order=trading_date.desc&limit=1', {headers:H}).then(r=>r.json());
-    const tradingDate = bsR?.[0]?.trading_date || new Date().toISOString().slice(0,10);
+    // Get saved state
+    const r = await fetch(SUPA+'/rest/v1/app_config?key=eq.cron_pause_state&select=value', {headers:H}).then(r=>r.json());
+    const saved = r?.[0]?.value?.saved || [{jobid:13, schedule:'*/2 * * * *'}];
 
-    // Step 1: Clear suspend flag
-    if(statusEl) statusEl.innerHTML = '⏳ Step 1/4: Clearing suspend flag...';
+    // Restore each cron job's schedule via RPC
+    for(const job of saved){
+      await fetch(SUPA+'/rest/v1/rpc/resume_cron_job', {
+        method:'POST',
+        headers:{...H, 'Content-Type':'application/json'},
+        body: JSON.stringify({p_jobid: job.jobid, p_schedule: job.schedule})
+      });
+    }
+
+    // Mark unpause
     await fetch(SUPA+'/rest/v1/app_config', {
       method:'POST',
       headers:{...H, 'Content-Type':'application/json', 'Prefer':'resolution=merge-duplicates'},
-      body: JSON.stringify({key:'batch_suspended', value:{suspended:false, at:new Date().toISOString()}})
+      body: JSON.stringify({key:'cron_pause_state', value:{paused:false, at:new Date().toISOString()}})
     });
 
-    // Step 2: Reset TA batch state
-    if(statusEl) statusEl.innerHTML = '⏳ Step 2/4: Resetting TA batch...';
-    await fetch(SUPA+'/rest/v1/batch_state?trading_date=eq.'+tradingDate, {
-      method:'PATCH',
-      headers:{...H, 'Content-Type':'application/json', 'Prefer':'return=minimal'},
-      body: JSON.stringify({status:'pending', indicator_index:0, ticker_index:0, price_bars_done:false})
-    });
+    if(statusEl) statusEl.innerHTML = '<span style="color:#3fb950;font-weight:700;">▶ CRON RESUMED</span> at '+new Date().toLocaleTimeString();
+    document.getElementById('cronPauseBtn').style.opacity = '1';
+    document.getElementById('cronResumeBtn').style.opacity = '0.4';
+    log('Cron jobs resumed: '+saved.map(j=>j.jobid).join(','), 'ok');
+    setTimeout(doRefresh, 2000);
+  }catch(e){
+    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;">✗ Resume error: '+e.message+'</span>';
+    log('Resume cron error: '+e.message, 'e');
+  }
+}
 
-    // Step 3: Reset IV batch state
-    if(statusEl) statusEl.innerHTML = '⏳ Step 3/4: Resetting IV batch...';
-    const ivState = {status:'pending', trading_date:tradingDate, ticker_index:0, suspended:false};
+async function checkCronStatus(){
+  try{
+    const r = await fetch(SUPA+'/rest/v1/app_config?key=eq.cron_pause_state&select=value', {headers:H}).then(r=>r.json());
+    const val = r?.[0]?.value;
+    const isPaused = val && (typeof val === 'object' ? val.paused : false);
+    const statusEl = document.getElementById('cronStatus');
+    const pBtn = document.getElementById('cronPauseBtn');
+    const rBtn = document.getElementById('cronResumeBtn');
+    if(isPaused){
+      if(statusEl && !statusEl.innerHTML.includes('PAUSED')) statusEl.innerHTML = '<span style="color:#f85149;font-weight:700;">⏸ CRON PAUSED</span> since '+(val.at?new Date(val.at).toLocaleTimeString():'—');
+      if(pBtn) pBtn.style.opacity = '0.4';
+      if(rBtn) rBtn.style.opacity = '1';
+    } else {
+      if(statusEl && !statusEl.innerHTML.includes('RESUMED')) statusEl.innerHTML = '<span style="color:#3fb950;">▶ Cron active</span>';
+      if(pBtn) pBtn.style.opacity = '1';
+      if(rBtn) rBtn.style.opacity = '0.4';
+    }
+  }catch(e){}
+}
+
+// ── FETCH BATCH CONFIG (live data for BATCH CONFIG card) ───────────
+// Pulls from app_config.ta_batch_config + RPCs + ta_cache to populate
+// the live-data BATCH CONFIG card. Replaces the old hardcoded labels
+// that drifted out of sync with reality (e.g. "700ms" when actual=70ms).
+//
+// CHANGE DETECTION:
+//   - Card-level pulse fires on every successful fetch (proves poll alive)
+//   - Field-level flash (yellow) fires only when a field's underlying
+//     value actually changed since last poll. Distinguishes "refreshed
+//     but no change" from "data actually changed".
+//   - Per-field change keys (the value used for comparison) are stored
+//     in _bcfgPrev; the displayed text may differ from the change key
+//     (e.g. "Last fired" change-key is the cron runid, not the rendered
+//     text — so the (Xs ago) suffix can update without flashing).
+//
+// Data sources:
+//   1. app_config.ta_batch_config — sleep_ms, batch_size, version, etc.
+//   2. RPC get_batch_cron_jobs — current cron schedule for jobid 13
+//   3. RPC get_recent_cron_runs(13, 1) — last cron tick + status
+//   4. ta_cache count where updated_at > 5m ago — live write throughput
+//   5. ta_cache top updated_at — most recent write timestamp
+//   6. batch_state most recent — running/complete state
+let _bcfgPrev = {};   // change-detection state, keyed by field id
+let _bcfgRows = {};   // last-known raw values (used by per-second freshness ticker)
+
+// Helper: set a field's text only if its change-key differs from last poll.
+// If changed, trigger a yellow flash on the <strong> element.
+// Returns true if changed.
+function _bcfgSet(elementId, displayText, changeKey){
+  const el = document.getElementById(elementId);
+  if(!el) return false;
+  el.textContent = displayText;
+  // First time we ever see this field — record but don't flash (avoid
+  // flashing on initial page load).
+  if(!(elementId in _bcfgPrev)){
+    _bcfgPrev[elementId] = changeKey;
+    return false;
+  }
+  if(_bcfgPrev[elementId] !== changeKey){
+    _bcfgPrev[elementId] = changeKey;
+    el.classList.remove('bcfg-flash');
+    void el.offsetWidth;  // force reflow so animation can replay
+    el.classList.add('bcfg-flash');
+    return true;
+  }
+  return false;
+}
+
+// Helper: format relative-time like "5s ago", "2m ago", "3h ago"
+function _bcfgAgo(date){
+  const ago = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+  if(ago < 60)    return ago+'s ago';
+  if(ago < 3600)  return Math.round(ago/60)+'m ago';
+  if(ago < 86400) return Math.round(ago/3600)+'h ago';
+  return Math.round(ago/86400)+'d ago';
+}
+
+async function fetchBatchConfig(){
+  try{
+    // Fire all queries in parallel
+    const fiveMinAgo = new Date(Date.now() - 5*60*1000).toISOString();
+    const [cfgRow, cronJobs, cronRuns, latestWrite, mostRecentBatch] = await Promise.all([
+      sb('/rest/v1/app_config?key=eq.ta_batch_config&select=value').catch(()=>null),
+      fetch(SUPA+'/rest/v1/rpc/get_batch_cron_jobs', {method:'POST', headers:{...H, 'Content-Type':'application/json'}, body:'{}'}).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(SUPA+'/rest/v1/rpc/get_recent_cron_runs', {method:'POST', headers:{...H, 'Content-Type':'application/json'}, body:JSON.stringify({p_jobid:13, p_limit:1})}).then(r=>r.ok?r.json():null).catch(()=>null),
+      sb('/rest/v1/ta_cache?select=updated_at&order=updated_at.desc&limit=1').catch(()=>null),
+      sb('/rest/v1/batch_state?select=trading_date,status,last_updated&order=trading_date.desc&limit=1').catch(()=>null),
+    ]);
+
+    // Count writes in last 5 min via HEAD with count=exact (separate, since needs different headers)
+    let writes5m = '?';
+    try{
+      const r = await fetch(SUPA+'/rest/v1/ta_cache?updated_at=gte.'+encodeURIComponent(fiveMinAgo)+'&select=ticker', {
+        method:'HEAD', headers:{...H, 'Prefer':'count=exact'}
+      });
+      const cr = r.headers.get('content-range');
+      if(cr){
+        const m = cr.match(/\/(\d+)$/);
+        if(m) writes5m = parseInt(m[1]);
+      }
+    }catch(e){}
+
+    // === ROW 1: static config from app_config ===
+    const cfg = cfgRow?.[0]?.value;
+    const cfgObj = (typeof cfg === 'string') ? JSON.parse(cfg) : (cfg || {});
+    const sleep = cfgObj.sleep_ms ?? '?';
+    const bsz = cfgObj.batch_size ?? '?';
+    const budget = cfgObj.max_runtime_ms ?? '?';
+    const ver = cfgObj.version ?? 'unknown';
+    const deployedAt = cfgObj.deployed_at ? new Date(cfgObj.deployed_at).toISOString().slice(0,10) : '';
+    const theoCps = (sleep && bsz) ? (1000 / (sleep + 150)).toFixed(1) : '?';
+
+    _bcfgSet('cfgGapDisplay',     sleep + 'ms',                   'sleep:'+sleep);
+    _bcfgSet('cfgBatchDisplay',   String(bsz),                    'bsz:'+bsz);
+    _bcfgSet('cfgCpmDisplay',     '~' + theoCps + ' calls/sec',   'cps:'+theoCps);
+    _bcfgSet('cfgBudgetDisplay',  (budget/1000).toFixed(0) + 's', 'budget:'+budget);
+    _bcfgSet('bcfgFnVersion',     'function ' + ver + (deployedAt ? ' · deployed ' + deployedAt : ''), 'ver:'+ver+'@'+deployedAt);
+
+    // === ROW 2: cron + last fired ===
+    const taCron = (cronJobs || []).find(j => j.jobid === 13);
+    const sched = taCron?.schedule || 'unknown';
+    const isActive = taCron?.active !== false;
+    const cronDisplayText = sched + (isActive ? ' ✓' : ' ⏸');
+    _bcfgSet('bcfgCronSched', cronDisplayText, 'cron:'+sched+':'+isActive);
+    document.getElementById('bcfgCronSched').style.color = isActive ? '#3fb950' : '#f85149';
+
+    const lastRun = cronRuns?.[0];
+    if(lastRun){
+      // Stash in row state so the per-second freshness ticker can update "(Xs ago)"
+      _bcfgRows.lastRun = lastRun;
+      const t = new Date(lastRun.start_time);
+      const displayText = t.toUTCString().slice(17,25) + ' UTC (' + _bcfgAgo(t) + ')';
+      // Change-key is the runid — meaning we ONLY flash on a NEW cron run,
+      // not when the (Xs ago) counter ticks.
+      _bcfgSet('bcfgLastFired', displayText, 'runid:'+lastRun.runid);
+
+      const stat = lastRun.status || 'unknown';
+      _bcfgSet('bcfgLastStatus', stat, 'status:'+stat);
+      const statEl = document.getElementById('bcfgLastStatus');
+      statEl.style.color = stat === 'succeeded' ? '#3fb950' : (stat === 'failed' ? '#f85149' : '#e3b341');
+    } else {
+      _bcfgRows.lastRun = null;
+      _bcfgSet('bcfgLastFired', 'no recent runs', 'no_runs');
+      _bcfgSet('bcfgLastStatus', '—', 'no_status');
+    }
+
+    // === ROW 3: live writes + last write + batch state ===
+    _bcfgSet('bcfgWritesPer5', writes5m + ' writes', 'writes5:'+writes5m);
+    if(typeof writes5m === 'number'){
+      const el = document.getElementById('bcfgWritesPer5');
+      el.style.color = writes5m > 50 ? '#3fb950' : (writes5m > 0 ? '#e3b341' : '#9ab0c4');
+    }
+
+    const lw = latestWrite?.[0]?.updated_at;
+    if(lw){
+      _bcfgRows.lastWrite = lw;
+      const t = new Date(lw);
+      const displayText = t.toUTCString().slice(17,25) + ' UTC (' + _bcfgAgo(t) + ')';
+      // Change-key is the timestamp itself; flash only when a NEW write arrives,
+      // not when the relative-time tick advances.
+      _bcfgSet('bcfgLastWrite', displayText, 'lw:'+lw);
+    } else {
+      _bcfgRows.lastWrite = null;
+      _bcfgSet('bcfgLastWrite', 'never', 'lw:none');
+    }
+
+    const bs = mostRecentBatch?.[0];
+    if(bs){
+      const bsStatus = bs.status || 'unknown';
+      const bsDate = bs.trading_date || '';
+      _bcfgSet('bcfgBatchStatus', bsStatus + ' (' + bsDate + ')', 'bs:'+bsStatus+':'+bsDate);
+      document.getElementById('bcfgBatchStatus').style.color = bsStatus === 'complete' ? '#3fb950' : (bsStatus === 'running' ? '#58a6ff' : '#e3b341');
+    } else {
+      _bcfgSet('bcfgBatchStatus', '—', 'bs:none');
+    }
+
+    // === HEALTH PILL: assess overall ===
+    let healthLabel = '✓ HEALTHY';
+    let healthColor = '#3fb950';
+    let healthBg = '#041808';
+
+    if(!isActive){
+      healthLabel = '⏸ CRON PAUSED';
+      healthColor = '#f85149';
+      healthBg = '#1a0808';
+    } else if(lastRun && lastRun.status === 'failed'){
+      healthLabel = '✗ LAST RUN FAILED';
+      healthColor = '#f85149';
+      healthBg = '#1a0808';
+    } else if(bs && bs.status === 'running' && lw){
+      const writeAge = (Date.now() - new Date(lw).getTime()) / 1000;
+      if(writeAge > 600){
+        healthLabel = '⚠ STUCK (no writes 10m+)';
+        healthColor = '#f85149';
+        healthBg = '#1a0808';
+      } else {
+        healthLabel = '⚡ BATCH ACTIVE';
+        healthColor = '#58a6ff';
+        healthBg = '#0a1628';
+      }
+    } else if(bs && bs.status === 'complete'){
+      healthLabel = '✓ BATCH COMPLETE';
+      healthColor = '#3fb950';
+      healthBg = '#041808';
+    }
+
+    const pill = document.getElementById('bcfgHealthPill');
+    _bcfgSet('bcfgHealthPill', healthLabel, 'health:'+healthLabel);
+    pill.style.color = healthColor;
+    pill.style.background = healthBg;
+
+    // Track freshness — used by the "updated Xs ago" tick
+    _bcfgLastUpdate = Date.now();
+
+    // Card-level pulse — fires on every successful fetch (proves poll alive,
+    // independent of whether any field's data changed).
+    const card = document.getElementById('batchConfigCard');
+    if(card){
+      card.classList.remove('bcfg-pulse');
+      void card.offsetWidth;
+      card.classList.add('bcfg-pulse');
+    }
+
+  }catch(e){
+    log('fetchBatchConfig error: '+e.message, 'e');
+    const pill = document.getElementById('bcfgHealthPill');
+    if(pill){ pill.textContent='✗ ERROR'; pill.style.color='#f85149'; pill.style.background='#1a0808'; }
+  }
+}
+
+// ── LIGHTWEIGHT BATCH CONFIG POLLING ────────────────────────────────
+// Polls fetchBatchConfig() every 10s independently of the 30s heavy
+// doRefresh() cycle. Pauses when tab is hidden to save resources.
+let _bcfgLastUpdate = 0;
+let _bcfgPollTimer = null;
+let _bcfgFreshTimer = null;
+
+function startBatchConfigPoll(){
+  // Stop any existing timers
+  stopBatchConfigPoll();
+
+  // Update the "Xs ago" indicator every second
+  _bcfgFreshTimer = setInterval(() => {
+    const fresh = document.getElementById('bcfgFreshness');
+    const dot = document.getElementById('bcfgLiveDot');
+    if(_bcfgLastUpdate){
+      const ago = Math.round((Date.now() - _bcfgLastUpdate) / 1000);
+      if(fresh){
+        if(ago < 2)        fresh.textContent = 'live';
+        else if(ago < 60)  fresh.textContent = 'updated ' + ago + 's ago';
+        else               fresh.textContent = 'updated ' + Math.round(ago/60) + 'm ago';
+      }
+      if(dot) dot.style.background = (ago > 30) ? '#9ab0c4' : '#3fb950';
+    }
+
+    // Tick the per-row "(Xs ago)" suffixes WITHOUT changing the underlying
+    // change-key (so no flash). This keeps the relative-time text fresh
+    // between polls, while preserving the "flash on real change" semantics.
+    const lr = _bcfgRows.lastRun;
+    if(lr){
+      const t = new Date(lr.start_time);
+      const el = document.getElementById('bcfgLastFired');
+      if(el) el.textContent = t.toUTCString().slice(17,25) + ' UTC (' + _bcfgAgo(t) + ')';
+    }
+    if(_bcfgRows.lastWrite){
+      const t = new Date(_bcfgRows.lastWrite);
+      const el = document.getElementById('bcfgLastWrite');
+      if(el) el.textContent = t.toUTCString().slice(17,25) + ' UTC (' + _bcfgAgo(t) + ')';
+    }
+  }, 1000);
+
+  // Refresh BATCH CONFIG every 10s — but skip when tab hidden
+  _bcfgPollTimer = setInterval(() => {
+    if(document.visibilityState === 'visible'){
+      fetchBatchConfig();
+    }
+  }, 10000);
+}
+
+function stopBatchConfigPoll(){
+  if(_bcfgPollTimer){ clearInterval(_bcfgPollTimer); _bcfgPollTimer = null; }
+  if(_bcfgFreshTimer){ clearInterval(_bcfgFreshTimer); _bcfgFreshTimer = null; }
+  // Reset change-detection state so next user starts fresh (no spurious flashes)
+  _bcfgPrev = {};
+  _bcfgRows = {};
+  _bcfgLastUpdate = 0;
+}
+
+// When tab becomes visible again, do an immediate refresh to catch up
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && _bcfgPollTimer){
+    fetchBatchConfig();
+  }
+});
+
+// ── RESET TODAY'S BATCH ────────────────────────────────────────────
+// Calls ta-batch with mode=reset (deletes batch_state + ta_cache for today,
+// allowing a fresh full run). Requires typing "RESET" to confirm.
+async function resetTodayBatch(){
+  const statusEl = document.getElementById('triggerStatus');
+  const typed = prompt('⚠ This will DELETE today\'s batch_state and ta_cache rows, forcing a full re-run.\n\nDuring the reset window (5-15 min) the screener will see incomplete TA data for today.\n\nType RESET (uppercase) to confirm:');
+  if(typed !== 'RESET'){
+    if(statusEl) statusEl.innerHTML = '<span style="color:#9ab0c4;">cancelled</span>';
+    return;
+  }
+  if(statusEl) statusEl.innerHTML = '⏳ Resetting today\'s TA batch...';
+  log('Reset Today: confirmed', 'w');
+  try{
+    const r1 = await fetch(SUPA+'/functions/v1/ta-batch', {
+      method:'POST',
+      headers:{...H, 'Content-Type':'application/json'},
+      body: JSON.stringify({mode:'reset'})
+    });
+    const d1 = await r1.json();
+    log('TA reset: '+(d1.status||'done'), 'ok');
+    if(statusEl) statusEl.innerHTML = '✓ TA reset · ⏳ Resetting IV...';
+
+    // Reset IV batch state in app_config
+    const today = new Date().toISOString().slice(0,10);
+    const ivState = {status:'pending', trading_date:today, ticker_index:0};
     await fetch(SUPA+'/rest/v1/app_config?key=eq.iv_batch_state', {
       method:'PATCH',
       headers:{...H, 'Content-Type':'application/json', 'Prefer':'return=minimal'},
       body: JSON.stringify({value:ivState})
     });
-
-    // Step 4: Trigger TA batch immediately
-    if(statusEl) statusEl.innerHTML = '⏳ Step 4/4: Starting TA batch...';
-    try{
-      const r1 = await fetch(SUPA+'/functions/v1/ta-batch', {
-        method:'POST', headers:{...H, 'Content-Type':'application/json'}, body:'{}'
-      });
-      const d1 = await r1.json();
-      log('Resume → TA batch: '+(d1.status||'triggered'), 'ok');
-    }catch(e){ log('Resume → TA trigger error: '+e.message, 'e'); }
-
-    // Trigger IV batch
-    try{
-      const r2 = await fetch(SUPA+'/functions/v1/iv-batch', {
-        method:'POST', headers:{...H, 'Content-Type':'application/json'}, body:'{}'
-      });
-      const d2 = await r2.json();
-      log('Resume → IV batch: '+(d2.status||'triggered'), 'ok');
-    }catch(e){ log('Resume → IV trigger error: '+e.message, 'e'); }
-
-    if(statusEl) statusEl.innerHTML = '<span style="color:#3fb950;font-weight:700;">✓ ALL SERVICES RESUMED & RUNNING</span>';
-    document.getElementById('suspendBtn').style.opacity = '1';
-    document.getElementById('resumeBtn').style.opacity = '0.4';
-    log('All batches resumed and triggered for '+tradingDate, 'ok');
+    log('IV state reset', 'ok');
+    if(statusEl) statusEl.innerHTML = '<span style="color:#3fb950;font-weight:700;">✓ Reset complete.</span> Cron will resume processing on next tick.';
     setTimeout(doRefresh, 3000);
   }catch(e){
-    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;">✗ Resume error: '+e.message+'</span>';
-    log('Resume error: '+e.message, 'e');
+    if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;">✗ Reset error: '+e.message+'</span>';
+    log('Reset error: '+e.message, 'e');
   }
-}
-
-async function checkSuspendStatus(){
-  try{
-    const r = await fetch(SUPA+'/rest/v1/app_config?key=eq.batch_suspended&select=value', {headers:H}).then(r=>r.json());
-    const val = r?.[0]?.value;
-    const isSuspended = val && (typeof val === 'object' ? val.suspended : false);
-    const statusEl = document.getElementById('suspendStatus');
-    if(isSuspended){
-      if(statusEl) statusEl.innerHTML = '<span style="color:#f85149;font-weight:700;">⏸ SUSPENDED</span> since '+(val.at?new Date(val.at).toLocaleTimeString():'—');
-      document.getElementById('suspendBtn').style.opacity = '0.4';
-      document.getElementById('resumeBtn').style.opacity = '1';
-    } else {
-      if(statusEl && !statusEl.innerHTML.includes('RESUMED')) statusEl.innerHTML = '<span style="color:#3fb950;">▶ Active</span>';
-      document.getElementById('suspendBtn').style.opacity = '1';
-      document.getElementById('resumeBtn').style.opacity = '0.4';
-    }
-  }catch(e){}
 }
 
 async function fetchCronStatus(){
@@ -862,7 +1284,7 @@ async function fetchCronStatus(){
         const isComplete = st.status === 'complete';
         const isRunning = st.status === 'running';
         const idx = st.ticker_index || 0;
-        const col = isComplete ? '#3fb950' : isRunning ? '#3d6eff' : '#e3b341';
+        const col = isComplete ? '#3fb950' : isRunning ? '#e5792a' : '#e3b341';
         oivEl.innerHTML = 'Status: <b style="color:'+col+';">'+st.status+'</b>'
           + ' · '+st.trading_date
           + ' · '+idx+'/1394 tickers'
@@ -913,7 +1335,7 @@ async function fetchIVBatchState(){
       + ' &nbsp; ' + date;
 
     document.getElementById('ivBatchPct').textContent = pct + '%';
-    document.getElementById('ivBatchPct').style.color = isComplete?'#00e5a8':isRunning?'#3d6eff':'#555570';
+    document.getElementById('ivBatchPct').style.color = isComplete?'#00e5a8':isRunning?'#e5792a':'#555570';
 
     const bar = document.getElementById('ivBatchBar');
     bar.style.width = pct + '%';
@@ -921,7 +1343,7 @@ async function fetchIVBatchState(){
 
     document.getElementById('ivBatchDetail').innerHTML =
       'Tickers: <b style="color:#cdd9e5;">' + idx + ' / ' + total + '</b>'
-      + ' &nbsp;·&nbsp; Status: <b style="color:' + (isComplete?'#00e5a8':isRunning?'#3d6eff':'#8888aa') + ';">' + status + '</b>';
+      + ' &nbsp;·&nbsp; Status: <b style="color:' + (isComplete?'#00e5a8':isRunning?'#e5792a':'#8888aa') + ';">' + status + '</b>';
 
     log('IV-batch: '+status+' '+idx+'/'+total+' ('+pct+'%) for '+date, isComplete?'ok':'i');
   }catch(e){
@@ -940,10 +1362,10 @@ async function fetchDailyOps(){
       fetch(SUPA+'/rest/v1/app_config?key=eq.iv_batch_state&select=value',{headers:H}).then(r=>r.json()).catch(()=>[]),
       fetch(SUPA+'/rest/v1/batch_run?select=trading_date,tickers_done,status&order=trading_date.desc&limit=7',{headers:H}).then(r=>r.json()).catch(()=>[]),
       fetch(SUPA+'/rest/v1/options_iv_cache?select=cached_at&order=cached_at.desc&limit=1',{headers:H}).then(r=>r.json()).catch(()=>[]),
-      fetch(SUPA+'/rest/v1/app_config?key=eq.batch_suspended&select=value',{headers:H}).then(r=>r.json()).catch(()=>[]),
+      fetch(SUPA+'/rest/v1/app_config?key=eq.cron_pause_state&select=value',{headers:H}).then(r=>r.json()).catch(()=>[]),
     ]);
     const _suspVal = suspendR?.[0]?.value;
-    const _isSuspended = _suspVal && (typeof _suspVal === 'object' ? _suspVal.suspended : false);
+    const _isSuspended = _suspVal && (typeof _suspVal === 'object' ? _suspVal.paused : false);
     const _suspTime = _suspVal?.at ? new Date(_suspVal.at).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) : '';
 
     // ── TA-BATCH STATUS CARD ──
@@ -984,14 +1406,14 @@ async function fetchDailyOps(){
         taBadge.style.background = 'rgba(88,166,255,.15)';
         taBadge.style.color = '#58a6ff';
       } else {
-        taCard.style.borderLeftColor = isComplete ? '#00e5a8' : isRunning ? '#3d6eff' : '#f85149';
+        taCard.style.borderLeftColor = isComplete ? '#00e5a8' : isRunning ? '#e5792a' : '#f85149';
         taBadge.textContent = isComplete ? '✓ COMPLETE' : isRunning ? '● RUNNING' : '⚠ ' + (s.status||'unknown');
         taBadge.style.background = isComplete ? 'rgba(0,229,168,.15)' : isRunning ? 'rgba(61,110,255,.15)' : 'rgba(255,51,85,.15)';
-        taBadge.style.color = isComplete ? '#00e5a8' : isRunning ? '#3d6eff' : '#f85149';
+        taBadge.style.color = isComplete ? '#00e5a8' : isRunning ? '#e5792a' : '#f85149';
       }
 
       taDetail.innerHTML =
-        'Date: <b style="color:#cdd9e5;">'+s.trading_date+'</b>'+ (_isSuspended ? ' <span style="color:#f85149;font-weight:700;">⛔ MANUALLY SUSPENDED at '+_suspTime+'</span>' : _isOffDay ? ' <span style="color:#58a6ff;">(market closed)</span>' : '') +'<br>'
+        'Date: <b style="color:#cdd9e5;">'+s.trading_date+'</b>'+ (_isSuspended ? ' <span style="color:#f85149;font-weight:700;">⏸ CRON PAUSED at '+_suspTime+'</span>' : _isOffDay ? ' <span style="color:#58a6ff;">(market closed)</span>' : '') +'<br>'
         +'Function: <b style="color:#cdd9e5;">ta-batch</b> · Cron: <b style="color:#cdd9e5;">*/2 * * * *</b> (every 2 min)<br>'
         +'Indicator: <b style="color:#cdd9e5;">'+(indIdx+1)+'/'+totalInds+'</b> · Ticker: <b style="color:#cdd9e5;">'+tkIdx+'/'+totalTk+'</b><br>'
         +'Last activity: <b style="color:#cdd9e5;">'+(ago!==null?(ago<60?ago+'min':ago<1440?Math.round(ago/60)+'hr':Math.round(ago/1440)+'d')+' ago':'—')+'</b>'
@@ -1029,14 +1451,14 @@ async function fetchDailyOps(){
         ivBadge.style.background = 'rgba(88,166,255,.15)';
         ivBadge.style.color = '#58a6ff';
       } else {
-        ivCard.style.borderLeftColor = isComplete ? '#00e5a8' : isRunning ? '#3d6eff' : '#f85149';
+        ivCard.style.borderLeftColor = isComplete ? '#00e5a8' : isRunning ? '#e5792a' : '#f85149';
         ivBadge.textContent = isComplete ? '✓ COMPLETE' : isRunning ? '● RUNNING' : '⚠ ' + (st.status||'unknown');
         ivBadge.style.background = isComplete ? 'rgba(0,229,168,.15)' : isRunning ? 'rgba(61,110,255,.15)' : 'rgba(255,51,85,.15)';
-        ivBadge.style.color = isComplete ? '#00e5a8' : isRunning ? '#3d6eff' : '#f85149';
+        ivBadge.style.color = isComplete ? '#00e5a8' : isRunning ? '#e5792a' : '#f85149';
       }
 
       ivDetail.innerHTML =
-        'Date: <b style="color:#cdd9e5;">'+(st.trading_date||'—')+'</b>'+ (_isSuspended ? ' <span style="color:#f85149;font-weight:700;">⛔ MANUALLY SUSPENDED at '+_suspTime+'</span>' : _isOffDay ? ' <span style="color:#58a6ff;">(market closed)</span>' : '') +'<br>'
+        'Date: <b style="color:#cdd9e5;">'+(st.trading_date||'—')+'</b>'+ (_isSuspended ? ' <span style="color:#f85149;font-weight:700;">⏸ CRON PAUSED at '+_suspTime+'</span>' : _isOffDay ? ' <span style="color:#58a6ff;">(market closed)</span>' : '') +'<br>'
         +'Function: <b style="color:#cdd9e5;">iv-batch</b> · Cron: <b style="color:#cdd9e5;">*/5 13-20 * * 1-5</b> (every 5 min)<br>'
         +'Tickers: <b style="color:#cdd9e5;">'+idx+'/'+total+'</b> · Progress: <b style="color:#cdd9e5;">'+pct+'%</b><br>'
         +'Mode: <b style="color:#cdd9e5;">Polygon snapshots + Black-Scholes fallback</b>';
@@ -1057,7 +1479,7 @@ async function fetchDailyOps(){
     // ── Manual Suspend Override ──
     if(_isSuspended){
       checks.push('<span style="color:#f85149;font-weight:700;">⛔ ALL SERVICES MANUALLY SUSPENDED</span>');
-      checks.push('Suspended at: <b style="color:#f85149;">'+_suspTime+'</b>');
+      checks.push('Paused at: <b style="color:#f85149;">'+_suspTime+'</b>');
       checks.push('TA-Batch: <b style="color:#f85149;">⛔ STOPPED</b>');
       checks.push('IV-Batch: <b style="color:#f85149;">⛔ STOPPED</b>');
       checks.push('<span style="color:#8ab4ce;">Click <b>▶ Resume All</b> then <b>▶▶ Run ALL Batches</b> to restart</span>');
@@ -1189,7 +1611,7 @@ async function fetchDailyOps(){
         const issues = checks.filter(c => c.startsWith('❌') || c.startsWith('⚠️'));
         alertText.innerHTML = issues.join('<br>');
         if(Notification.permission === 'granted'){
-          new Notification('OptionLens Batch Monitor', {body: errors+' issue'+(errors>1?'s':'')+' detected', icon: '⚠️'});
+          new Notification('StockVizor Batch Monitor', {body: errors+' issue'+(errors>1?'s':'')+' detected', icon: '⚠️'});
         } else if(Notification.permission !== 'denied'){
           Notification.requestPermission();
         }
@@ -1234,7 +1656,7 @@ async function fetchDailyOps(){
       const taInfo = taCountMap[dt] || {};
       const taStatus = run?.status || state?.status || taInfo.status || '—';
       const taTk = taInfo.tickers || (state?.status==='complete' ? (run?.tickers_done||liveTotal) : '—');
-      const taCol = taStatus==='complete'?'#00e5a8':taStatus==='running'?'#3d6eff':'#555570';
+      const taCol = taStatus==='complete'?'#00e5a8':taStatus==='running'?'#e5792a':'#555570';
       const taIcon = taStatus==='complete'?'✅':taStatus==='running'?'🔄':'—';
 
       // IV status: check if iv_batch_state matches this date
@@ -1249,7 +1671,7 @@ async function fetchDailyOps(){
       }
       const hasIV = ivStatus === 'complete';
       const ivIcon = hasIV ? '✅' : ivStatus==='running' ? '🔄' : '—';
-      const ivCol = hasIV ? '#00e5a8' : ivStatus==='running' ? '#3d6eff' : '#555570';
+      const ivCol = hasIV ? '#00e5a8' : ivStatus==='running' ? '#e5792a' : '#555570';
 
       const isToday = dt === dates[0];
       const hasError = !isToday && taStatus!=='complete' && taStatus!=='running';
@@ -1304,7 +1726,7 @@ async function doRefresh(){
     // Phase 2: query ta_cache filtered by date at API level
     const [cacheRows,...indArrs]=await Promise.all([
       sb('/rest/v1/ta_cache?select=ticker,rsi,macd_h,ema9,ema20,ema50,sma50,sma200,price,atr14,boll_pos,mom5,trading_date,sector&trading_date=eq.'+activeDate+'&order=ticker&limit=2000'),
-      ...INDS.map(ind=>sb('/rest/v1/ta_cache?select=ticker&trading_date=eq.'+activeDate+'&'+ind+'=not.is.null&limit=2000'))
+      ...INDS.map(ind=>sb('/rest/v1/ta_cache?select=ticker,trading_date&trading_date=eq.'+activeDate+'&'+ind+'=not.is.null&limit=2000'))
     ]);
     rows=(cacheRows||[]).filter(r=>r.trading_date===activeDate);
     buildDynamicSectors(rows);
@@ -1348,13 +1770,16 @@ async function doRefresh(){
   }catch(e){
     log('Error: '+e.message,'e');
     document.getElementById('tsBar').textContent='Error: '+e.message;
+    // Still try to load daily ops even if main fetch fails
+    try{ fetchDailyOps(); }catch(e2){}
   }
   fetchBarsStats();
   fetchOptionsIVStats();
   fetchCronStatus();
   fetchIVBatchState();
   fetchDailyOps();
-  checkSuspendStatus();
+  fetchBatchConfig();
+  checkCronStatus();
   startCountdown();
 }
 
@@ -1368,7 +1793,7 @@ function renderHero(state,counts,td){
   document.getElementById('progFill').style.width=pct+'%';
   document.getElementById('progFill').className='prog-fill'+(isDone?' done':'');
   const NAMES=['RSI(14)','MACD','EMA(9)','EMA(20)','EMA(50)','SMA(50)','SMA(200)'];
-  const sc=isDone?'#00e5a8':isRun?'#3d6eff':'#ffaa00';
+  const sc=isDone?'#00e5a8':isRun?'#e5792a':'#ffaa00';
   const bdg=document.getElementById('badge');
   const meta=document.getElementById('statusMeta');
   const eta=document.getElementById('statusEta');
@@ -1415,7 +1840,7 @@ function renderDB(dateData,states,runs){
     const pct=Math.round(totalDone/(INDS.length*liveTotal)*100);
     const isComplete=state?.status==='complete'||pct===100;
     const isRunning=state?.status==='running';
-    const sc=isComplete?'#00e5a8':isRunning?'#3d6eff':'#ffaa00';
+    const sc=isComplete?'#00e5a8':isRunning?'#e5792a':'#ffaa00';
     const label=isComplete?'✓ COMPLETE':isRunning?'⟳ RUNNING':'\u23F3 PARTIAL';
     const NAMES=['RSI(14)','MACD','EMA(9)','EMA(20)','EMA(50)','SMA(50)','SMA(200)'];
     return `<div class="db-card">
@@ -1508,8 +1933,8 @@ function exportCSV(){
   log('Exported '+filtered.length+' rows as CSV','ok');
 }
 
-// Boot -- load immediately then auto-refresh every 30s
-doRefresh();
+// Boot -- load after DOM is ready then auto-refresh every 30s
+setTimeout(doRefresh, 200);
 // ── Auto-run loop ─────────────────────────────────────────────────────────────
 let _ar = false;
 
@@ -1693,7 +2118,7 @@ function bmFindChatId(){
 }
 
 function bmTestTelegram(){
-  bmSendTg('<b>OptionLens Batch Monitor -- Test</b>\nTelegram is connected!\n<i>' + new Date().toLocaleString() + '</i>');
+  bmSendTg('<b>StockVizor Batch Monitor -- Test</b>\nTelegram is connected!\n<i>' + new Date().toLocaleString() + '</i>');
 }
 
 function bmSendTg(text){
@@ -1826,7 +2251,7 @@ function sendExtremeSignals(){
       showStatus('extremeStatus','No STRONG SELL or BUY signals yet -- run the ta-batch first','warn');
       return;
     }
-    var msg = '<b>OptionLens -- Daily Extreme Signals</b> (' + date2 + ')\n'
+    var msg = '<b>StockVizor -- Daily Extreme Signals</b> (' + date2 + ')\n'
       + '<i>' + total + ' tickers scored | ' + date + '</i>\n\n';
     if(shorts.length){
       msg += '<b>STRONG SELL -- Top ' + shorts.length + '</b>\n';
@@ -1841,7 +2266,7 @@ function sendExtremeSignals(){
         msg += (i+1) + '. <b>' + r.ticker + '</b>  score=' + Math.abs(r.net) + (r.rsi ? '  RSI ' + r.rsi.toFixed(0) : '') + '\n';
       });
     }
-    msg += '\n<i>OptionLens Batch Monitor</i>';
+    msg += '\n<i>StockVizor Batch Monitor</i>';
     bmSendTg(msg).then(function(ok){
       showStatus('extremeStatus', ok ? 'Sent to all recipients' : 'Send failed -- check Settings', ok?'ok':'err');
     });
@@ -1926,7 +2351,7 @@ function sendComboReadiness(){
     var isWD = [1,2,3,4,5].includes(new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'})).getDay());
     var nextBatch = 'after next batch run';
     if(isWD){ if(etH<6) nextBatch='today at 6:00 AM ET'; else if(etH<16) nextBatch='today at 4:30 PM ET'; else nextBatch='tomorrow at 6:00 AM ET'; }
-    var msg = '<b>OptionLens -- Smart Combo Readiness</b> (' + date + ')\n'
+    var msg = '<b>StockVizor -- Smart Combo Readiness</b> (' + date + ')\n'
       + '<i>' + total + ' tickers in ta_cache</i>\n\n';
     if(ready.length){
       msg += '<b>READY TO RUN (' + ready.length + ')</b>\n';
@@ -1946,7 +2371,7 @@ function sendComboReadiness(){
       msg += '\n';
       msg += '<i>Missing data will populate: ' + nextBatch + '</i>\n';
     }
-    msg += '\n<i>OptionLens Batch Monitor</i>';
+    msg += '\n<i>StockVizor Batch Monitor</i>';
     bmSendTg(msg).then(function(ok){
       showStatus('comboStatus', ok ? 'Sent to all recipients' : 'Send failed -- check Settings', ok?'ok':'err');
     });
@@ -2100,6 +2525,635 @@ window.addEventListener('DOMContentLoaded', function(){ bmLoadIntoForm(); });
 
   </div>
 </div>
+
+</div><!-- close panelBatch -->
+
+<!-- ═══ USERS MANAGEMENT ═══ -->
+<div id="panelUsers" style="display:none;">
+<div class="wrap" style="padding-top:20px;">
+  <div class="sec-label" style="margin-top:14px;">👥 USER MANAGEMENT</div>
+
+  <!-- Summary stats -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;">
+    <div class="stat-box" style="text-align:center;border-left:3px solid #00e5a8;">
+      <div id="statTotalUsers" class="stat-val">—</div>
+      <div class="stat-lbl">Total Users</div>
+    </div>
+    <div class="stat-box" style="text-align:center;border-left:3px solid #f5c15d;">
+      <div id="statPremiumUsers" class="stat-val">—</div>
+      <div class="stat-lbl">Premium</div>
+    </div>
+    <div class="stat-box" style="text-align:center;border-left:3px solid #e5792a;">
+      <div id="statProUsers" class="stat-val">—</div>
+      <div class="stat-lbl">Pro</div>
+    </div>
+    <div class="stat-box" style="text-align:center;border-left:3px solid #8888aa;">
+      <div id="statFreeUsers" class="stat-val">—</div>
+      <div class="stat-lbl">Free</div>
+    </div>
+    <div class="stat-box" style="text-align:center;border-left:3px solid #22d3ee;">
+      <div id="statMRR" class="stat-val">—</div>
+      <div class="stat-lbl">Monthly Revenue</div>
+    </div>
+  </div>
+
+  <div class="stat-box" style="margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap;">
+      <div style="font-size:13px;font-weight:700;color:#e5792a;">👥 Registered Users</div>
+      <input id="userSearchInput" type="text" placeholder="🔍 Search by email or name…"
+        oninput="renderUsersTable()" style="flex:1;min-width:200px;max-width:340px;background:#0a0e1a;border:1px solid #1e1e2e;color:#cdd9e5;padding:6px 10px;border-radius:5px;font-family:'Courier New',monospace;font-size:11px;"/>
+      <select id="userTierFilter" onchange="renderUsersTable()" style="background:#0a0e1a;border:1px solid #1e1e2e;color:#cdd9e5;padding:6px 8px;border-radius:5px;font-family:'Courier New',monospace;font-size:11px;cursor:pointer;">
+        <option value="all">All tiers</option>
+        <option value="premium">Premium only</option>
+        <option value="pro">Pro only</option>
+        <option value="free">Free only</option>
+        <option value="admin">Admins only</option>
+      </select>
+      <button onclick="loadUsers()" class="btn-ref" style="font-size:11px;padding:5px 12px;">↻ Refresh</button>
+    </div>
+    <div id="usersTable" style="font-family:'Courier New',monospace;font-size:12px;color:#8888aa;overflow-x:auto;">
+      Loading users...
+    </div>
+  </div>
+</div>
+</div><!-- close panelUsers -->
+
+</div><!-- close adminMain -->
+
+<script>
+// ═══ ADMIN AUTH ═══
+let _sbAdmin = null;
+let _adminSession = null;
+
+try {
+  if(window.supabase) {
+    _sbAdmin = window.supabase.createClient(
+      'https://hkamukkkkpqhdpcradau.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrYW11a2tra3BxaGRwY3JhZGF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDMxMzMsImV4cCI6MjA4OTU3OTEzM30.bvdk2U-oBW5bxF3uGqfdhXIZ8GdeGWmhJzUqPCC8tjY'
+    );
+  } else {
+    console.error('Supabase CDN not loaded');
+    document.getElementById('adminError').textContent = 'Supabase library failed to load. Check internet connection.';
+    document.getElementById('adminError').style.display = 'block';
+  }
+} catch(e) { console.error('Supabase init error:', e); }
+
+// Check existing session on load
+(async function(){
+  if(!_sbAdmin) return;
+  try {
+    const { data, error } = await _sbAdmin.auth.getSession();
+    console.log('Session check:', data?.session ? 'found' : 'none', error?.message||'');
+    if(data?.session?.user) await checkAdminAndShow(data.session.user);
+  } catch(e) { console.error('Session check error:', e); }
+})();
+
+async function adminLogin(){
+  const email = document.getElementById('adminEmail').value.trim();
+  const pass = document.getElementById('adminPass').value;
+  const err = document.getElementById('adminError');
+  if(!email||!pass){ err.textContent='Enter email and password'; err.style.display='block'; return; }
+  if(!_sbAdmin){ err.textContent='Supabase client not initialized'; err.style.display='block'; return; }
+  err.style.display='none';
+  const btn = document.getElementById('adminLoginBtn');
+  if(btn){ btn.innerHTML='<span style="display:inline-flex;align-items:center;gap:8px;"><span class="login-spin">⏳</span> Signing in...</span>'; btn.disabled=true; btn.style.opacity='.7'; }
+  try{
+    console.log('Attempting login for:', email);
+    const { data, error } = await _sbAdmin.auth.signInWithPassword({email, password:pass});
+    if(error) throw error;
+    console.log('Login success, checking admin status...');
+    await checkAdminAndShow(data.user);
+  }catch(e){
+    console.error('Login error:', e);
+    err.textContent = e.message || 'Login failed — check credentials';
+    err.style.display = 'block';
+  }
+  if(btn){ btn.textContent='Sign In'; btn.disabled=false; btn.style.opacity='1'; }
+}
+
+async function checkAdminAndShow(user){
+  console.log('Checking admin for:', user.email, user.id);
+  try {
+    // STEP 1: Confirm admin role first (before exposing any MFA UI)
+    const { data:p, error } = await _sbAdmin.from('user_profiles').select('is_admin').eq('id',user.id).single();
+    console.log('Profile result:', p, 'Error:', error?.message||'none');
+    if(error){
+      const err = document.getElementById('adminError');
+      err.textContent = 'Could not load profile: ' + error.message;
+      err.style.display = 'block';
+      return;
+    }
+    if(!p?.is_admin){
+      const err = document.getElementById('adminError');
+      err.textContent = 'Access denied — admin privileges required (is_admin=false)';
+      err.style.display = 'block';
+      await _sbAdmin.auth.signOut();
+      return;
+    }
+
+    // STEP 2: Check MFA Authenticator Assurance Level
+    // aal1 = password only, aal2 = password + verified TOTP factor
+    const { data: aalData, error: aalErr } = await _sbAdmin.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(aalErr){
+      console.warn('AAL check failed (treating as aal1):', aalErr.message);
+    }
+    const currentLevel = aalData?.currentLevel || 'aal1';
+    const nextLevel = aalData?.nextLevel || 'aal1';
+    console.log('AAL:', currentLevel, '→ next', nextLevel);
+
+    if(currentLevel === 'aal2'){
+      // Already verified MFA in this session → grant access
+      _adminSession = user;
+      _showMonitorMain(user);
+      return;
+    }
+
+    // currentLevel is aal1; what's the next step?
+    if(nextLevel === 'aal1'){
+      // No verified factor exists → show enrollment flow
+      _adminSession = user;  // stash the user so MFA flow can use it
+      _showMfaEnroll();
+    } else {
+      // Factor exists but needs to be challenged this session
+      _adminSession = user;
+      _showMfaChallenge();
+    }
+  } catch(e) {
+    console.error('checkAdmin error:', e);
+    const err = document.getElementById('adminError');
+    err.textContent = 'Error checking admin status: ' + e.message;
+    err.style.display = 'block';
+  }
+}
+
+// Show the main admin dashboard (after both password + MFA pass)
+function _showMonitorMain(user){
+  document.getElementById('adminLoginGate').style.display = 'none';
+  document.getElementById('adminMain').style.display = 'block';
+  document.getElementById('adminUserLabel').textContent = '🔑 ' + user.email;
+  loadUsers();
+  startBatchConfigPoll();
+}
+
+// Hide all gate panels then show one
+function _showGatePanel(panelId){
+  ['mfaLoginPanel','mfaEnrollPanel','mfaChallengePanel'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = (id === panelId) ? 'block' : 'none';
+  });
+  // Make sure the gate itself is visible
+  document.getElementById('adminLoginGate').style.display = 'flex';
+}
+
+// ── MFA ENROLLMENT FLOW ────────────────────────────────────────────
+// Called when admin has logged in but has no verified TOTP factor yet.
+// Generates a QR code + secret, user scans with authenticator app,
+// then verifies a 6-digit code to activate the factor.
+let _mfaEnrolledFactorId = null;
+
+async function _showMfaEnroll(){
+  _showGatePanel('mfaEnrollPanel');
+  const qrEl = document.getElementById('mfaQrContainer');
+  const secEl = document.getElementById('mfaSecret');
+  const errEl = document.getElementById('mfaEnrollError');
+  errEl.style.display = 'none';
+  qrEl.innerHTML = '<span style="color:#888;font-size:12px;">Generating QR code…</span>';
+  secEl.textContent = '…';
+
+  try {
+    // Defensive: if previous unverified factors exist (from a half-completed
+    // enrollment, page refresh, etc.), unenroll them first so we can create
+    // a fresh one. NOTE: listFactors().totp returns ONLY VERIFIED factors;
+    // unverified ones live in listFactors().all — we must scan there.
+    try {
+      const { data: factors } = await _sbAdmin.auth.mfa.listFactors();
+      const unverified = (factors?.all || []).filter(
+        f => f.factor_type === 'totp' && f.status === 'unverified'
+      );
+      console.log('Cleaning up '+unverified.length+' unverified TOTP factor(s)');
+      for(const f of unverified){
+        await _sbAdmin.auth.mfa.unenroll({ factorId: f.id });
+      }
+    } catch(e){ console.warn('Could not clean up unverified factors:', e); }
+
+    // Use a timestamp-based friendly name so even if cleanup somehow misses
+    // a stale factor, we never collide with an existing name.
+    const friendlyName = 'StockVizor Admin (' + new Date().toISOString().replace(/[:.]/g,'-').slice(0,19) + ')';
+    const { data, error } = await _sbAdmin.auth.mfa.enroll({
+      factorType: 'totp',
+      friendlyName: friendlyName,
+      issuer: 'StockVizor'
+    });
+    if(error) throw error;
+
+    _mfaEnrolledFactorId = data.id;
+
+    // === DIAGNOSTIC: log what we got back from Supabase ===
+    console.log('MFA enroll response:', {
+      factorId: data?.id,
+      hasQrCode: !!data?.totp?.qr_code,
+      qrCodePrefix: data?.totp?.qr_code ? data.totp.qr_code.slice(0,80) : null,
+      hasUri: !!data?.totp?.uri,
+      uriPrefix: data?.totp?.uri ? data.totp.uri.slice(0,80) : null,
+      hasSecret: !!data?.totp?.secret,
+      secretLen: data?.totp?.secret?.length
+    });
+
+    // === BUILD CLEAN otpauth URI CLIENT-SIDE ===
+    // Supabase derives its otpauth URI from the project's site_url, which
+    // can be misconfigured (e.g. "localhost"). To guarantee a useful entry
+    // in the user's authenticator app, we construct the URI ourselves
+    // from the secret we received.
+    //
+    // Standard otpauth format:
+    //   otpauth://totp/<ISSUER>:<ACCOUNT>?secret=<SECRET>&issuer=<ISSUER>
+    //                                    &algorithm=SHA1&digits=6&period=30
+    const issuer = 'StockVizor';
+    const accountEmail = (_adminSession?.email) || 'admin';
+    const secret = data?.totp?.secret;
+    let cleanUri = null;
+    if(secret){
+      const label = encodeURIComponent(issuer + ':' + accountEmail);
+      cleanUri = 'otpauth://totp/' + label
+        + '?secret=' + encodeURIComponent(secret)
+        + '&issuer=' + encodeURIComponent(issuer)
+        + '&algorithm=SHA1&digits=6&period=30';
+    }
+    // Fall back to Supabase's URI if we couldn't build one
+    const finalUri = cleanUri || data?.totp?.uri;
+    console.log('QR URI we will use:', finalUri ? finalUri.slice(0,100) : '(none)');
+
+    // === QR CODE RENDERING ===
+    // We have THREE possible rendering strategies, in order of robustness:
+    //   1. Generate from otpauth:// URI using QRCode.js library  ← BEST
+    //   2. Inject SVG from data.totp.qr_code inline                ← fallback
+    //   3. Use SVG as <img> data URL                               ← last resort
+    //
+    // Strategy 1 is preferred because it gives us a canvas at exactly
+    // the size we want, with no SVG sizing quirks.
+    qrEl.innerHTML = '<div id="mfaQrInner" style="width:200px;height:200px;display:flex;align-items:center;justify-content:center;background:#fff;"></div>';
+    const inner = document.getElementById('mfaQrInner');
+    const qrSvg = data?.totp?.qr_code;
+    const qrUri = finalUri;  // use our cleanly-built URI
+    let renderStrategy = 'none';
+
+    try {
+      if(typeof QRCode !== 'undefined' && qrUri){
+        // Strategy 1: client-side generation from URI
+        new QRCode(inner, {
+          text: qrUri,
+          width: 200,
+          height: 200,
+          colorDark:  '#000000',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+        renderStrategy = 'qrcodejs-from-uri';
+      } else if(qrSvg && qrSvg.trim().startsWith('<svg')){
+        // Strategy 2: inject SVG inline
+        inner.innerHTML = qrSvg;
+        const svgEl = inner.querySelector('svg');
+        if(svgEl){
+          svgEl.setAttribute('width', '200');
+          svgEl.setAttribute('height', '200');
+          svgEl.style.width = '200px';
+          svgEl.style.height = '200px';
+          svgEl.style.display = 'block';
+          if(!svgEl.getAttribute('viewBox')){
+            const w = parseInt(svgEl.getAttribute('width')) || 256;
+            const h = parseInt(svgEl.getAttribute('height')) || 256;
+            svgEl.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+          }
+        }
+        renderStrategy = 'svg-inline';
+      } else if(qrSvg && qrSvg.startsWith('data:')){
+        // Strategy 3: data URL
+        inner.innerHTML = '<img src="'+qrSvg+'" style="width:200px;height:200px;display:block;" alt="MFA QR code">';
+        renderStrategy = 'data-url';
+      } else if(qrSvg){
+        // Strategy 3 fallback: encode raw SVG as data URL
+        const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(qrSvg);
+        inner.innerHTML = '<img src="'+dataUrl+'" style="width:200px;height:200px;display:block;" alt="MFA QR code">';
+        renderStrategy = 'svg-encoded-data-url';
+      } else {
+        throw new Error('No QR code data returned by Supabase');
+      }
+      console.log('QR rendered via:', renderStrategy);
+    } catch(qrErr) {
+      console.error('QR rendering failed:', qrErr);
+      // Last-resort: at least show the secret prominently so the user can
+      // type it into their authenticator app manually
+      inner.innerHTML = '<div style="padding:12px;text-align:center;color:#333;font-family:monospace;font-size:11px;">'
+        + '<div style="margin-bottom:8px;">QR rendering failed.</div>'
+        + '<div style="margin-bottom:8px;font-weight:bold;">Use the secret key below ↓</div>'
+        + '<div style="font-size:9px;color:#888;">' + (qrErr.message || 'unknown error') + '</div>'
+        + '</div>';
+      renderStrategy = 'failed-' + (qrErr.message || 'unknown');
+    }
+    secEl.textContent = data?.totp?.secret || 'unavailable';
+
+    // Focus the code input for quick entry
+    setTimeout(() => document.getElementById('mfaEnrollCode')?.focus(), 100);
+  } catch(e){
+    console.error('MFA enroll error:', e);
+    qrEl.innerHTML = '<span style="color:#ff6b7a;font-size:12px;">Failed to start enrollment</span>';
+    errEl.textContent = e.message || 'Could not start MFA enrollment';
+    errEl.style.display = 'block';
+  }
+}
+
+async function mfaCompleteEnroll(){
+  const code = document.getElementById('mfaEnrollCode').value.trim();
+  const errEl = document.getElementById('mfaEnrollError');
+  const btn = document.getElementById('mfaEnrollBtn');
+  errEl.style.display = 'none';
+  if(!/^\d{6}$/.test(code)){
+    errEl.textContent = 'Enter the 6-digit code from your authenticator app';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(!_mfaEnrolledFactorId){
+    errEl.textContent = 'Enrollment session expired — please cancel and try again';
+    errEl.style.display = 'block';
+    return;
+  }
+  btn.disabled = true; btn.style.opacity = '.7'; btn.textContent = 'Verifying…';
+  try {
+    const { data, error } = await _sbAdmin.auth.mfa.challengeAndVerify({
+      factorId: _mfaEnrolledFactorId,
+      code: code
+    });
+    if(error) throw error;
+    // Verification succeeded → AAL is now aal2 → admin gate passes
+    console.log('MFA enrolled and verified, AAL upgraded.');
+    _showMonitorMain(_adminSession);
+  } catch(e){
+    console.error('MFA verify error:', e);
+    errEl.textContent = e.message || 'Invalid code — please try again';
+    errEl.style.display = 'block';
+    document.getElementById('mfaEnrollCode').value = '';
+    document.getElementById('mfaEnrollCode').focus();
+  } finally {
+    btn.disabled = false; btn.style.opacity = '1'; btn.textContent = 'Verify & Enable';
+  }
+}
+
+// ── MFA CHALLENGE FLOW ─────────────────────────────────────────────
+// Called when admin has logged in and a verified TOTP factor exists,
+// but this session has not yet been promoted to aal2.
+let _mfaChallengeFactorId = null;
+
+async function _showMfaChallenge(){
+  _showGatePanel('mfaChallengePanel');
+  const errEl = document.getElementById('mfaChallengeError');
+  errEl.style.display = 'none';
+
+  try {
+    // Find the verified TOTP factor
+    const { data, error } = await _sbAdmin.auth.mfa.listFactors();
+    if(error) throw error;
+    const verified = (data?.totp || []).find(f => f.status === 'verified');
+    if(!verified){
+      // Edge case: nextLevel said aal2 but no verified TOTP — fall back to enrollment
+      console.warn('No verified TOTP factor despite aal2 nextLevel — showing enrollment');
+      _showMfaEnroll();
+      return;
+    }
+    _mfaChallengeFactorId = verified.id;
+    setTimeout(() => document.getElementById('mfaChallengeCode')?.focus(), 100);
+  } catch(e){
+    console.error('listFactors error:', e);
+    errEl.textContent = 'Could not load MFA factors: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+async function mfaCompleteChallenge(){
+  const code = document.getElementById('mfaChallengeCode').value.trim();
+  const errEl = document.getElementById('mfaChallengeError');
+  const btn = document.getElementById('mfaChallengeBtn');
+  errEl.style.display = 'none';
+  if(!/^\d{6}$/.test(code)){
+    errEl.textContent = 'Enter the 6-digit code from your authenticator app';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(!_mfaChallengeFactorId){
+    errEl.textContent = 'Session expired — please sign out and try again';
+    errEl.style.display = 'block';
+    return;
+  }
+  btn.disabled = true; btn.style.opacity = '.7'; btn.textContent = 'Verifying…';
+  try {
+    const { data, error } = await _sbAdmin.auth.mfa.challengeAndVerify({
+      factorId: _mfaChallengeFactorId,
+      code: code
+    });
+    if(error) throw error;
+    console.log('MFA challenge verified, AAL upgraded.');
+    _showMonitorMain(_adminSession);
+  } catch(e){
+    console.error('MFA challenge verify error:', e);
+    errEl.textContent = e.message || 'Invalid code — please try again';
+    errEl.style.display = 'block';
+    document.getElementById('mfaChallengeCode').value = '';
+    document.getElementById('mfaChallengeCode').focus();
+  } finally {
+    btn.disabled = false; btn.style.opacity = '1'; btn.textContent = 'Verify';
+  }
+}
+
+// Cancel button on any MFA panel — sign out and return to login form
+async function mfaCancel(){
+  await _sbAdmin.auth.signOut();
+  _adminSession = null;
+  _mfaEnrolledFactorId = null;
+  _mfaChallengeFactorId = null;
+  // Clear sensitive form fields
+  ['mfaEnrollCode','mfaChallengeCode','adminPass'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  _showGatePanel('mfaLoginPanel');
+}
+
+async function adminSignOut(){
+  stopBatchConfigPoll();
+  await _sbAdmin.auth.signOut();
+  _adminSession = null;
+  _mfaEnrolledFactorId = null;
+  _mfaChallengeFactorId = null;
+  // Clear sensitive form fields
+  ['mfaEnrollCode','mfaChallengeCode','adminPass'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  document.getElementById('adminMain').style.display = 'none';
+  _showGatePanel('mfaLoginPanel');
+}
+
+function switchAdminTab(tab){
+  document.getElementById('panelBatch').style.display = tab==='batch'?'block':'none';
+  document.getElementById('panelUsers').style.display = tab==='users'?'block':'none';
+  document.getElementById('tabBatch').classList.toggle('active', tab==='batch');
+  document.getElementById('tabUsers').classList.toggle('active', tab==='users');
+  if(tab==='users') loadUsers();
+}
+
+// ═══ USER MANAGEMENT ═══
+let _allUsers = [];  // cache for client-side filtering
+
+async function loadUsers(){
+  const el = document.getElementById('usersTable');
+  el.innerHTML = '<div style="text-align:center;padding:20px;"><span class="login-spin" style="font-size:20px;">⏳</span><br><span style="color:#8888aa;font-size:11px;margin-top:8px;display:block;">Loading users...</span></div>';
+  try{
+    const { data:users, error } = await _sbAdmin.from('user_profiles')
+      .select('id,email,display_name,tier_id,is_admin,add_ons,last_seen_at,force_signout_at,created_at,subscription_status')
+      .order('created_at', {ascending:false});
+    if(error) throw error;
+    if(!users?.length){ el.innerHTML = 'No users found.'; return; }
+
+    _allUsers = users;
+
+    // Update summary stats
+    const total = users.length;
+    const premium = users.filter(u=>u.tier_id==='premium').length;
+    const pro = users.filter(u=>u.tier_id==='pro').length;
+    const free = users.filter(u=>!u.tier_id || u.tier_id==='free').length;
+    const telegram = users.filter(u=>u.add_ons?.telegram_alerts).length;
+    // Honest MRR estimate using rough tier prices; actual prices live in subscription_tiers
+    const mrr = (premium * 49) + (pro * 19) + (telegram * 9);
+    document.getElementById('statTotalUsers').textContent = total;
+    document.getElementById('statPremiumUsers').textContent = premium;
+    document.getElementById('statProUsers').textContent = pro;
+    document.getElementById('statFreeUsers').textContent = free;
+    document.getElementById('statMRR').textContent = '$' + mrr;
+
+    renderUsersTable();
+  }catch(e){
+    el.innerHTML = '<span style="color:#ff3355;">Error: '+e.message+'</span>';
+  }
+}
+
+// Re-render table from cached _allUsers, applying current search + filter
+function renderUsersTable(){
+  const el = document.getElementById('usersTable');
+  if(!_allUsers.length){ el.innerHTML = 'No users.'; return; }
+
+  const search = (document.getElementById('userSearchInput')?.value || '').trim().toLowerCase();
+  const tierFilter = document.getElementById('userTierFilter')?.value || 'all';
+
+  let users = _allUsers;
+  if(search){
+    users = users.filter(u =>
+      (u.email||'').toLowerCase().includes(search) ||
+      (u.display_name||'').toLowerCase().includes(search)
+    );
+  }
+  if(tierFilter === 'admin'){
+    users = users.filter(u => u.is_admin === true);
+  } else if(tierFilter !== 'all'){
+    users = users.filter(u => (u.tier_id || 'free') === tierFilter);
+  }
+
+  if(!users.length){
+    el.innerHTML = '<div style="padding:14px;color:#8888aa;text-align:center;">No users match your filters.</div>';
+    return;
+  }
+
+  let html = '<table style="width:100%;"><tr style="border-bottom:1px solid #1e1e2e;">'
+    +'<th>EMAIL</th><th>NAME</th><th>TIER</th><th>ADMIN</th><th>LAST SEEN</th><th>JOINED</th><th style="min-width:230px;">ACTIONS</th></tr>';
+
+  users.forEach(u=>{
+    const tier = u.tier_id || 'free';
+    let tierCol, tierLabel;
+    if(tier === 'premium'){ tierCol = '#f5c15d'; tierLabel = '★ PREMIUM'; }
+    else if(tier === 'pro'){ tierCol = '#00e5a8'; tierLabel = '◈ PRO'; }
+    else { tierCol = '#8888aa'; tierLabel = 'FREE'; }
+    const lastSeen = u.last_seen_at ? timeAgo(new Date(u.last_seen_at)) : '—';
+    const joined = u.created_at ? new Date(u.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+    const addons = u.add_ons?.telegram_alerts ? ' 📱' : '';
+    const isAdminBadge = u.is_admin
+      ? '<span style="color:#e5792a;font-weight:700;">ADMIN</span>'
+      : '<span style="color:#5c6c80;">—</span>';
+    const adminBtnLabel = u.is_admin ? 'Revoke Admin' : 'Make Admin';
+    const adminBtnColor = u.is_admin ? '255,159,28' : '74,140,255';
+
+    html += `<tr>
+      <td style="text-align:left;"><span class="tck">${esc(u.email||'—')}</span></td>
+      <td style="text-align:left;color:#8888aa;">${esc(u.display_name||'—')}</td>
+      <td>
+        <select onchange="changeTier('${u.id}',this.value,'${esc(u.email||'')}')"
+          style="background:rgba(${tier==='premium'?'245,193,93':tier==='pro'?'0,229,168':'136,136,170'},0.08);border:1px solid rgba(${tier==='premium'?'245,193,93':tier==='pro'?'0,229,168':'136,136,170'},0.25);color:${tierCol};padding:3px 6px;border-radius:4px;font-size:10px;font-family:'Courier New',monospace;font-weight:700;cursor:pointer;">
+          <option value="free" ${tier==='free'?'selected':''}>FREE</option>
+          <option value="pro" ${tier==='pro'?'selected':''}>◈ PRO</option>
+          <option value="premium" ${tier==='premium'?'selected':''}>★ PREMIUM</option>
+        </select>
+        ${addons}
+      </td>
+      <td>${isAdminBadge}</td>
+      <td style="color:#8888aa;">${lastSeen}</td>
+      <td style="color:#8888aa;">${joined}</td>
+      <td style="display:flex;gap:4px;flex-wrap:wrap;">
+        <button onclick="toggleAdmin('${u.id}',${u.is_admin?'true':'false'},'${esc(u.email||'')}')" title="Toggle admin status"
+          style="background:rgba(${adminBtnColor},.1);border:1px solid rgba(${adminBtnColor},.25);color:rgb(${adminBtnColor});padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;font-family:'Courier New',monospace;font-weight:700;">
+          ${adminBtnLabel}
+        </button>
+        <button onclick="forceLogout('${u.id}','${esc(u.email||'')}')" title="Force sign out this user"
+          style="background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,.2);color:#ff3355;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;font-family:'Courier New',monospace;font-weight:700;">
+          Force Logout
+        </button>
+      </td>
+    </tr>`;
+  });
+  html += '</table>';
+  html += `<div style="padding:8px 4px 0;color:#5c6c80;font-size:10px;">Showing ${users.length} of ${_allUsers.length} users</div>`;
+  el.innerHTML = html;
+}
+
+// Simple HTML escape for values used in onclick handlers etc.
+function esc(s){ return String(s||'').replace(/'/g,"\\'").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function timeAgo(d){
+  const mins = Math.round((Date.now()-d.getTime())/60000);
+  if(mins<1) return 'just now';
+  if(mins<60) return mins+'m ago';
+  if(mins<1440) return Math.round(mins/60)+'h ago';
+  return Math.round(mins/1440)+'d ago';
+}
+
+async function forceLogout(userId, email){
+  if(!confirm('Force sign out '+email+' immediately?')) return;
+  try{
+    await _sbAdmin.from('user_profiles').update({force_signout_at: new Date().toISOString()}).eq('id', userId);
+    alert(email + ' has been signed out (will take effect within 5 minutes on their device).');
+    loadUsers();
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+// 3-state tier change (free/pro/premium)
+async function changeTier(userId, newTier, email){
+  if(!['free','pro','premium'].includes(newTier)){ alert('Invalid tier'); return; }
+  if(!confirm('Change '+email+' to '+newTier.toUpperCase()+' tier?')){
+    loadUsers();  // reload to reset the dropdown to original value
+    return;
+  }
+  try{
+    await _sbAdmin.from('user_profiles').update({tier_id: newTier}).eq('id', userId);
+    loadUsers();
+  }catch(e){ alert('Error: '+e.message); loadUsers(); }
+}
+
+// Grant or revoke admin status
+async function toggleAdmin(userId, currentlyAdmin, email){
+  const action = currentlyAdmin ? 'REVOKE admin from' : 'GRANT admin to';
+  if(!confirm(action+' '+email+'?\n\nAdmin users have access to this monitor console and can manage other users.')) return;
+  try{
+    await _sbAdmin.from('user_profiles').update({is_admin: !currentlyAdmin}).eq('id', userId);
+    loadUsers();
+  }catch(e){ alert('Error: '+e.message); }
+}
+</script>
 
 </body>
 </html>
