@@ -591,15 +591,7 @@ function getVisibleRange(tf, data) {
 
 function drawChart(tf) {
   const canvas = document.getElementById('cmCanvas');
-  if (!canvas) return;
-  // Fallback: size canvas if ResizeObserver hasn't fired yet
-  if (!canvas.width || !canvas.height) {
-    const dpr = window.devicePixelRatio || 1;
-    const w = Math.round(canvas.offsetWidth * dpr);
-    const h = Math.round(Math.max(280, canvas.offsetHeight) * dpr);
-    if (w > 0 && h > 0) { canvas.width = w; canvas.height = h; }
-    else return;
-  }
+  if (!canvas || !canvas.width || !canvas.height) return; // not yet sized — skip silently
 
   const bars = LIVE_BARS[currentTicker]?.[tf];
   if (!bars || bars.length < 2) {
@@ -1718,47 +1710,55 @@ document.querySelectorAll('.toggle-tf').forEach(btn => {
   const cvs = document.getElementById('cmCanvas');
   if (!cvs) return;
 
-  // _syncCanvas — sole owner of canvas physical dimensions.
-  // Returns true if canvas was actually cleared (dimensions changed).
-  // Never call canvas.width = x anywhere else.
-  let _roTimer = null;
+  // ── Canvas sizing ──────────────────────────────────────────────────────────
+  // _syncCanvas is the ONLY place that may assign cvs.width / cvs.height.
+  // Assigning those properties always clears the canvas bitmap.
+  // Guard: if the user is actively wheeling, skip the clear entirely and
+  // defer it to after the scroll finishes — this eliminates the blank flash.
+  let _isWheeling   = false;
+  let _wheelEndTimer = null;
+  let _roTimer       = null;
+
   function _syncCanvas() {
+    if (_isWheeling) return false; // never clear canvas during scroll
     const dpr = window.devicePixelRatio || 1;
-    const w = Math.round(cvs.offsetWidth  * dpr);
-    const h = Math.round(Math.max(280, cvs.offsetHeight) * dpr);
+    const w   = Math.round(cvs.offsetWidth  * dpr);
+    const h   = Math.round(Math.max(280, cvs.offsetHeight) * dpr);
     if (w > 0 && h > 0 && (cvs.width !== w || cvs.height !== h)) {
       cvs.width = w; cvs.height = h;
-      return true; // canvas was cleared
+      return true;
     }
     return false;
   }
 
-  // Size canvas immediately so the first drawChart has valid dimensions.
-  _syncCanvas();
+  _syncCanvas(); // size canvas before first draw
 
-  // When the canvas is resized (flex layout settling, window resize):
-  // 1. Sync dimensions immediately — this clears the canvas bitmap.
-  // 2. Redraw immediately so the blank is never visible to the user.
-  // 3. Also schedule a debounced redraw for the final settled size.
   new ResizeObserver(() => {
-    const cleared = _syncCanvas();
-    if (cleared) drawChart(activeTimeframe); // instant repaint — no blank gap
+    const cleared = _syncCanvas();          // skipped when _isWheeling
+    if (cleared) drawChart(activeTimeframe);
     clearTimeout(_roTimer);
     _roTimer = setTimeout(() => drawChart(activeTimeframe), 60);
   }).observe(cvs);
 
-  // Wheel zoom — throttled to one draw per animation frame.
-  // CRITICAL: never read offsetWidth inside event handlers — it forces a synchronous
-  // layout which queues a ResizeObserver notification → RO clears canvas → blank flash.
-  // Use cvs.width/dpr instead: already set by _syncCanvas, no layout forced.
+  // ── Wheel zoom ─────────────────────────────────────────────────────────────
   let _wheelRaf = null;
   cvs.addEventListener('wheel', e => {
     e.preventDefault();
+
+    // Hold the resize lock while scrolling; release 200 ms after last tick.
+    // After release, apply any deferred size change so layout stays accurate.
+    _isWheeling = true;
+    clearTimeout(_wheelEndTimer);
+    _wheelEndTimer = setTimeout(() => {
+      _isWheeling = false;
+      if (_syncCanvas()) drawChart(activeTimeframe); // apply deferred resize
+    }, 200);
+
     const bars = LIVE_BARS[currentTicker]?.[activeTimeframe];
     if (!bars) return;
     const dpr    = window.devicePixelRatio || 1;
     const n      = bars.length;
-    const chartW = (cvs.width / dpr) - 12 - 68;   // no offsetWidth read — no layout forced
+    const chartW = (cvs.width / dpr) - 12 - 68;
     const autoW  = chartW / n;
     const cur    = chartState.slotW !== null ? chartState.slotW : autoW;
     const newW   = cur * (e.deltaY > 0 ? 1.08 : 0.93);
@@ -1773,7 +1773,7 @@ document.querySelectorAll('.toggle-tf').forEach(btn => {
     _wheelRaf = requestAnimationFrame(() => { _wheelRaf = null; drawChart(activeTimeframe); });
   }, { passive: false });
 
-  // Pan (drag) — same rule: no offsetWidth inside mousemove handler.
+  // ── Pan (drag) ─────────────────────────────────────────────────────────────
   let drag = null;
   let _dragRaf = null;
   cvs.addEventListener('mousedown', e => { drag = { x: e.clientX, offset: chartState.offset }; cvs.style.cursor = 'grabbing'; });
@@ -1781,8 +1781,8 @@ document.querySelectorAll('.toggle-tf').forEach(btn => {
     if (!drag || chartState.slotW === null) return;
     const bars = LIVE_BARS[currentTicker]?.[activeTimeframe]; if (!bars) return;
     const dpr    = window.devicePixelRatio || 1;
+    const chartW = (cvs.width / dpr) - 12 - 68;
     const n      = bars.length;
-    const chartW = (cvs.width / dpr) - 12 - 68;   // no offsetWidth read
     const count  = Math.max(3, Math.min(n, Math.floor(chartW / chartState.slotW)));
     chartState.offset = Math.max(0, Math.min(n - count, Math.round(drag.offset + (drag.x - e.clientX) / chartState.slotW)));
     if (_dragRaf) cancelAnimationFrame(_dragRaf);
