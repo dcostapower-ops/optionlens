@@ -772,9 +772,18 @@ async function fetchPolygonBars(ticker, tf) {
     if (results.length < 2) return null;
     return results.map(b => ({
       d: new Date(b.t).toISOString().slice(0,10),
-      t: tf === '1M'
-          ? new Date(b.t).toLocaleDateString('en-US',{month:'short',year:'2-digit'})   // "Jan '24"
-          : new Date(b.t).toLocaleDateString('en-US',{month:'numeric',day:'numeric'}), // "4/15"
+      t: (() => {
+          const dt = new Date(b.t);
+          if (tf === '1M') return dt.toLocaleDateString('en-US',{month:'short',year:'2-digit'}); // "Jan '24"
+          if (tf === '1W') return dt.toLocaleDateString('en-US',{month:'short',year:'2-digit'}); // "Apr '25"
+          // 1D: "Apr 15" within current year, "Apr 15 '25" for previous years
+          const mon = dt.toLocaleDateString('en-US',{month:'short'});
+          const day = dt.getDate();
+          const yr  = dt.getFullYear();
+          return yr < today.getFullYear()
+            ? `${mon} ${day} '${String(yr).slice(2)}`
+            : `${mon} ${day}`;
+        })(),
       o: b.o, h: b.h, l: b.l, c: b.c,
       v: +(b.v/1e6).toFixed(2)
     }));
