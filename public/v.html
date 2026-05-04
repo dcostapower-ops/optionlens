@@ -117,7 +117,12 @@ body{background:#060912;color:#F5F5F4;font-feature-settings:"ss01"}
   <div class="flex items-center justify-between px-6 h-14 max-w-[1440px] mx-auto">
     <div class="flex items-center gap-8">
       <a href="/" class="flex items-center gap-2">
-        <img src="/logo-icon.png" alt="StockVizor" style="width:32px;height:32px;border-radius:8px;display:block;">
+        <div class="sv-logo-wrap">
+          <div class="sv-logo-inner">
+            <div class="sv-logo-face"><img src="/logo-icon.png" alt="StockVizor" style="width:32px;height:32px;display:block;"></div>
+            <div class="sv-logo-face sv-logo-back"><img src="/logo-icon.png" alt="" style="width:32px;height:32px;display:block;"></div>
+          </div>
+        </div>
         <span class="font-bold text-base tracking-tight"><span style="color:#14B8A6">Stock</span><span style="color:#F43F5E">Vizor</span></span>
       </a>
       <div class="hidden md:flex items-center gap-1 text-sm">
@@ -758,7 +763,7 @@ async function fetchPolygonBars(ticker, tf) {
   else                  { span = 'day';   days = 400;  } // 400 cal days ≈ 280 trading days → enough for SMA200
   const from = new Date(today.getTime() - days*86400000).toISOString().slice(0,10);
   const to   = today.toISOString().slice(0,10);
-  const url  = `${POLY_BASE}/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/1/${span}/${from}/${to}?adjusted=true&sort=asc&limit=500`;
+  const url  = `${POLY_BASE}/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/1/${span}/${from}/${to}?adjusted=true&sort=asc&limit=1000`;
   try {
     const r = await fetch(url);
     if (!r.ok) return null;
@@ -767,7 +772,9 @@ async function fetchPolygonBars(ticker, tf) {
     if (results.length < 2) return null;
     return results.map(b => ({
       d: new Date(b.t).toISOString().slice(0,10),
-      t: tf === '1D' ? new Date(b.t).toLocaleDateString('en-US',{month:'numeric',day:'numeric'}) : new Date(b.t).toLocaleDateString('en-US',{month:'numeric',day:'numeric'}),
+      t: tf === '1M'
+          ? new Date(b.t).toLocaleDateString('en-US',{month:'short',year:'2-digit'})   // "Jan '24"
+          : new Date(b.t).toLocaleDateString('en-US',{month:'numeric',day:'numeric'}), // "4/15"
       o: b.o, h: b.h, l: b.l, c: b.c,
       v: +(b.v/1e6).toFixed(2)
     }));
@@ -1699,38 +1706,74 @@ document.querySelectorAll('.toggle-tf').forEach(btn => {
 (function() {
   const cvs = document.getElementById('cmCanvas');
   if (!cvs) return;
+
+  // _syncCanvas — sole owner of canvas physical dimensions.
+  // Returns true if canvas was actually cleared (dimensions changed).
+  // Never call canvas.width = x anywhere else.
+  let _roTimer = null;
+  function _syncCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.round(cvs.offsetWidth  * dpr);
+    const h = Math.round(Math.max(280, cvs.offsetHeight) * dpr);
+    if (w > 0 && h > 0 && (cvs.width !== w || cvs.height !== h)) {
+      cvs.width = w; cvs.height = h;
+      return true; // canvas was cleared
+    }
+    return false;
+  }
+
+  // Size canvas immediately so the first drawChart has valid dimensions.
+  _syncCanvas();
+
+  // When the canvas is resized (flex layout settling, window resize):
+  // 1. Sync dimensions immediately — this clears the canvas bitmap.
+  // 2. Redraw immediately so the blank is never visible to the user.
+  // 3. Also schedule a debounced redraw for the final settled size.
+  new ResizeObserver(() => {
+    const cleared = _syncCanvas();
+    if (cleared) drawChart(activeTimeframe); // instant repaint — no blank gap
+    clearTimeout(_roTimer);
+    _roTimer = setTimeout(() => drawChart(activeTimeframe), 60);
+  }).observe(cvs);
+
+  // Wheel zoom — throttled to one draw per animation frame.
+  // Without RAF: drawChart fires 10+ times per frame → multiple offsetWidth reads
+  // → browser queues ResizeObserver → RO clears canvas → 60 ms blank.
+  let _wheelRaf = null;
   cvs.addEventListener('wheel', e => {
     e.preventDefault();
     const bars = LIVE_BARS[currentTicker]?.[activeTimeframe];
     if (!bars) return;
-    const n = bars.length;
+    const n      = bars.length;
     const chartW = cvs.offsetWidth - 12 - 68;
     const autoW  = chartW / n;
     const cur    = chartState.slotW !== null ? chartState.slotW : autoW;
     const newW   = cur * (e.deltaY > 0 ? 1.18 : 0.85);
-    if (newW >= autoW * 0.98) { chartState.slotW=null; chartState.offset=0; }
-    else { chartState.slotW=Math.max(4,newW); const count=Math.max(3,Math.min(n,Math.floor(chartW/chartState.slotW))); chartState.offset=Math.max(0,Math.min(chartState.offset,n-count)); }
-    drawChart(activeTimeframe);
-  },{passive:false});
-  let drag=null;
-  cvs.addEventListener('mousedown', e => { drag={x:e.clientX,offset:chartState.offset}; cvs.style.cursor='grabbing'; });
+    if (newW >= autoW * 0.98) {
+      chartState.slotW = null; chartState.offset = 0;
+    } else {
+      chartState.slotW = Math.max(4, newW);
+      const count = Math.max(3, Math.min(n, Math.floor(chartW / chartState.slotW)));
+      chartState.offset = Math.max(0, Math.min(chartState.offset, n - count));
+    }
+    if (_wheelRaf) cancelAnimationFrame(_wheelRaf);
+    _wheelRaf = requestAnimationFrame(() => { _wheelRaf = null; drawChart(activeTimeframe); });
+  }, { passive: false });
+
+  // Pan (drag)
+  let drag = null;
+  let _dragRaf = null;
+  cvs.addEventListener('mousedown', e => { drag = { x: e.clientX, offset: chartState.offset }; cvs.style.cursor = 'grabbing'; });
   window.addEventListener('mousemove', e => {
-    if (!drag||chartState.slotW===null) return;
-    const bars=LIVE_BARS[currentTicker]?.[activeTimeframe]; if(!bars)return;
-    const n=bars.length, chartW=cvs.offsetWidth-12-68;
-    const count=Math.max(3,Math.min(n,Math.floor(chartW/chartState.slotW)));
-    chartState.offset=Math.max(0,Math.min(n-count,Math.round(drag.offset+(drag.x-e.clientX)/chartState.slotW)));
-    drawChart(activeTimeframe);
+    if (!drag || chartState.slotW === null) return;
+    const bars = LIVE_BARS[currentTicker]?.[activeTimeframe]; if (!bars) return;
+    const n = bars.length, chartW = cvs.offsetWidth - 12 - 68;
+    const count = Math.max(3, Math.min(n, Math.floor(chartW / chartState.slotW)));
+    chartState.offset = Math.max(0, Math.min(n - count, Math.round(drag.offset + (drag.x - e.clientX) / chartState.slotW)));
+    if (_dragRaf) cancelAnimationFrame(_dragRaf);
+    _dragRaf = requestAnimationFrame(() => { _dragRaf = null; drawChart(activeTimeframe); });
   });
-  window.addEventListener('mouseup',()=>{ if(drag){drag=null;cvs.style.cursor='crosshair';} });
-  let _roTimer=null;
-  function _syncCanvas() {
-    const dpr=window.devicePixelRatio||1;
-    const w=Math.round(cvs.offsetWidth*dpr), h=Math.round(Math.max(280,cvs.offsetHeight)*dpr);
-    if(w>0&&h>0&&(cvs.width!==w||cvs.height!==h)){cvs.width=w;cvs.height=h;}
-  }
-  _syncCanvas(); // size canvas immediately before first draw
-  new ResizeObserver(()=>{ _syncCanvas(); clearTimeout(_roTimer); _roTimer=setTimeout(()=>drawChart(activeTimeframe),60); }).observe(cvs);
+  window.addEventListener('mouseup', () => { if (drag) { drag = null; cvs.style.cursor = 'crosshair'; } });
 })();
 
 // ─── BROKER SETTINGS (localStorage) ───────────────────────────────────────
@@ -1924,10 +1967,9 @@ function renderPositions() {
     tbody.innerHTML = _openPositions.map((pos,i) => {
       const cur = parseFloat(LIVE_PRICES[pos.ticker]?.price || pos.entry);
       const pnl = _calcPnl(pos, cur);
-      const costBasis = pos.type === 'Sell' || pos.type === 'Margin Short'
-        ? pos.entry - pos.commission - pos.vat
-        : pos.entry + pos.commission + pos.vat;
-      const pct = costBasis ? (pnl / (Math.abs(costBasis) * pos.qty) * 100).toFixed(2) : '0.00';
+      // Total capital at risk = entry × qty + flat fees (same sign regardless of direction)
+      const capitalAtRisk = pos.entry * pos.qty + (pos.commission || 0) + (pos.vat || 0);
+      const pct = capitalAtRisk ? (pnl / capitalAtRisk * 100).toFixed(2) : '0.00';
       const dir = pnl >= 0;
       totalUnrealized += pnl;
       const typeColor = (pos.type==='Sell'||pos.type==='Margin Short') ? 'text-accent-bear' : 'text-accent-bull';
