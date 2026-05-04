@@ -1761,7 +1761,7 @@ document.querySelectorAll('.toggle-tf').forEach(btn => {
     const chartW = (cvs.width / dpr) - 12 - 68;   // no offsetWidth read — no layout forced
     const autoW  = chartW / n;
     const cur    = chartState.slotW !== null ? chartState.slotW : autoW;
-    const newW   = cur * (e.deltaY > 0 ? 1.18 : 0.85);
+    const newW   = cur * (e.deltaY > 0 ? 1.08 : 0.93);
     if (newW >= autoW * 0.98) {
       chartState.slotW = null; chartState.offset = 0;
     } else {
