@@ -581,7 +581,9 @@ function getVisibleRange(tf, data) {
   const n = data.length;
   if (chartState.slotW === null) return { start: 0, end: n };
   const canvas = document.getElementById('cmCanvas');
-  const chartW = (canvas ? canvas.offsetWidth : 700) - 12 - 68;
+  // Use canvas.width/dpr — never offsetWidth — to avoid forcing layout during draw.
+  const dpr    = window.devicePixelRatio || 1;
+  const chartW = (canvas ? canvas.width / dpr : 700) - 12 - 68;
   const count  = Math.max(3, Math.min(n, Math.floor(chartW / chartState.slotW)));
   const offset = Math.max(0, Math.min(chartState.offset, n - count));
   return { start: Math.max(0, n - count - offset), end: Math.max(0, n - count - offset) + count };
@@ -1746,15 +1748,17 @@ document.querySelectorAll('.toggle-tf').forEach(btn => {
   }).observe(cvs);
 
   // Wheel zoom — throttled to one draw per animation frame.
-  // Without RAF: drawChart fires 10+ times per frame → multiple offsetWidth reads
-  // → browser queues ResizeObserver → RO clears canvas → 60 ms blank.
+  // CRITICAL: never read offsetWidth inside event handlers — it forces a synchronous
+  // layout which queues a ResizeObserver notification → RO clears canvas → blank flash.
+  // Use cvs.width/dpr instead: already set by _syncCanvas, no layout forced.
   let _wheelRaf = null;
   cvs.addEventListener('wheel', e => {
     e.preventDefault();
     const bars = LIVE_BARS[currentTicker]?.[activeTimeframe];
     if (!bars) return;
+    const dpr    = window.devicePixelRatio || 1;
     const n      = bars.length;
-    const chartW = cvs.offsetWidth - 12 - 68;
+    const chartW = (cvs.width / dpr) - 12 - 68;   // no offsetWidth read — no layout forced
     const autoW  = chartW / n;
     const cur    = chartState.slotW !== null ? chartState.slotW : autoW;
     const newW   = cur * (e.deltaY > 0 ? 1.18 : 0.85);
@@ -1769,15 +1773,17 @@ document.querySelectorAll('.toggle-tf').forEach(btn => {
     _wheelRaf = requestAnimationFrame(() => { _wheelRaf = null; drawChart(activeTimeframe); });
   }, { passive: false });
 
-  // Pan (drag)
+  // Pan (drag) — same rule: no offsetWidth inside mousemove handler.
   let drag = null;
   let _dragRaf = null;
   cvs.addEventListener('mousedown', e => { drag = { x: e.clientX, offset: chartState.offset }; cvs.style.cursor = 'grabbing'; });
   window.addEventListener('mousemove', e => {
     if (!drag || chartState.slotW === null) return;
     const bars = LIVE_BARS[currentTicker]?.[activeTimeframe]; if (!bars) return;
-    const n = bars.length, chartW = cvs.offsetWidth - 12 - 68;
-    const count = Math.max(3, Math.min(n, Math.floor(chartW / chartState.slotW)));
+    const dpr    = window.devicePixelRatio || 1;
+    const n      = bars.length;
+    const chartW = (cvs.width / dpr) - 12 - 68;   // no offsetWidth read
+    const count  = Math.max(3, Math.min(n, Math.floor(chartW / chartState.slotW)));
     chartState.offset = Math.max(0, Math.min(n - count, Math.round(drag.offset + (drag.x - e.clientX) / chartState.slotW)));
     if (_dragRaf) cancelAnimationFrame(_dragRaf);
     _dragRaf = requestAnimationFrame(() => { _dragRaf = null; drawChart(activeTimeframe); });
