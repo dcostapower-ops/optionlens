@@ -47,6 +47,16 @@ A full deploy applies changes in this order:
 
 See **[`docs/deploy_full_stack.md`](docs/deploy_full_stack.md)** for the full runbook — exact commands, verification steps, and rollback procedure for each layer.
 
+## Local run
+
+Run locally with Wrangler:
+
+```bash
+wrangler dev
+```
+
+This repo is pinned to local port `8788` in `wrangler.toml` so it does not conflict with OptionStrategy on `8799`.
+
 ## Project context
 
 The full project context, methodology, product roadmap, and operational guidance are maintained as a Claude Code workspace at `../stockvizorclaude/`. Read `../stockvizorclaude/CLAUDE.md` for routing.

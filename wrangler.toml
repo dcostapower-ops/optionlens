@@ -5,3 +5,7 @@ main = "src/index.js"
 [assets]
 directory = "./public"
 binding = "ASSETS"
+
+[dev]
+port = 8788
+ip = "127.0.0.1"

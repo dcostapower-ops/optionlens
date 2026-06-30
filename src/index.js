@@ -15,6 +15,19 @@ function errorResp(msg, status = 400) {
   return jsonResp({ error: msg }, status);
 }
 
+// Cloudflare requires this Durable Object class to remain exported because
+// production has an existing namespace bound to this class name.
+export class ScreenerCoordinator {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch() {
+    return jsonResp({ error: 'ScreenerCoordinator endpoint is not enabled in this build' }, 501);
+  }
+}
+
 // ── Supabase helpers ─────────────────────────────────────────────────────────
 
 // Read — uses anon key (RLS applies)
