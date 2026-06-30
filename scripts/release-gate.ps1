@@ -21,6 +21,16 @@ Write-Host "Step 2/6: Deploy StockVizor Supabase functions"
 & .\scripts\deploy-supabase-stockvizor.ps1 -RepoPath $RepoPath -ProjectRef $SupabaseProjectRef
 if ($LASTEXITCODE -ne 0) { throw "Supabase function deploy failed" }
 
+Write-Host "Step 2.5/6: Verify core Supabase functions are active"
+$functionList = (& supabase functions list --project-ref $SupabaseProjectRef | Out-String)
+$requiredFunctions = @("ta-batch", "iv-batch", "quote-fan-out", "news-fan-out", "movers-fan-out", "universe-fan-out", "watchlist-classify", "ai-summary")
+foreach ($fn in $requiredFunctions) {
+  if ($functionList -notmatch [regex]::Escape($fn)) {
+    throw "Supabase verify failed: missing function '$fn' in project list"
+  }
+}
+Write-Host "Supabase verification passed for core batch/ops functions"
+
 Write-Host "Step 3/6: Deploy to Cloudflare"
 & npx wrangler@latest deploy
 if ($LASTEXITCODE -ne 0) { throw "Deploy failed" }

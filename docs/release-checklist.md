@@ -58,3 +58,19 @@ This deploys only StockVizor functions and intentionally excludes all `vizardis-
 ## Vizardis scope
 
 Release checks in this repository currently target StockVizor functionality. Vizardis-specific pipelines are out of scope for this checklist by request.
+
+## Daily admin operations (critical)
+
+Use `public/m.html` (Admin Console) as the day-to-day control surface for upkeep.
+
+Daily minimum checks:
+1. `Batch Monitor` tab: TA-BATCH and IV-BATCH status badges are healthy.
+2. `Health Check` card: no stale/failure warning state.
+3. `Activity Log`: no recurring errors for batch triggers.
+4. `Cron Schedule Status`: all required schedules active (not paused).
+
+If anomalies appear:
+1. Run SQL diagnostics in `sql/health-checks.sql` (Query 1-5).
+2. If cron was paused, resume from Admin Console or RPC (`resume_cron_job`).
+3. If batch got stuck, use recovery steps from `sql/00-ALL-QUERIES-MASTER.sql`.
+4. Re-run `runAllBatches()` from Admin Console and re-check health cards.
