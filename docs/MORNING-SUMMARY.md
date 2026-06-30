@@ -102,10 +102,10 @@ Flag exactly what you see and I'll diagnose. The session's diagnostic logs are i
 
 ## Quick rollback if anything breaks
 
-The pre-v4 backup is at `/home/claude/deploy/public/v.html.pre-v4-hybrid`. To revert:
+The pre-v4 backup is at `public/v.html.pre-v4-hybrid`. To revert from this repository root:
 ```bash
-cp /home/claude/deploy/public/v.html.pre-v4-hybrid /home/claude/deploy/public/v.html
-cd /home/claude/deploy && wrangler deploy
+cp public/v.html.pre-v4-hybrid public/v.html
+wrangler deploy
 ```
 
 ## Honest notes

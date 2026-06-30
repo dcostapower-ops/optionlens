@@ -138,7 +138,7 @@ Reuse existing tier-check logic from screener.html (`AUTH.profile.tier_id`).
 ## 📋 Execution order for tomorrow's session
 
 ### Phase 1 — Scaffold (30 min)
-- [ ] Copy mockup-v5 → `/home/claude/dashboard-build/dashboard.html`
+- [ ] Copy mockup-v5 into a local workspace draft file (for example `public/dashboard.html`) and iterate in VS Code
 - [ ] Strip placeholder data, add Supabase auth boilerplate from screener.html
 - [ ] Wire CF worker route `/dashboard` and verify it serves
 - [ ] Test sign-in flow, redirect from index.html when authed

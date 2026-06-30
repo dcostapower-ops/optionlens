@@ -60,7 +60,7 @@ Instead of checking for a key, `pKey()` could be replaced with `proxyAvailable()
 - Not urgent — the sentinel fix is functionally complete
 
 ### Related
-- Cloudflare Worker proxy: `/home/claude/deploy/index.js` lines 28-30 + `handlePolygon()` function
+- Cloudflare Worker proxy: `src/index.js` route dispatch + `handlePolygon()` function
 - Worker secret name: `env.POLYGON_KEY` (Cloudflare Workers secret, separate from Supabase `POLYGON_API_KEY` used by Edge Functions)
 - Both keys ARE the same value (the user's Polygon Stocks Starter API key) but stored in two different secret stores
 

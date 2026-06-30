@@ -11,7 +11,7 @@ const SUPABASE_URL = 'https://hkamukkkkpqhdpcradau.supabase.co'
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
 const MAX_RUNTIME  = 115000   // 115s budget per invocation
-const CALL_GAP_MS  = 700      // 700ms between Polygon calls
+const CALL_GAP_MS  = 50       // 50ms between tickers — Options Advanced plan: no rate limit
 const MAX_DTE      = 120      // max days to expiry to cache
 const MIN_DTE      = 3        // skip weeklies expiring in <3 days
 const STRIKE_RANGE = 0.25     // ±25% of underlying price
@@ -266,6 +266,29 @@ const CORS = {
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: CORS })
 
+// ── BATCH EVENT LOGGER ───────────────────────────────────────────────────────
+async function logBatchEvent(
+  supabase: any,
+  tradingDate: string,
+  eventType: string,
+  reason: string,
+  triggeredBy: string = 'cron',
+  details: Record<string, unknown> = {}
+) {
+  try {
+    await supabase.from('batch_event_log').insert({
+      batch_name:   'iv-batch',
+      trading_date: tradingDate,
+      event_type:   eventType,
+      reason,
+      triggered_by: triggeredBy,
+      details,
+    })
+  } catch (e) {
+    console.warn('[iv-batch] logBatchEvent failed (non-fatal):', e)
+  }
+}
+
 // ── MAIN HANDLER ────────────────────────────────────────────────────────────
 Deno.serve(async (_req) => {
   if (_req.method === 'OPTIONS') return new Response(null, { headers: CORS })
@@ -277,6 +300,13 @@ Deno.serve(async (_req) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
+  // Detect who triggered this invocation
+  let triggeredBy = 'cron'
+  try {
+    const body = await _req.clone().json()
+    if (body?.triggered_by) triggeredBy = body.triggered_by
+  } catch { /* no body or not JSON — that's fine */ }
+
   // Load universe
   const tickers = await loadIVUniverse(supabase)
   if (!tickers.length) {
@@ -285,13 +315,31 @@ Deno.serve(async (_req) => {
 
   const tradingDate = lastTradingDate()
   const { isOpen } = todayET()
-  console.log(`[iv-batch] tradingDate=${tradingDate} marketOpen=${isOpen} tickers=${tickers.length}`)
+  console.log(`[iv-batch] tradingDate=${tradingDate} marketOpen=${isOpen} tickers=${tickers.length} triggeredBy=${triggeredBy}`)
 
   if (!isTrading(tradingDate)) {
     return json({ status: 'skipped', reason: 'not_trading_day', trading_date: tradingDate })
   }
 
-  // Load prices from ta_cache
+  // ── MASTER GATE ─────────────────────────────────────────────────────────────
+  // iv-batch is a slave to ta-batch. It must not run until ta-batch has written
+  // status='complete' for today's trading date in batch_state.
+  // ta-batch fires iv-batch explicitly when it finishes; the cron is a fallback
+  // for partial-run continuation only. Either way, this gate is the authority.
+  const { data: masterRows } = await supabase
+    .from('batch_state')
+    .select('status')
+    .eq('trading_date', tradingDate)
+    .limit(1)
+  if (!masterRows?.length || masterRows[0].status !== 'complete') {
+    console.log(`[iv-batch] ta-batch not yet complete for ${tradingDate} — standing by`)
+    await logBatchEvent(supabase, tradingDate, 'waiting',
+      'Blocked by master gate — ta-batch has not yet completed for today. iv-batch will not run until ta_cache is ready.',
+      triggeredBy, { master_status: masterRows?.[0]?.status ?? 'no_row' })
+    return json({ status: 'waiting_for_ta_batch', trading_date: tradingDate })
+  }
+
+  // Load prices from ta_cache (always available now that ta-batch is confirmed complete)
   const prices = await loadPrices(supabase, tradingDate)
 
   // Load resumable state
@@ -310,6 +358,9 @@ Deno.serve(async (_req) => {
       state.ticker_index = tickerIdx
       state.status = 'running'
       await saveState(supabase, state)
+      await logBatchEvent(supabase, tradingDate, 'partial',
+        `Budget hit at ticker ${tickerIdx}/${tickers.length} — state saved, will continue next cron cycle.`,
+        triggeredBy, { ticker_index: tickerIdx, ticker_count: tickers.length, contracts_cached: totalContracts, tickers_done: totalTickers })
       return json({
         status: 'partial',
         trading_date: tradingDate,
@@ -418,9 +469,32 @@ Deno.serve(async (_req) => {
 
   // Done
   console.log(`[iv-batch] ALL DONE tickers=${totalTickers} contracts=${totalContracts} skipped=${skippedNoPrice}`)
+
+  // Guard: if every ticker was skipped due to missing prices, do NOT mark complete.
+  // Stay in 'running' so the next cron cycle retries (defensive fallback for the
+  // master gate above, e.g. partial price data edge case).
+  if (skippedNoPrice === tickers.length && tickers.length > 0) {
+    console.warn(`[iv-batch] All ${tickers.length} tickers skipped — prices may be stale. Staying in running state to retry.`)
+    state.ticker_index = 0
+    state.status = 'running'
+    await saveState(supabase, state)
+    await logBatchEvent(supabase, tradingDate, 'error',
+      `All ${tickers.length} tickers skipped — no prices found in ta_cache despite ta-batch showing complete. Possible partial ta_cache population. Will retry next cycle.`,
+      triggeredBy, { skipped_no_price: skippedNoPrice, ticker_count: tickers.length })
+    return json({
+      status: 'all_skipped_retrying',
+      trading_date: tradingDate,
+      skipped_no_price: skippedNoPrice
+    })
+  }
+
   state.ticker_index = tickerIdx
   state.status = 'complete'
   await saveState(supabase, state)
+
+  await logBatchEvent(supabase, tradingDate, 'complete',
+    `All ${totalTickers} options tickers processed — ${totalContracts} contracts cached.${skippedNoPrice > 0 ? ` (${skippedNoPrice} tickers had no price data and were skipped)` : ''}`,
+    triggeredBy, { tickers_done: totalTickers, contracts_cached: totalContracts, skipped_no_price: skippedNoPrice })
 
   return json({
     status: 'complete',

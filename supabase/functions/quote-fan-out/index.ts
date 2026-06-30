@@ -26,6 +26,9 @@ const STOCKS: string[] = [
   'UBER','COIN','SHOP','XYZ','XLK','XLF','XLE','XLV','XLY',
 ];
 
+// Index ETFs for minibar (SPY/QQQ/DIA/IWM — must match v.html INDEX_ETFS list)
+const INDEX_ETFS: string[] = ['SPY', 'QQQ', 'DIA', 'IWM'];
+
 const COMMODITY_ETFS: string[] = [
   'GLD','SLV','GDX','USO','UNG','TLT','IEF','SHY','DBA','UUP',
 ];
@@ -64,7 +67,7 @@ function nowIso() { return new Date().toISOString(); }
 
 // ── Fetch stocks + commodity ETFs from Massive snapshot bulk ──
 async function fetchStocksFromMassive(): Promise<{ rows: UpsertRow[]; failed: string[]; error?: string }> {
-  const tickers = [...STOCKS, ...COMMODITY_ETFS];
+  const tickers = [...STOCKS, ...COMMODITY_ETFS, ...INDEX_ETFS];
   const tickersParam = tickers.join(',');
   const url = `${POLYGON_BASE}/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${encodeURIComponent(tickersParam)}&apiKey=${POLYGON_KEY}`;
 
@@ -93,8 +96,8 @@ async function fetchStocksFromMassive(): Promise<{ rows: UpsertRow[]; failed: st
       const dayHasData    = (day.c ?? 0) > 0;
       const last_price    = dayHasData ? day.c : (prev.c ?? null);
       const prev_close    = dayHasData ? (prev.c ?? null) : (prev.o ?? null);
-      const change_abs    = dayHasData ? (t.todaysChange ?? null) : 0;
-      const change_pct    = dayHasData ? (t.todaysChangePerc ?? null) : 0;
+      const change_abs    = dayHasData ? (t.todaysChange ?? null) : null;
+      const change_pct    = dayHasData ? (t.todaysChangePerc ?? null) : null;
       const day_volumeRaw = dayHasData ? day.v : prev.v;
       const day_volume    = day_volumeRaw != null ? Math.trunc(Number(day_volumeRaw)) : null;
       const day_high      = dayHasData ? (day.h ?? null) : (prev.h ?? null);
@@ -103,9 +106,10 @@ async function fetchStocksFromMassive(): Promise<{ rows: UpsertRow[]; failed: st
       const data_as_of    = t.updated ? new Date(Math.floor(t.updated / 1e6)).toISOString() : null;
 
       const isCommodity = COMMODITY_ETFS.includes(sym);
+      const isIndexEtf  = INDEX_ETFS.includes(sym);
       rows.push({
         symbol: sym,
-        asset_class: isCommodity ? 'commodity_etf' : 'stock',
+        asset_class: isCommodity ? 'commodity_etf' : isIndexEtf ? 'etf' : 'stock',
         last_price, prev_close, change_abs, change_pct,
         day_volume, day_high, day_low,
         data_source: 'massive',
@@ -244,7 +248,7 @@ Deno.serve(async (req) => {
   }
 
   const dur = Date.now() - t0;
-  const totalAttempted = STOCKS.length + COMMODITY_ETFS.length + CRYPTOS.length;
+  const totalAttempted = STOCKS.length + COMMODITY_ETFS.length + INDEX_ETFS.length + CRYPTOS.length;
   await recordHealth({
     attempted: totalAttempted,
     updated: upsertError ? 0 : allRows.length,

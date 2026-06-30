@@ -59,4 +59,4 @@ This repo is pinned to local port `8788` in `wrangler.toml` so it does not confl
 
 ## Project context
 
-The full project context, methodology, product roadmap, and operational guidance are maintained as a Claude Code workspace at `../stockvizorclaude/`. Read `../stockvizorclaude/CLAUDE.md` for routing.
+The full project context, methodology, product roadmap, and operational guidance are maintained in this repository under `docs/` and `sql/` for VS Code-driven workflows.

@@ -234,7 +234,7 @@ These **must be set manually** (CLI or Dashboard):
 |---|---|
 | `POLYGON_API_KEY` | `iv-batch`, `movers-fan-out`, `quote-fan-out`, `ta-batch`, `universe-fan-out` |
 | `EODHD_API_KEY` | `news-fan-out` |
-| `FRANK-API-ANTHROPIC` | `ai-summary` (Claude Haiku 4.5) |
+| `FRANK-API-ANTHROPIC` | `ai-summary` (Anthropic Haiku model) |
 
 ```bash
 # List
