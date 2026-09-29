@@ -903,12 +903,12 @@ const{data}=await _sb.auth.getSession();
 if(data?.session?.user){
   const uid = data.session.user.id;
   const _sessEmail = data.session.user.email;
-  if(_sessEmail === 'guest@stockvizor.com'){ window.location.href='/dashboard'; return; }
+  if(_sessEmail === 'guest@stockvizor.com'){ window.location.href='/v'; return; }
   // Fast path: cached consent
-  if(localStorage.getItem('sv_consent_ok') === 'true'){ window.location.href='/dashboard'; return; }
+  if(localStorage.getItem('sv_consent_ok') === 'true'){ window.location.href='/v'; return; }
   try{
     const{data:consent}=await _sb.from('user_consents').select('id').eq('user_id',uid).eq('consent_type','disclaimer').limit(1);
-    if(consent && consent.length > 0){ localStorage.setItem('sv_consent_ok','true'); window.location.href='/dashboard'; return; }
+    if(consent && consent.length > 0){ localStorage.setItem('sv_consent_ok','true'); window.location.href='/v'; return; }
   }catch(e){}
   await _sb.auth.signOut();
 }
@@ -954,21 +954,21 @@ if(name&&data?.user) await _sb.from('user_profiles').update({display_name:name})
 // Check consent before redirecting
 const _loginEmail = email.toLowerCase();
 if(_loginEmail === 'guest@stockvizor.com'){
-  window.location.href='/dashboard'; // Guest skips consent
+  window.location.href='/v'; // Guest skips consent
 } else {
   // Fast path: check cached consent
   const _cachedConsent = localStorage.getItem('sv_consent_ok');
   if(_cachedConsent === 'true'){
-    window.location.href='/dashboard';
+    window.location.href='/v';
   } else {
     const uid = (await _sb.auth.getSession())?.data?.session?.user?.id;
     if(uid){
     try{
       const{data:consent}=await _sb.from('user_consents').select('id').eq('user_id',uid).eq('consent_type','disclaimer').limit(1);
-      if(consent && consent.length > 0){ localStorage.setItem('sv_consent_ok','true'); window.location.href='/dashboard'; }
+      if(consent && consent.length > 0){ localStorage.setItem('sv_consent_ok','true'); window.location.href='/v'; }
       else { closeModal(); showIdxDisclaimer(uid); }
     }catch(e){ closeModal(); showIdxDisclaimer(uid); }
-  } else { window.location.href='/dashboard'; }
+  } else { window.location.href='/v'; }
   }
 }
 }catch(e){
@@ -1144,7 +1144,7 @@ try{
     subscription_end:trialEnd.toISOString().slice(0,10),
     notes:'5-day premium trial started'
   });
-  window.location.href='/dashboard';
+  window.location.href='/v';
 }catch(e){
   alert('Error starting trial: '+e.message);
 }
