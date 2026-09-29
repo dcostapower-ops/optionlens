@@ -2,7 +2,15 @@
 
 Stock and ETF analysis software for US retail investors. Live at [stockvizor.com](https://stockvizor.com).
 
-This repository is the deploy source of truth. Three platforms ship from here:
+> ⚠️ **This repository is NOT currently safe to deploy.** `public/` has drifted
+> from production — the live site serves pages this repo does not contain
+> (`r.html`, `charts.html`, `backtest.html`, `logout.html`, `research.html`,
+> `home-preview.html`, `maintenance.html`, `vizardis-monitor.html`), and
+> `wrangler deploy` replaces every asset. `src/index.js` was reconciled against
+> the live Worker on 2026-09-29; `public/` has not been. See
+> `docs/TECH-DEBT.md` Item 8 before deploying anything.
+
+This repository is intended to be the deploy source of truth. Three platforms ship from here:
 
 - **Cloudflare Worker + static assets** — `wrangler.toml` + `src/index.js` + `public/`
 - **Supabase Edge Functions** — `supabase/functions/<name>/index.ts`
@@ -43,7 +51,8 @@ A full deploy applies changes in this order:
 
 1. **SQL** — apply pending changes via Supabase Dashboard SQL editor (see `sql/README.md`)
 2. **Edge Functions** — `supabase functions deploy <name> --project-ref hkamukkkkpqhdpcradau`
-3. **Cloudflare Worker + assets** — `wrangler deploy`
+3. **Cloudflare Worker + assets** — `wrangler deploy` — ⚠️ blocked, see the
+   warning at the top of this file and `docs/TECH-DEBT.md` Item 8
 
 See **[`docs/deploy_full_stack.md`](docs/deploy_full_stack.md)** for the full runbook — exact commands, verification steps, and rollback procedure for each layer.
 

@@ -277,3 +277,135 @@ TOTP friction during dev iteration is unhelpful. Re-enrolling MFA after every cl
 
 ### Related
 - Item 5 documents the SQL escape hatch for MFA lockouts (still valid even when MFA_REQUIRED=true)
+
+## Item 7: Polygon proxy is unauthenticated (SECURITY)
+**Captured:** 2026-09-29
+**Status:** Open — server-side fix exists on stage but is NOT safe to deploy alone
+**Severity:** High (paid API quota exposed to unauthenticated callers)
+**Affected:** `src/index.js` → `handlePolygon()`; clients `public/s.html`, `public/v.html`
+
+### Problem
+`/api/polygon/*` performs no authentication. It accepts any request, injects
+`env.POLYGON_KEY` server-side, and proxies to api.polygon.io. Anyone who knows
+the path can consume the paid Polygon subscription (Stocks Starter RT +
+Options Advanced RT), and the traffic is indistinguishable from real usage.
+
+CORS is NOT a mitigation. `CORS_HEADERS` is correctly scoped to
+`https://stockvizor.com`, which stops other *browser* origins — but CORS is
+enforced only by browsers. `curl`, a script or any server-side client ignores
+it completely.
+
+### The half-fix on stage — do not cherry-pick it
+The `stockvizor-stage` Worker is byte-identical to production except for an
+11-line guard at the top of `handlePolygon()` that requires
+`Authorization: Bearer <jwt>` and validates it against
+`${SUPABASE_URL}/auth/v1/user`.
+
+Deploying that guard alone would break the product. Neither browser client
+sends the header:
+- `public/s.html` — all `${POLY_CM}/...` calls are bare `fetch(url)` (charts,
+  options chains, ticker reference). `POLY_CM = '/api/polygon'` at line 3328.
+- `public/v.html` — `hydrateChartEmbed()` at line 2379 is a bare `fetch(url)`.
+- `window.fetch` is not patched and there is no fetch wrapper in either file.
+
+Result would be HTTP 401 on every chart, options chain and sparkline.
+
+### Correct fix (both sides, same deploy)
+1. Client: add `Authorization: Bearer ${session.access_token}` to every
+   `/api/polygon/*` fetch in `s.html` and `v.html`, sourcing the token from
+   `_sb.auth.getSession()`. Handle the unauthenticated case explicitly rather
+   than letting it 401.
+2. Server: enable the guard in `handlePolygon()`.
+3. Deploy together, then verify a signed-out browser gets 401 and a signed-in
+   one still renders charts.
+
+Consider also a short-TTL cache on the `/auth/v1/user` check — as written it
+adds a Supabase auth round-trip to every single Polygon request, which is a
+meaningful latency and load cost on a chart-heavy page.
+
+## Item 8: Repo/production Worker drift
+**Captured:** 2026-09-29
+**Status:** `src/index.js` reconciled; `public/` assets still drifted
+**Severity:** High (a deploy from a stale repo silently destroys production)
+
+### What happened
+`src/index.js` had drifted to 620 lines / 3 API surfaces while the deployed
+Worker `lingering-sun-c298` served 4,678 lines / 22 API surfaces. A
+`wrangler deploy` from this repo would have deleted 19 API surfaces including
+Stripe checkout, the Stripe webhook, payment methods, all admin endpoints,
+subscriptions, research, strategies, and the `scheduled()` cron handler — and
+reverted page routing so the hashed dashboard URL stopped resolving.
+
+`src/index.js` has since been replaced with the recovered production bundle
+(see the header comment in that file for provenance and how to re-diff).
+
+### Still outstanding
+- **`public/` is not reconciled.** Production routes to pages this repo does
+  not contain at all: `r.html`, `charts.html`, `backtest.html`, `logout.html`,
+  `research.html`, `home-preview.html`, `maintenance.html`,
+  `vizardis-monitor.html`. The repo's `index.html`, `s.html`, `v.html` may also
+  be behind production. **Do not `wrangler deploy` until `public/` is verified**
+  — assets are served via the ASSETS binding, so a deploy replaces them all.
+- Page routing in production uses 32-char hashed paths, not `/v` `/s` `/m`.
+  Those short paths are in `OLD_PATHS` and return 404.
+- `README.md` calls this repo "the deploy source of truth". That is not yet
+  true and the claim is dangerous until `public/` is reconciled.
+- `stockvizor-stage` is ahead of production (Item 7) with no process keeping
+  the two in sync.
+
+## Item 9: pg_cron overload took the database down (incident 2026-09-29)
+**Captured:** 2026-09-29
+**Status:** Mitigated — Vizardis jobs paused; `cron.job_run_details` still unpruned
+**Severity:** High (full outage: logins and all REST reads returned 504)
+
+### Incident
+Sign-in failed with a gateway timeout in the modal. Root cause was disk IO
+exhaustion, not anything in the auth path:
+
+`vizardis_refresh_pipeline_summary()` (cron jobid 58) was scheduled
+`* * * * *` — every minute — while taking 15–19 s and reading ~1.5 GB from disk
+per call (190,522 shared blocks over 4 calls). Runs overlapped, the IO budget
+drained, and every connection starved. Symptoms:
+- `POST /auth/v1/token?grant_type=password` → 504 (GoTrue could not reach the DB)
+- `GET /rest/v1/*` → 504
+- Supabase's own management API → 522
+- A trivial `pg_stat_statements` aggregate took 14,197 ms
+- `cron job 58/59 job startup timeout`, repeating
+- Even `SELECT 1` timed out via the management API
+
+### Mitigation applied
+Database restarted, then all 10 `vizardis-*` cron jobs paused by setting
+schedule to `0 0 31 2 *` (never fires), per `sql/cron-pause-resume-functions.sql`.
+
+Original schedules, for restore:
+
+| jobid | job | schedule |
+|---|---|---|
+| 50 | vizardis-progressor-all | `*/5 * * * *` |
+| 51 | vizardis-synthesizer | `*/30 * * * *` |
+| 52 | vizardis-live-signal-checker | `30 22 * * 1-5` |
+| 53 | vizardis-fingerprint-builder | `0 21 * * 0` |
+| 55 | vizardis-state-classifier | `0 22 * * 1-5` |
+| 56 | vizardis-context-builder | `10 22 * * 1-5` |
+| 58 | vizardis-pipeline-summary | `* * * * *` ← DO NOT RESTORE AS-IS |
+| 59 | vizardis-backtest-runner | `*/2 * * * *` |
+| 62 | vizardis-daily-observations | `30 21 * * 1-5` |
+| 63 | vizardis-weekly-requeue | `0 8 * * 6` |
+
+### Before re-enabling Vizardis
+- Job 58 must not go back to `* * * * *`. Use `*/30` at minimum. Better:
+  make `vizardis_refresh_pipeline_summary()` incremental — 1.5 GB of reads per
+  call indicates full scans where indexed or incremental aggregation belongs.
+- Four StockVizor jobs (20, 22, 23, 28) all fire on the same `*/15` tick, so
+  they contend every quarter hour. Worth staggering.
+
+### Still outstanding
+`cron.job_run_details` has **430,798 rows / 257 MB** and nothing prunes it. Its
+`UPDATE ... SET status` was reading 31,484 blocks at a 100% cache miss, so every
+cron start/finish across 20 active jobs pays disk IO on bloated history. Fix:
+
+```sql
+DELETE FROM cron.job_run_details WHERE end_time < now() - interval '7 days';
+```
+
+Add it to jobid 29 (`batch-run-cleanup`) so it stays pruned.
