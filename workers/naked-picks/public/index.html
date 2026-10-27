@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
+<!-- Feed source. Empty = this page's own /ws push feed (naked-picks Worker).
+     Set both to read public.option_buy_picks via Supabase Realtime instead. -->
+<meta name="picks-supabase-url" content="">
+<meta name="picks-supabase-key" content="">
 <title>Long Option Picks</title>
 <style>
   :root {
@@ -106,6 +110,9 @@
   .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
   .note td { color: var(--faint); font-size: 12px; text-align: left; font-weight: 400; }
   .err { color: var(--put); font-size: 12px; text-align: left !important; }
+  .banner { margin: 16px 0 0; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--put) 45%, transparent); background: color-mix(in srgb, var(--put) 9%, transparent); border-radius: 10px; font-size: 13px; }
+  .banner b { color: var(--put); }
+  .banner[hidden] { display: none; }
 
   footer { border-top: 1px solid var(--line); margin-top: 16px; padding: 16px 0 28px; color: var(--muted); font-size: 12px; }
   footer .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 6px 24px; margin: 0 0 12px; padding: 0; list-style: none; counter-reset: r; }
@@ -132,6 +139,7 @@
 </div>
 
 <div class="wrap">
+  <div class="banner" id="banner" hidden></div>
   <div class="strip" id="strip"></div>
 
   <div class="board">
@@ -211,6 +219,12 @@
       return;
     }
     renderStrip();
+    const failed = d.stocks.filter(s => s.error);
+    const denied = failed.find(s => /403|NOT_AUTHORIZED|not entitled/i.test(s.error));
+    $('banner').hidden = !failed.length;
+    $('banner').innerHTML = !failed.length ? '' : denied
+      ? '<b>Massive is refusing options data.</b> The API key the backend uses is not entitled to option chain snapshots. Check that your Massive Options plan is active for this key, or update the key. Picks appear on the next run after that.'
+      : `<b>${failed.length} of ${d.stocks.length} stocks failed to load this run:</b> ${failed.map(s => esc(s.underlying)).join(', ')}. Hover the stock rows for details.`;
     const filter = $('stockFilter').value;
     const topOnly = $('topOnly').checked;
     const stocks = d.stocks.filter(s => !filter || s.underlying === filter);
@@ -227,7 +241,7 @@
       let html = HEAD;
       for (const s of stocks) {
         if (s.error) {
-          html += `<tr class="group-start"><td></td><td class="sym">${esc(s.underlying)}</td><td colspan="8" class="err">${esc(s.error)}</td></tr>`;
+          html += `<tr class="group-start" title="${esc(s.error)}"><td></td><td class="sym">${esc(s.underlying)}</td><td colspan="8" class="err">No data this run</td></tr>`;
           continue;
         }
         const rows = s[side].filter(r => !topOnly || r.highlight);
@@ -350,14 +364,19 @@
     if (last) $('quoteText').textContent = new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
 
+  function setFeed(ok, text) {
+    $('feedDot').className = 'dot ' + (ok ? 'live' : 'down');
+    $('feedText').textContent = text;
+  }
+
+  // ── Feed A: the naked-picks Worker's /ws push feed (tick-level quotes) ──
   let ws, retry = 0, pingTimer;
-  function connect() {
+  function connectWs() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${proto}//${location.host}/ws${token ? '?token=' + encodeURIComponent(token) : ''}`);
     ws.onopen = () => {
       retry = 0;
-      $('feedDot').className = 'dot live';
-      $('feedText').textContent = 'Live feed';
+      setFeed(true, 'Live feed');
       pingTimer = setInterval(() => ws.readyState === 1 && ws.send('ping'), 30000);
     };
     ws.onmessage = ev => {
@@ -368,10 +387,64 @@
     };
     ws.onclose = () => {
       clearInterval(pingTimer);
-      $('feedDot').className = 'dot down';
-      $('feedText').textContent = 'Reconnecting…';
-      setTimeout(connect, Math.min(30000, 1000 * 2 ** retry++));
+      setFeed(false, 'Reconnecting…');
+      setTimeout(connectWs, Math.min(30000, 1000 * 2 ** retry++));
     };
+  }
+
+  // ── Feed B: Supabase Realtime on public.option_buy_picks (row 'latest') ──
+  // The option-buy-picks Edge Function rewrites the row every minute in the
+  // session (full selection every 5 minutes); each write is pushed here.
+  function etMarketOpen() {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date()).map(x => [x.type, x.value]));
+    const m = +p.hour * 60 + +p.minute;
+    return !['Sat', 'Sun'].includes(p.weekday) && m >= 570 && m <= 960;
+  }
+
+  function onPayload(payload) {
+    const prev = new Map();
+    for (const r of (state.data?.stocks ?? []).flatMap(s => [...s.calls, ...s.puts])) prev.set(r.symbol, r);
+    onSnapshot({ data: payload, market: { open: etMarketOpen() } });
+    if (payload?.quotesAt) $('quoteText').textContent = new Date(payload.quotesAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    for (const [sym, trs] of state.rows) {
+      const old = prev.get(sym);
+      const now = payload.stocks.flatMap(s => [...s.calls, ...s.puts]).find(r => r.symbol === sym);
+      if (!old || !now) continue;
+      for (const key of ['bid', 'ask']) {
+        if (old[key] == null || now[key] == null || old[key] === now[key]) continue;
+        for (const tr of trs) tr.querySelector('.' + key)?.classList.add(now[key] > old[key] ? 'flash-up' : 'flash-down');
+      }
+    }
+  }
+
+  async function connectSupabase(url, key) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    const sb = window.supabase.createClient(url, key);
+    const load = async () => {
+      const { data, error } = await sb.from('option_buy_picks').select('payload').eq('id', 'latest').maybeSingle();
+      if (error) { setFeed(false, 'Feed error'); return; }
+      if (data) onPayload(data.payload); else onSnapshot({ data: null, market: { open: etMarketOpen() } });
+    };
+    sb.channel('option-buy-picks')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'option_buy_picks', filter: 'id=eq.latest' }, ev => ev.new?.payload && onPayload(ev.new.payload))
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') { setFeed(true, 'Live feed'); load(); }
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') setFeed(false, 'Reconnecting…');
+      });
+    setInterval(() => setMarket({ open: etMarketOpen() }), 60000);
+  }
+
+  function connect() {
+    const meta = n => document.querySelector(`meta[name="${n}"]`)?.content;
+    const url = meta('picks-supabase-url'), key = meta('picks-supabase-key');
+    if (url && key) connectSupabase(url, key).catch(() => setFeed(false, 'Feed unavailable'));
+    else connectWs();
   }
 
   $('stockFilter').onchange = render;

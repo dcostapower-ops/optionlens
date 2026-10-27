@@ -125,7 +125,8 @@ export class PicksHub extends DurableObject {
         };
       } catch (e) {
         console.error(`[naked-picks] ${underlying}:`, e.message);
-        return { underlying, error: e.message, calls: [], puts: [] };
+        return { underlying, error: e.message, calls: [], puts: [],
+        earningsDate: ev.earningsDate ?? null, earningsEstimated: ev.earningsEstimated ?? null, exDividendDate: ev.exDividendDate ?? null };
       }
     });
 

@@ -308,6 +308,7 @@ export default {
       '/v': '/v.html',
       '/s': '/s.html',
       '/m': '/m.html',
+      '/picks': '/picks.html',
     };
     const OLD_PATHS = new Set(['/dashboard', '/screener', '/monitor']);
 
@@ -326,7 +327,7 @@ export default {
 
     const HIDDEN_HTML = new Set([
       '/dashboard.html', '/screener.html', '/monitor.html',
-      '/v.html', '/s.html', '/m.html',
+      '/v.html', '/s.html', '/m.html', '/picks.html',
     ]);
     if (OLD_PATHS.has(path) || HIDDEN_HTML.has(path)) {
       return new Response(`<!DOCTYPE html><html><head><title>404 — Page not found</title>
