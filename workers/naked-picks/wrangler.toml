@@ -1,0 +1,45 @@
+name = "optionlens-naked-picks"
+compatibility_date = "2026-04-18"
+main = "src/worker.js"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[durable_objects.bindings]]
+name = "PICKS_HUB"
+class_name = "PicksHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PicksHub"]
+
+# Every 5 minutes, Mon–Fri, 13:00–21:55 UTC. That window covers
+# 09:30–16:00 ET under both EDT and EST; the hub skips any tick outside the
+# regular NYSE/NASDAQ session (holidays and 13:00 early closes included).
+[triggers]
+crons = ["*/5 13-21 * * MON-FRI"]
+
+[vars]
+UNIVERSE = "NVDA,AAPL,MSFT,GOOGL,AMZN,META,AVGO,TSLA"
+MIN_DTE = "45"
+STRIKE_RANGE = "0.5"
+LIQUIDITY_POOL = "20"
+IV_POOL = "10"
+DELTA_POOL = "6"
+DELTA_TARGET = "0.25"
+DELTA_MIN = "0.15"
+DELTA_MAX = "0.35"
+ROWS_PER_SIDE = "5"
+FETCH_CONCURRENCY = "4"
+MASSIVE_REST_URL = "https://api.massive.com"
+MASSIVE_WS_URL = "wss://socket.massive.com/options"
+
+# Secrets (wrangler secret put <NAME>):
+#   MASSIVE_API_KEY  Massive Options Advanced key (required)
+#   ADMIN_TOKEN      enables POST /api/refresh
+#   ACCESS_TOKEN     optional; when set, /ws and /api/picks need ?token=
+
+[dev]
+port = 8789
+ip = "127.0.0.1"

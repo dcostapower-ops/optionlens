@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Naked Option Picks</title>
+<style>
+  :root {
+    --bg: #0a0d18; --panel: #111628; --line: #1f2740; --text: #e5e7eb; --muted: #9aa5b8;
+    --accent: #4a8cff; --call: #14b8a6; --put: #f43f5e;
+    --gold: #f5c542; --silver: #c7d0dd; --bronze: #d08a4e;
+    --hl: rgba(74, 140, 255, 0.10); --up: rgba(20, 184, 166, 0.35); --down: rgba(244, 63, 94, 0.35);
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f7fb; --panel: #ffffff; --line: #dfe4ee; --text: #111827; --muted: #5b6475;
+      --accent: #2563eb; --call: #0f8f80; --put: #d0254a;
+      --gold: #b8860b; --silver: #6b7280; --bronze: #a0522d; --hl: rgba(37, 99, 235, 0.07);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { padding: 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+  h1 { font-size: 18px; margin: 0; }
+  .status { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 13px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: middle; }
+  .dot.live { background: var(--call); box-shadow: 0 0 6px var(--call); }
+  .dot.down { background: var(--put); }
+  .controls { margin-left: auto; display: flex; gap: 12px; align-items: center; font-size: 13px; }
+  select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  main { padding: 16px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  section h2 { margin: 0; padding: 12px 14px; font-size: 15px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; }
+  section.calls h2 span:first-child { color: var(--call); }
+  section.puts h2 span:first-child { color: var(--put); }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 10px; text-align: right; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; border-bottom: 1px solid var(--line); }
+  th:nth-child(-n+3), td:nth-child(-n+3) { text-align: left; }
+  tbody tr { border-top: 1px solid var(--line); }
+  tbody tr.group-start { border-top: 2px solid var(--line); }
+  tr.top { background: var(--hl); font-weight: 600; }
+  tr.top td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+  .rank { display: inline-block; min-width: 22px; text-align: center; border-radius: 4px; font-size: 12px; padding: 1px 4px; color: var(--muted); }
+  tr.r1 .rank { background: var(--gold); color: #111; }
+  tr.r2 .rank { background: var(--silver); color: #111; }
+  tr.r3 .rank { background: var(--bronze); color: #111; }
+  td.flash-up { animation: up 1.2s; } td.flash-down { animation: down 1.2s; }
+  @keyframes up { from { background: var(--up); } to { background: transparent; } }
+  @keyframes down { from { background: var(--down); } to { background: transparent; } }
+  .muted { color: var(--muted); }
+  .empty { padding: 24px; text-align: center; color: var(--muted); }
+  .err { color: var(--put); font-size: 12px; }
+  footer { padding: 0 16px 20px; color: var(--muted); font-size: 12px; }
+  footer p { margin: 4px 0; max-width: 900px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Naked Option Picks</h1>
+  <div class="status">
+    <span><span id="feedDot" class="dot"></span><span id="feedText">Connecting…</span></span>
+    <span id="marketText">Market: –</span>
+    <span id="runText">Last selection: –</span>
+    <span id="quoteText">Last quote: –</span>
+  </div>
+  <div class="controls">
+    <label>Stock <select id="stockFilter"><option value="">All</option></select></label>
+    <label><input type="checkbox" id="topOnly"> Top 3 only</label>
+  </div>
+</header>
+
+<main>
+  <section class="calls"><h2><span>Naked Calls</span><span class="muted" id="callsMeta"></span></h2><div class="scroll" id="calls"></div></section>
+  <section class="puts"><h2><span>Naked Puts</span><span class="muted" id="putsMeta"></span></h2><div class="scroll" id="puts"></div></section>
+</main>
+
+<footer>
+  <p id="rulesText"></p>
+  <p>Highlighted rows are the best 3 strikes per stock. Selection reruns every 5 minutes during the NYSE/NASDAQ regular session; bid and ask stream live in between. Hover a row for DTE, volume, open interest and premium yield.</p>
+</footer>
+
+<script>
+(() => {
+  const state = { data: null, rows: new Map() };
+  const $ = id => document.getElementById(id);
+  const token = new URLSearchParams(location.search).get('token');
+  const fmt = (v, d = 2) => (v == null || Number.isNaN(v) ? '–' : Number(v).toFixed(d));
+  const pct = v => (v == null ? '–' : (v * 100).toFixed(1) + '%');
+  const time = iso => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '–');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function render() {
+    const d = state.data;
+    state.rows.clear();
+    if (!d) {
+      $('calls').innerHTML = $('puts').innerHTML = '<div class="empty">Waiting for the first selection run…</div>';
+      return;
+    }
+    const filter = $('stockFilter').value;
+    const topOnly = $('topOnly').checked;
+    const stocks = d.stocks.filter(s => !filter || s.underlying === filter);
+
+    for (const side of ['calls', 'puts']) {
+      let html = '<table><thead><tr><th>#</th><th>Stock Code</th><th>Expiry Date</th><th>Strike</th><th>Bid</th><th>Ask</th><th>IV</th><th>Delta</th></tr></thead><tbody>';
+      let n = 0;
+      for (const s of stocks) {
+        if (s.error) {
+          html += `<tr class="group-start"><td></td><td>${esc(s.underlying)}</td><td colspan="6" class="err">${esc(s.error)}</td></tr>`;
+          continue;
+        }
+        s[side].filter(r => !topOnly || r.highlight).forEach((r, i) => {
+          n++;
+          const cls = [i === 0 ? 'group-start' : '', r.highlight ? `top r${r.rank}` : ''].join(' ');
+          const tip = `DTE ${r.dte} · Vol ${r.volume} · OI ${r.openInterest} · Yield ${pct(r.annualYield)}/yr · Spread ${pct(r.spreadPct)}${r.deltaInBand ? '' : ' · delta outside band'}`;
+          html += `<tr class="${cls}" data-sym="${esc(r.symbol)}" title="${esc(tip)}">
+            <td><span class="rank">${r.rank}</span></td>
+            <td>${esc(s.underlying)}</td>
+            <td>${esc(r.expiry)}</td>
+            <td>${fmt(r.strike)}</td>
+            <td class="bid">${fmt(r.bid)}</td>
+            <td class="ask">${fmt(r.ask)}</td>
+            <td>${pct(r.iv)}</td>
+            <td>${fmt(r.delta, 3)}</td></tr>`;
+        });
+      }
+      html += '</tbody></table>';
+      $(side).innerHTML = n || stocks.some(s => s.error) ? html : '<div class="empty">No contracts passed the rules.</div>';
+      $(side + 'Meta').textContent = `${stocks.length} stock${stocks.length === 1 ? '' : 's'}`;
+    }
+    for (const tr of document.querySelectorAll('tr[data-sym]')) {
+      if (!state.rows.has(tr.dataset.sym)) state.rows.set(tr.dataset.sym, []);
+      state.rows.get(tr.dataset.sym).push(tr);
+    }
+  }
+
+  function setFilterOptions() {
+    const sel = $('stockFilter');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All</option>' +
+      state.data.stocks.map(s => `<option${s.underlying === current ? ' selected' : ''}>${esc(s.underlying)}</option>`).join('');
+  }
+
+  function onSnapshot(msg) {
+    if (msg.market) $('marketText').textContent = `Market: ${msg.market.open ? 'open' : 'closed'}`;
+    if (!msg.data) { render(); return; }
+    state.data = msg.data;
+    const r = msg.data.rules;
+    $('runText').textContent = `Last selection: ${time(msg.data.generatedAt)}`;
+    $('rulesText').textContent = `Rules: expiry ≥ ${r.minDte} days (on/after ${msg.data.minExpiry}) · top ${r.liquidityPool} by volume + open interest (per expiry and across expiries) · ${r.ivPool} cheapest IV · ${r.deltaPool} nearest |Δ| ${r.deltaTarget} (band ${r.deltaMin}–${r.deltaMax}) · ranked by annualised bid yield net of spread.`;
+    setFilterOptions();
+    render();
+  }
+
+  function onQuotes(quotes) {
+    let last = null;
+    for (const q of quotes) {
+      for (const tr of state.rows.get(q.symbol) ?? []) {
+        for (const [key, val] of [['bid', q.bid], ['ask', q.ask]]) {
+          const td = tr.querySelector('.' + key);
+          const old = parseFloat(td.textContent);
+          if (val == null || old === val) continue;
+          td.textContent = fmt(val);
+          td.classList.remove('flash-up', 'flash-down');
+          void td.offsetWidth;
+          td.classList.add(val > old ? 'flash-up' : 'flash-down');
+        }
+      }
+      for (const s of state.data?.stocks ?? []) {
+        for (const r of [...s.calls, ...s.puts]) if (r.symbol === q.symbol) { r.bid = q.bid; r.ask = q.ask; }
+      }
+      last = q.t;
+    }
+    if (last) $('quoteText').textContent = `Last quote: ${new Date(last).toLocaleTimeString()}`;
+  }
+
+  let ws, retry = 0, pingTimer;
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws${token ? '?token=' + encodeURIComponent(token) : ''}`);
+    ws.onopen = () => {
+      retry = 0;
+      $('feedDot').className = 'dot live';
+      $('feedText').textContent = 'Push feed live';
+      pingTimer = setInterval(() => ws.readyState === 1 && ws.send('ping'), 30000);
+    };
+    ws.onmessage = ev => {
+      if (ev.data === 'pong') return;
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'snapshot') onSnapshot(msg);
+      else if (msg.type === 'quotes') onQuotes(msg.quotes);
+    };
+    ws.onclose = () => {
+      clearInterval(pingTimer);
+      $('feedDot').className = 'dot down';
+      $('feedText').textContent = 'Reconnecting…';
+      setTimeout(connect, Math.min(30000, 1000 * 2 ** retry++));
+    };
+  }
+
+  $('stockFilter').onchange = render;
+  $('topOnly').onchange = render;
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>
