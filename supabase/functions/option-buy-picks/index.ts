@@ -181,12 +181,39 @@ async function refreshQuotes(latest: any) {
   return { mode: 'quotes', updated: byTicker.size }
 }
 
+// ?mode=diagnose — which Massive data the stored key is entitled to. Each
+// probe maps to a plan tier, so the pattern shows what the key is on.
+async function diagnose() {
+  const probe = async (name: string, url: string) => {
+    const u = new URL(url)
+    u.searchParams.set('apiKey', API_KEY)
+    const r = await fetch(u, { signal: AbortSignal.timeout(15000) })
+    const body = await r.text()
+    let message: string | undefined
+    try { message = JSON.parse(body).message } catch { /* non-JSON */ }
+    return { name, status: r.status, ok: r.ok, message, body: r.ok ? body : undefined }
+  }
+  const ref = await probe('options reference (all plans)', `${MASSIVE}/v3/reference/options/contracts?underlying_ticker=NVDA&limit=1`)
+  const contract = ref.ok ? JSON.parse(ref.body!).results?.[0]?.ticker : null
+  const out = [ref]
+  if (contract) {
+    out.push(await probe('option daily bars (all plans)', `${MASSIVE}/v2/aggs/ticker/${contract}/prev`))
+    out.push(await probe('option single snapshot (Starter+)', `${MASSIVE}/v3/snapshot/options/NVDA/${contract}`))
+    out.push(await probe('option quotes (Advanced)', `${MASSIVE}/v3/quotes/${contract}?limit=1`))
+  }
+  out.push(await probe('option chain snapshot (Starter+)', `${MASSIVE}/v3/snapshot/options/NVDA?limit=1`))
+  out.push(await probe('stock snapshot (stocks plan)', `${MASSIVE}/v2/snapshot/locale/us/markets/stocks/tickers/NVDA`))
+  out.push(await probe('dividends reference', `${MASSIVE}/v3/reference/dividends?ticker=MSFT&limit=1`))
+  return { mode: 'diagnose', contract, probes: out.map(({ body, ...p }) => p) }
+}
+
 Deno.serve(async req => {
   const url = new URL(req.url)
   const force = url.searchParams.get('force') === '1'
   const market = marketStatus()
   try {
     if (!API_KEY) throw new Error('POLYGON_API_KEY secret missing')
+    if (url.searchParams.get('mode') === 'diagnose') return Response.json(await diagnose())
     if (!market.open && !force) return Response.json({ skipped: 'market closed', market })
     const latest = await readRow('latest')
     let mode = url.searchParams.get('mode')
