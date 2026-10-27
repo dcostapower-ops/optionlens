@@ -1,20 +1,22 @@
 // PicksHub — one Durable Object instance ("global") that:
-//   * runs the selection funnel on each 5-minute cron tick,
+//   * runs the long call / long put funnel on each 5-minute cron tick,
 //   * keeps one upstream WebSocket to Massive's real-time options feed,
 //     subscribed to quotes for every contract on the dashboard,
 //   * pushes snapshots and live bid/ask updates to every browser client.
 
 import { DurableObject } from 'cloudflare:workers';
 import { loadConfig } from './config.js';
-import { fetchChain } from './massive.js';
+import { fetchEarningsDate } from './earnings.js';
+import { fetchChain, fetchNextExDividend } from './massive.js';
 import { addDays, marketStatus } from './market-hours.js';
-import { normaliseContract, selectForUnderlying } from './selector.js';
+import { bestAcross, normaliseContract, selectForUnderlying } from './selector.js';
 
 const HEALTH_ALARM_MS = 60_000;
 const QUOTE_FLUSH_MS = 1_000;
 const ROW_FIELDS = [
-  'symbol', 'expiry', 'dte', 'strike', 'bid', 'ask', 'iv', 'delta', 'volume',
-  'openInterest', 'liquidity', 'annualYield', 'spreadPct', 'deltaInBand', 'rank', 'highlight',
+  'symbol', 'expiry', 'dte', 'strike', 'bid', 'ask', 'iv', 'delta', 'volume', 'openInterest',
+  'liquidity', 'spreadPct', 'timeValue', 'costPerDayPct', 'cost', 'earningsDate', 'exDividendDate',
+  'rank', 'highlight',
 ];
 
 async function mapLimit(items, limit, fn) {
@@ -77,22 +79,49 @@ export class PicksHub extends DurableObject {
     return this.refreshing;
   }
 
+  // Earnings and ex-dividend dates change rarely: fetch once per trading day.
+  async loadEvents(cfg, triggerDate) {
+    const cached = await this.ctx.storage.get('events');
+    if (cached?.date === triggerDate) return cached.bySymbol;
+    const bySymbol = {};
+    await mapLimit(cfg.universe, cfg.concurrency, async sym => {
+      const ev = {};
+      try {
+        const e = await fetchEarningsDate(this.env, sym);
+        if (e) { ev.earningsDate = e.date; ev.earningsEstimated = e.estimated; }
+      } catch (e) { console.error(`[naked-picks] earnings ${sym}:`, e.message); }
+      try { ev.exDividendDate = await fetchNextExDividend(this.env, sym, triggerDate); }
+      catch (e) { console.error(`[naked-picks] dividends ${sym}:`, e.message); }
+      if (cfg.earningsOverrides[sym]) { ev.earningsDate = cfg.earningsOverrides[sym]; ev.earningsEstimated = false; }
+      bySymbol[sym] = ev;
+    });
+    await this.ctx.storage.put('events', { date: triggerDate, bySymbol });
+    return bySymbol;
+  }
+
   async runSelection(market) {
     const cfg = loadConfig(this.env);
     const triggerDate = market.date;
     const minExpiry = addDays(triggerDate, cfg.selector.minDte);
+    const maxExpiry = addDays(triggerDate, cfg.selector.maxDte);
+    const events = await this.loadEvents(cfg, triggerDate);
 
     const stocks = await mapLimit(cfg.universe, cfg.concurrency, async underlying => {
+      const ev = events[underlying] ?? {};
       try {
-        const raw = await fetchChain(this.env, underlying, minExpiry, cfg.strikeRange);
+        const raw = await fetchChain(this.env, underlying, minExpiry, maxExpiry, cfg.strikeRange);
         const contracts = raw.map(r => normaliseContract(r, triggerDate)).filter(Boolean);
-        const { calls, puts } = selectForUnderlying(contracts, cfg.selector);
+        const { calls, puts } = selectForUnderlying(contracts, cfg.selector, ev, triggerDate);
         return {
           underlying,
           spot: contracts.find(c => c.spot)?.spot ?? null,
-          contractsScanned: contracts.length,
-          calls: calls.map(pick),
-          puts: puts.map(pick),
+          earningsDate: ev.earningsDate ?? null,
+          earningsEstimated: ev.earningsEstimated ?? null,
+          exDividendDate: ev.exDividendDate ?? null,
+          calls: calls.rows.map(pick),
+          puts: puts.rows.map(pick),
+          qualified: { calls: calls.qualified, puts: puts.qualified },
+          scanned: { calls: calls.scanned, puts: puts.scanned },
         };
       } catch (e) {
         console.error(`[naked-picks] ${underlying}:`, e.message);
@@ -104,7 +133,9 @@ export class PicksHub extends DurableObject {
       generatedAt: new Date().toISOString(),
       triggerDate,
       minExpiry,
+      maxExpiry,
       rules: { ...cfg.selector, strikeRange: cfg.strikeRange },
+      best: { calls: bestAcross(stocks, 'calls'), puts: bestAcross(stocks, 'puts') },
       stocks,
     };
     await this.ctx.storage.put('latest', this.latest);
@@ -139,7 +170,7 @@ export class PicksHub extends DurableObject {
 
   async ensureUpstream() {
     if (this.upstream || !this.env.MASSIVE_API_KEY) return;
-    const wsUrl = (this.env.MASSIVE_WS_URL || 'wss://socket.massive.com/options').replace(/^wss:/, 'https:');
+    const wsUrl = (this.env.MASSIVE_WS_URL || 'wss://socket.massive.com/options').replace(/^ws/, 'http');
     this.upstream = 'connecting';
     try {
       const resp = await fetch(wsUrl, { headers: { Upgrade: 'websocket' } });
@@ -203,11 +234,14 @@ export class PicksHub extends DurableObject {
     this.pendingQuotes.clear();
     if (!quotes.length || !this.latest) return;
     const bySym = new Map(quotes.map(q => [q.symbol, q]));
-    for (const s of this.latest.stocks) {
-      for (const r of [...s.calls, ...s.puts]) {
-        const q = bySym.get(r.symbol);
-        if (q) { r.bid = q.bid; r.ask = q.ask; r.quoteTime = q.t; }
-      }
+    const rows = this.latest.stocks.flatMap(s => [...s.calls, ...s.puts])
+      .concat(this.latest.best?.calls ?? [], this.latest.best?.puts ?? []);
+    for (const r of rows) {
+      const q = bySym.get(r.symbol);
+      if (!q) continue;
+      // Spot only refreshes every 5 min, so shift time value by the ask move.
+      if (r.timeValue != null && q.ask != null) r.timeValue += q.ask - r.ask;
+      r.bid = q.bid; r.ask = q.ask; r.quoteTime = q.t;
     }
     this.broadcast({ type: 'quotes', quotes });
   }

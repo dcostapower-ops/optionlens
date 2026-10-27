@@ -4,83 +4,157 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>Naked Option Picks</title>
+<title>Long Option Picks</title>
 <style>
   :root {
-    --bg: #0a0d18; --panel: #111628; --line: #1f2740; --text: #e5e7eb; --muted: #9aa5b8;
-    --accent: #4a8cff; --call: #14b8a6; --put: #f43f5e;
-    --gold: #f5c542; --silver: #c7d0dd; --bronze: #d08a4e;
-    --hl: rgba(74, 140, 255, 0.10); --up: rgba(20, 184, 166, 0.35); --down: rgba(244, 63, 94, 0.35);
+    --bg: #0b0f1a; --surface: #121826; --surface-2: #171f30; --line: #222c41; --line-soft: #1a2234;
+    --text: #e6e9ef; --muted: #8b95a8; --faint: #5d677a;
+    --accent: #4a8cff; --call: #22c3a6; --put: #f0506e; --warn: #f2b84b;
+    --gold: #e9b949; --silver: #b9c2cf; --bronze: #c9814a;
+    --call-soft: rgba(34, 195, 166, 0.09); --put-soft: rgba(240, 80, 110, 0.09);
+    --up: rgba(34, 195, 166, 0.32); --down: rgba(240, 80, 110, 0.32);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 8px 24px rgba(0, 0, 0, .18);
   }
   @media (prefers-color-scheme: light) {
     :root {
-      --bg: #f5f7fb; --panel: #ffffff; --line: #dfe4ee; --text: #111827; --muted: #5b6475;
-      --accent: #2563eb; --call: #0f8f80; --put: #d0254a;
-      --gold: #b8860b; --silver: #6b7280; --bronze: #a0522d; --hl: rgba(37, 99, 235, 0.07);
+      --bg: #f3f5f9; --surface: #ffffff; --surface-2: #f7f9fc; --line: #e1e6ee; --line-soft: #edf0f5;
+      --text: #121826; --muted: #5b6577; --faint: #8a93a3;
+      --accent: #2463eb; --call: #0e9480; --put: #d22d50; --warn: #b7791f;
+      --gold: #b8891a; --silver: #6b7686; --bronze: #a35f2c;
+      --call-soft: rgba(14, 148, 128, 0.07); --put-soft: rgba(210, 45, 80, 0.07);
+      --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 4px 16px rgba(16, 24, 40, .05);
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
-  header { padding: 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
-  h1 { font-size: 18px; margin: 0; }
-  .status { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 13px; }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: middle; }
-  .dot.live { background: var(--call); box-shadow: 0 0 6px var(--call); }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1480px; margin: 0 auto; padding: 0 20px; }
+
+  /* Top bar */
+  .topbar { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .topbar .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding-top: 12px; padding-bottom: 12px; }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand b { font-size: 17px; letter-spacing: -.01em; }
+  .brand span { color: var(--muted); font-size: 13px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .pill strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .dot.live { background: var(--call); box-shadow: 0 0 0 3px color-mix(in srgb, var(--call) 25%, transparent); }
   .dot.down { background: var(--put); }
-  .controls { margin-left: auto; display: flex; gap: 12px; align-items: center; font-size: 13px; }
-  select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
-  main { padding: 16px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-  section h2 { margin: 0; padding: 12px 14px; font-size: 15px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; }
-  section.calls h2 span:first-child { color: var(--call); }
-  section.puts h2 span:first-child { color: var(--put); }
+  .dot.open { background: var(--call); } .dot.closed { background: var(--faint); }
+  .controls { margin-left: auto; display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--muted); }
+  select { height: 30px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; font: inherit; }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .toggle input { accent-color: var(--accent); }
+
+  /* Underlying strip */
+  .strip { display: flex; gap: 8px; overflow-x: auto; padding: 16px 0 4px; scrollbar-width: thin; }
+  .chip { flex: 0 0 auto; display: grid; gap: 2px; min-width: 120px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+  .chip:hover, .chip.active { border-color: var(--accent); }
+  .chip .t { font-weight: 700; font-size: 13px; letter-spacing: .02em; }
+  .chip .p { font-variant-numeric: tabular-nums; font-size: 13px; }
+  .chip .e { font-size: 11px; color: var(--muted); }
+  .chip .e.soon { color: var(--warn); }
+
+  /* Two-column board */
+  .board { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 16px 0 8px; }
+  @media (max-width: 1100px) { .board { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) { .topbar { position: static; } }
+  .col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+  .col-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px 0; }
+  .col-head h2 { margin: 0; font-size: 18px; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; }
+  .col-head h2::before { content: ""; width: 4px; height: 20px; border-radius: 2px; background: currentColor; }
+  .calls .col-head h2 { color: var(--call); } .puts .col-head h2 { color: var(--put); }
+  .col-head .sub { color: var(--muted); font-size: 12px; text-align: right; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+  .card-head { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+  .card-head h3 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .01em; }
+  .card-head span { color: var(--muted); font-size: 12px; }
+  .calls .card.best { border-top: 2px solid var(--call); } .puts .card.best { border-top: 2px solid var(--put); }
+
   .scroll { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { padding: 7px 10px; text-align: right; white-space: nowrap; }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; border-bottom: 1px solid var(--line); }
-  th:nth-child(-n+3), td:nth-child(-n+3) { text-align: left; }
-  tbody tr { border-top: 1px solid var(--line); }
-  tbody tr.group-start { border-top: 2px solid var(--line); }
-  tr.top { background: var(--hl); font-weight: 600; }
-  tr.top td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
-  .rank { display: inline-block; min-width: 22px; text-align: center; border-radius: 4px; font-size: 12px; padding: 1px 4px; color: var(--muted); }
-  tr.r1 .rank { background: var(--gold); color: #111; }
-  tr.r2 .rank { background: var(--silver); color: #111; }
-  tr.r3 .rank { background: var(--bronze); color: #111; }
-  td.flash-up { animation: up 1.2s; } td.flash-down { animation: down 1.2s; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
+  th, td { padding: 8px 9px; text-align: right; white-space: nowrap; }
+  th { position: sticky; top: 0; color: var(--faint); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--line); background: var(--surface); }
+  th:nth-child(-n+3), td:nth-child(-n+3), th:last-child, td:last-child { text-align: left; }
+  tbody tr { border-top: 1px solid var(--line-soft); }
+  tbody tr:hover { background: var(--surface-2); }
+  tbody tr.group-start { border-top: 1px solid var(--line); }
+  td.sym { font-weight: 700; letter-spacing: .02em; }
+  tr:not(.group-start) td.sym.repeat { color: var(--faint); font-weight: 500; }
+  .calls tr.top { background: var(--call-soft); } .puts tr.top { background: var(--put-soft); }
+  tr.top td { font-weight: 600; }
+  .rank { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; font-size: 11px; font-weight: 700; color: var(--muted); border: 1px solid var(--line); }
+  tr.r1 .rank { background: var(--gold); border-color: var(--gold); color: #1a1400; }
+  tr.r2 .rank { background: var(--silver); border-color: var(--silver); color: #14181f; }
+  tr.r3 .rank { background: var(--bronze); border-color: var(--bronze); color: #1d0f04; }
+  td.ask { color: var(--text); }
+  td.bid { color: var(--muted); }
+  tr.top td.bid { color: var(--text); }
+  td.flash-up { animation: up 1.2s ease-out; } td.flash-down { animation: down 1.2s ease-out; }
   @keyframes up { from { background: var(--up); } to { background: transparent; } }
   @keyframes down { from { background: var(--down); } to { background: transparent; } }
-  .muted { color: var(--muted); }
-  .empty { padding: 24px; text-align: center; color: var(--muted); }
-  .err { color: var(--put); font-size: 12px; }
-  footer { padding: 0 16px 20px; color: var(--muted); font-size: 12px; }
-  footer p { margin: 4px 0; max-width: 900px; }
+  .flag { display: inline-flex; align-items: center; height: 19px; padding: 0 6px; margin-right: 4px; border-radius: 5px; font-size: 11px; font-weight: 600; background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+  td.events { white-space: normal; min-width: 70px; line-height: 1; }
+  td.events .flag { margin: 1px 4px 1px 0; }
+  .flag.div { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+  .tabs { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .tabs button { font: inherit; font-size: 12px; height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+  .tabs button.on { background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); font-weight: 600; }
+  .budget-hint { padding: 8px 14px 10px; color: var(--faint); font-size: 12px; border-top: 1px solid var(--line-soft); }
+  .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+  .note td { color: var(--faint); font-size: 12px; text-align: left; font-weight: 400; }
+  .err { color: var(--put); font-size: 12px; text-align: left !important; }
+
+  footer { border-top: 1px solid var(--line); margin-top: 16px; padding: 16px 0 28px; color: var(--muted); font-size: 12px; }
+  footer .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 6px 24px; margin: 0 0 12px; padding: 0; list-style: none; counter-reset: r; }
+  footer .rules li { counter-increment: r; }
+  footer .rules li::before { content: counter(r) "."; color: var(--faint); margin-right: 6px; font-variant-numeric: tabular-nums; }
+  footer p { margin: 4px 0; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Naked Option Picks</h1>
-  <div class="status">
-    <span><span id="feedDot" class="dot"></span><span id="feedText">Connecting…</span></span>
-    <span id="marketText">Market: –</span>
-    <span id="runText">Last selection: –</span>
-    <span id="quoteText">Last quote: –</span>
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand"><b>Long Option Picks</b><span>Best long calls and long puts · US large caps</span></div>
+    <div class="pills">
+      <span class="pill"><span id="feedDot" class="dot"></span><span id="feedText">Connecting…</span></span>
+      <span class="pill"><span id="mktDot" class="dot"></span>Market <strong id="marketText">–</strong></span>
+      <span class="pill">Selection <strong id="runText">–</strong></span>
+      <span class="pill">Last quote <strong id="quoteText">–</strong></span>
+    </div>
+    <div class="controls">
+      <select id="stockFilter" aria-label="Stock"><option value="">All stocks</option></select>
+      <label class="toggle"><input type="checkbox" id="topOnly"> Top 3 only</label>
+    </div>
   </div>
-  <div class="controls">
-    <label>Stock <select id="stockFilter"><option value="">All</option></select></label>
-    <label><input type="checkbox" id="topOnly"> Top 3 only</label>
+</div>
+
+<div class="wrap">
+  <div class="strip" id="strip"></div>
+
+  <div class="board">
+    <div class="col calls">
+      <div class="col-head"><h2>Long Calls</h2><span class="sub" id="callsSub">Bullish · Δ +0.65 to +0.75</span></div>
+      <div class="card best"><div class="card-head"><h3>Best 3 across all stocks</h3><span>least time value per day</span></div><div class="scroll" id="bestCalls"></div></div>
+      <div class="card budget" data-side="calls"><div class="card-head"><h3>Budget picks</h3><div class="tabs"><button class="on" data-mode="affordable">Most affordable</button><button data-mode="value">Best value</button></div></div><div class="scroll" id="budgetCalls"></div><div class="budget-hint"></div></div>
+      <div class="card"><div class="card-head"><h3>By stock</h3><span id="callsMeta"></span></div><div class="scroll" id="calls"></div></div>
+    </div>
+    <div class="col puts">
+      <div class="col-head"><h2>Long Puts</h2><span class="sub" id="putsSub">Bearish · Δ −0.65 to −0.75</span></div>
+      <div class="card best"><div class="card-head"><h3>Best 3 across all stocks</h3><span>least time value per day</span></div><div class="scroll" id="bestPuts"></div></div>
+      <div class="card budget" data-side="puts"><div class="card-head"><h3>Budget picks</h3><div class="tabs"><button class="on" data-mode="affordable">Most affordable</button><button data-mode="value">Best value</button></div></div><div class="scroll" id="budgetPuts"></div><div class="budget-hint"></div></div>
+      <div class="card"><div class="card-head"><h3>By stock</h3><span id="putsMeta"></span></div><div class="scroll" id="puts"></div></div>
+    </div>
   </div>
-</header>
 
-<main>
-  <section class="calls"><h2><span>Naked Calls</span><span class="muted" id="callsMeta"></span></h2><div class="scroll" id="calls"></div></section>
-  <section class="puts"><h2><span>Naked Puts</span><span class="muted" id="putsMeta"></span></h2><div class="scroll" id="puts"></div></section>
-</main>
-
-<footer>
-  <p id="rulesText"></p>
-  <p>Highlighted rows are the best 3 strikes per stock. Selection reruns every 5 minutes during the NYSE/NASDAQ regular session; bid and ask stream live in between. Hover a row for DTE, volume, open interest and premium yield.</p>
-</footer>
+  <footer>
+    <ol class="rules" id="rules"></ol>
+    <p>Highlighted rows are the best 3 strikes per stock. Selection reruns every 5 minutes during the NYSE/NASDAQ regular session; bid, ask and time value stream live in between. You buy at the ask and close near the bid. Hover a row for DTE, volume, open interest and spread.</p>
+    <p><span class="flag">E</span> earnings before expiry (Nasdaq/Zacks; * = estimated, not yet confirmed) — IV usually drops after the report. <span class="flag div">D</span> ex-dividend before expiry (calls) — the stock drops by about the dividend that day.</p>
+  </footer>
+</div>
 
 <script>
 (() => {
@@ -89,77 +163,180 @@
   const token = new URLSearchParams(location.search).get('token');
   const fmt = (v, d = 2) => (v == null || Number.isNaN(v) ? '–' : Number(v).toFixed(d));
   const pct = v => (v == null ? '–' : (v * 100).toFixed(1) + '%');
-  const time = iso => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '–');
+  const time = iso => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '–');
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const md = d => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
+  const mmdd = d => new Date(d + 'T12:00:00Z').toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+  const HEAD = '<table><thead><tr><th>#</th><th>Stock Code</th><th>Expiry Date</th><th>Strike</th><th>Bid</th><th>Ask</th><th>IV</th><th>Delta</th><th>Time Value</th><th>Events</th></tr></thead><tbody>';
+
+  function rowHtml(r, underlying, cls, earningsEstimated, repeat) {
+    const tip = `${r.dte} DTE · Vol ${r.volume.toLocaleString()} · OI ${r.openInterest.toLocaleString()} · Spread ${pct(r.spreadPct)} · Time value/day ${r.costPerDayPct == null ? '–' : (r.costPerDayPct * 100).toFixed(3) + '% of stock'}`;
+    const flags = (r.earningsDate ? `<span class="flag" title="Earnings ${esc(r.earningsDate)}${earningsEstimated ? ' (estimated)' : ''}">E ${esc(md(r.earningsDate))}${earningsEstimated ? '*' : ''}</span>` : '') +
+      (r.exDividendDate ? `<span class="flag div" title="Ex-dividend ${esc(r.exDividendDate)}">D ${esc(md(r.exDividendDate))}</span>` : '');
+    return `<tr class="${cls}" data-sym="${esc(r.symbol)}" title="${esc(tip)}">
+      <td><span class="rank">${r.rank}</span></td>
+      <td class="sym${repeat ? ' repeat' : ''}">${esc(underlying)}</td>
+      <td>${esc(r.expiry)}</td>
+      <td>${fmt(r.strike)}</td>
+      <td class="bid">${fmt(r.bid)}</td>
+      <td class="ask">${fmt(r.ask)}</td>
+      <td>${pct(r.iv)}</td>
+      <td>${fmt(r.delta, 3)}</td>
+      <td class="tv">${fmt(r.timeValue)}</td>
+      <td class="events">${flags}</td></tr>`;
+  }
+
+  function renderStrip() {
+    const d = state.data, filter = $('stockFilter').value;
+    const today = d.triggerDate;
+    $('strip').innerHTML = d.stocks.map(s => {
+      const soon = s.earningsDate && (new Date(s.earningsDate) - new Date(today)) / 864e5 <= 14;
+      const e = s.earningsDate ? `Earnings ${mmdd(s.earningsDate)}${s.earningsEstimated ? ' est.' : ''}` : 'Earnings –';
+      return `<div class="chip${filter === s.underlying ? ' active' : ''}" data-t="${esc(s.underlying)}">
+        <span class="t">${esc(s.underlying)}</span>
+        <span class="p">${s.error ? '<span class="err">error</span>' : (s.spot ? '$' + fmt(s.spot) : '–')}</span>
+        <span class="e${soon ? ' soon' : ''}">${esc(e)}</span></div>`;
+    }).join('');
+    for (const el of document.querySelectorAll('.chip')) {
+      el.onclick = () => { $('stockFilter').value = filter === el.dataset.t ? '' : el.dataset.t; render(); };
+    }
+  }
 
   function render() {
     const d = state.data;
     state.rows.clear();
     if (!d) {
-      $('calls').innerHTML = $('puts').innerHTML = '<div class="empty">Waiting for the first selection run…</div>';
+      for (const id of ['calls', 'puts', 'bestCalls', 'bestPuts']) $(id).innerHTML = '<div class="empty">Waiting for the first selection run…</div>';
       return;
     }
+    renderStrip();
     const filter = $('stockFilter').value;
     const topOnly = $('topOnly').checked;
     const stocks = d.stocks.filter(s => !filter || s.underlying === filter);
+    const est = Object.fromEntries(d.stocks.map(s => [s.underlying, s.earningsEstimated]));
+
+    for (const [side, id] of [['calls', 'bestCalls'], ['puts', 'bestPuts']]) {
+      const best = d.best?.[side] ?? [];
+      $(id).innerHTML = best.length
+        ? HEAD + best.map((r, i) => rowHtml({ ...r, rank: i + 1 }, r.underlying, `group-start top r${i + 1}`, est[r.underlying], false)).join('') + '</tbody></table>'
+        : '<div class="empty">No contracts qualified this run.</div>';
+    }
 
     for (const side of ['calls', 'puts']) {
-      let html = '<table><thead><tr><th>#</th><th>Stock Code</th><th>Expiry Date</th><th>Strike</th><th>Bid</th><th>Ask</th><th>IV</th><th>Delta</th></tr></thead><tbody>';
-      let n = 0;
+      let html = HEAD;
       for (const s of stocks) {
         if (s.error) {
-          html += `<tr class="group-start"><td></td><td>${esc(s.underlying)}</td><td colspan="6" class="err">${esc(s.error)}</td></tr>`;
+          html += `<tr class="group-start"><td></td><td class="sym">${esc(s.underlying)}</td><td colspan="8" class="err">${esc(s.error)}</td></tr>`;
           continue;
         }
-        s[side].filter(r => !topOnly || r.highlight).forEach((r, i) => {
-          n++;
+        const rows = s[side].filter(r => !topOnly || r.highlight);
+        rows.forEach((r, i) => {
           const cls = [i === 0 ? 'group-start' : '', r.highlight ? `top r${r.rank}` : ''].join(' ');
-          const tip = `DTE ${r.dte} · Vol ${r.volume} · OI ${r.openInterest} · Yield ${pct(r.annualYield)}/yr · Spread ${pct(r.spreadPct)}${r.deltaInBand ? '' : ' · delta outside band'}`;
-          html += `<tr class="${cls}" data-sym="${esc(r.symbol)}" title="${esc(tip)}">
-            <td><span class="rank">${r.rank}</span></td>
-            <td>${esc(s.underlying)}</td>
-            <td>${esc(r.expiry)}</td>
-            <td>${fmt(r.strike)}</td>
-            <td class="bid">${fmt(r.bid)}</td>
-            <td class="ask">${fmt(r.ask)}</td>
-            <td>${pct(r.iv)}</td>
-            <td>${fmt(r.delta, 3)}</td></tr>`;
+          html += rowHtml(r, s.underlying, cls, s.earningsEstimated, i > 0);
         });
+        const q = s.qualified?.[side] ?? 0;
+        if (q < d.rules.highlight) {
+          html += `<tr class="note${rows.length ? '' : ' group-start'}"><td></td><td class="sym">${rows.length ? '' : esc(s.underlying)}</td><td colspan="8">Only ${q} contract${q === 1 ? '' : 's'} qualified under the rules</td></tr>`;
+        }
       }
-      html += '</tbody></table>';
-      $(side).innerHTML = n || stocks.some(s => s.error) ? html : '<div class="empty">No contracts passed the rules.</div>';
-      $(side + 'Meta').textContent = `${stocks.length} stock${stocks.length === 1 ? '' : 's'}`;
+      $(side).innerHTML = html + '</tbody></table>';
+      $(side + 'Meta').textContent = `${stocks.length} stock${stocks.length === 1 ? '' : 's'} · top ${d.rules.rowsPerSide} each`;
     }
+    renderBudget('calls', stocks);
+    renderBudget('puts', stocks);
     for (const tr of document.querySelectorAll('tr[data-sym]')) {
       if (!state.rows.has(tr.dataset.sym)) state.rows.set(tr.dataset.sym, []);
       state.rows.get(tr.dataset.sym).push(tr);
     }
   }
 
+  // Budget picks: drawn from every stock's finalists on that side.
+  //   Most affordable — lowest cost per contract (ask × 100).
+  //   Best value      — most stock exposure per $1 paid: |Δ| × spot ÷ ask.
+  const budgetMode = { calls: 'affordable', puts: 'affordable' };
+  const BUDGET_HEAD = '<table><thead><tr><th>#</th><th>Stock Code</th><th>Expiry Date</th><th>Strike</th><th>Ask</th><th>Cost / Contract</th><th>Delta</th><th>Exposure / $1</th></tr></thead><tbody>';
+  const HINT = {
+    affordable: 'Lowest cost per contract (ask × 100) among the qualified picks.',
+    value: 'Most stock exposure per $1 paid (|Δ| × stock price ÷ ask), so each dollar moves the most with the stock.',
+  };
+
+  function renderBudget(side, stocks) {
+    const mode = budgetMode[side];
+    const pool = stocks.filter(s => !s.error).flatMap(s => s[side].map(r => ({ ...r, underlying: s.underlying, spot: s.spot })))
+      .filter(r => r.ask > 0)
+      .map(r => ({ ...r, cost: r.ask * 100, exposure: r.spot ? Math.abs(r.delta) * r.spot / r.ask : null }));
+    pool.sort(mode === 'affordable' ? (a, b) => a.cost - b.cost : (a, b) => (b.exposure ?? 0) - (a.exposure ?? 0));
+    const id = side === 'calls' ? 'budgetCalls' : 'budgetPuts';
+    const card = $(id).closest('.card');
+    card.querySelector('.budget-hint').textContent = HINT[mode];
+    for (const b of card.querySelectorAll('.tabs button')) b.classList.toggle('on', b.dataset.mode === mode);
+    $(id).innerHTML = pool.length ? BUDGET_HEAD + pool.slice(0, 3).map((r, i) => `<tr class="group-start top r${i + 1}" data-sym="${esc(r.symbol)}">
+      <td><span class="rank">${i + 1}</span></td><td class="sym">${esc(r.underlying)}</td><td>${esc(r.expiry)}</td><td>${fmt(r.strike)}</td>
+      <td class="ask">${fmt(r.ask)}</td><td class="cost">$${Math.round(r.cost).toLocaleString()}</td><td>${fmt(r.delta, 3)}</td>
+      <td>${r.exposure == null ? '–' : '$' + fmt(r.exposure, 1)}</td></tr>`).join('') + '</tbody></table>'
+      : '<div class="empty">No contracts qualified this run.</div>';
+  }
+
+  for (const card of document.querySelectorAll('.card.budget')) {
+    for (const b of card.querySelectorAll('.tabs button')) {
+      b.onclick = () => { budgetMode[card.dataset.side] = b.dataset.mode; render(); };
+    }
+  }
+
   function setFilterOptions() {
     const sel = $('stockFilter');
     const current = sel.value;
-    sel.innerHTML = '<option value="">All</option>' +
+    sel.innerHTML = '<option value="">All stocks</option>' +
       state.data.stocks.map(s => `<option${s.underlying === current ? ' selected' : ''}>${esc(s.underlying)}</option>`).join('');
   }
 
+  function setMarket(m) {
+    if (!m) return;
+    $('marketText').textContent = m.open ? 'Open' : 'Closed';
+    $('mktDot').className = 'dot ' + (m.open ? 'open' : 'closed');
+  }
+
   function onSnapshot(msg) {
-    if (msg.market) $('marketText').textContent = `Market: ${msg.market.open ? 'open' : 'closed'}`;
+    setMarket(msg.market);
     if (!msg.data) { render(); return; }
     state.data = msg.data;
     const r = msg.data.rules;
-    $('runText').textContent = `Last selection: ${time(msg.data.generatedAt)}`;
-    $('rulesText').textContent = `Rules: expiry ≥ ${r.minDte} days (on/after ${msg.data.minExpiry}) · top ${r.liquidityPool} by volume + open interest (per expiry and across expiries) · ${r.ivPool} cheapest IV · ${r.deltaPool} nearest |Δ| ${r.deltaTarget} (band ${r.deltaMin}–${r.deltaMax}) · ranked by annualised bid yield net of spread.`;
+    $('runText').textContent = time(msg.data.generatedAt);
+    $('callsSub').textContent = `Bullish · Δ +${r.deltaMin} to +${r.deltaMax}`;
+    $('putsSub').textContent = `Bearish · Δ −${r.deltaMin} to −${r.deltaMax}`;
+    $('rules').innerHTML = [
+      `Expiry ${r.minDte}–${r.maxDte} days (${msg.data.minExpiry} to ${msg.data.maxExpiry})`,
+      `Delta ${r.deltaMin}–${r.deltaMax} (calls +, puts −)`,
+      `Open interest ≥ ${r.minOpenInterest}, volume ≥ ${r.minVolume}, spread ≤ ${(r.maxSpreadPct * 100).toFixed(0)}%`,
+      `Top ${r.liquidityPool} by volume + open interest, per expiry and across expiries`,
+      `${r.ivPool} lowest IV`,
+      'Ranked by least time value paid per day',
+      'Earnings flagged before expiry',
+      'Ex-dividend flagged before expiry (calls)',
+    ].map(t => `<li>${esc(t)}</li>`).join('');
     setFilterOptions();
     render();
   }
 
   function onQuotes(quotes) {
     let last = null;
+    const all = () => [...(state.data?.stocks ?? []).flatMap(s => [...s.calls, ...s.puts]),
+      ...(state.data?.best?.calls ?? []), ...(state.data?.best?.puts ?? [])];
     for (const q of quotes) {
+      const stored = all().filter(r => r.symbol === q.symbol);
+      for (const r of stored) {
+        if (r.timeValue != null && q.ask != null) r.timeValue += q.ask - r.ask;
+        r.bid = q.bid; r.ask = q.ask;
+      }
+      const tv = stored[0]?.timeValue;
       for (const tr of state.rows.get(q.symbol) ?? []) {
+        const tvCell = tr.querySelector('.tv'), costCell = tr.querySelector('.cost');
+        if (tv != null && tvCell) tvCell.textContent = fmt(tv);
+        if (q.ask != null && costCell) costCell.textContent = '$' + Math.round(q.ask * 100).toLocaleString();
         for (const [key, val] of [['bid', q.bid], ['ask', q.ask]]) {
           const td = tr.querySelector('.' + key);
+          if (!td) continue;
           const old = parseFloat(td.textContent);
           if (val == null || old === val) continue;
           td.textContent = fmt(val);
@@ -168,12 +345,9 @@
           td.classList.add(val > old ? 'flash-up' : 'flash-down');
         }
       }
-      for (const s of state.data?.stocks ?? []) {
-        for (const r of [...s.calls, ...s.puts]) if (r.symbol === q.symbol) { r.bid = q.bid; r.ask = q.ask; }
-      }
       last = q.t;
     }
-    if (last) $('quoteText').textContent = `Last quote: ${new Date(last).toLocaleTimeString()}`;
+    if (last) $('quoteText').textContent = new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
 
   let ws, retry = 0, pingTimer;
@@ -183,7 +357,7 @@
     ws.onopen = () => {
       retry = 0;
       $('feedDot').className = 'dot live';
-      $('feedText').textContent = 'Push feed live';
+      $('feedText').textContent = 'Live feed';
       pingTimer = setInterval(() => ws.readyState === 1 && ws.send('ping'), 30000);
     };
     ws.onmessage = ev => {

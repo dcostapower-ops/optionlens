@@ -34,7 +34,7 @@ This repository is the deploy source of truth. Three platforms ship from here:
 │       ├── ta-batch/
 │       └── watchlist-classify/
 ├── sql/                      # Postgres SQL (NOT supabase migrations — see sql/README.md)
-├── workers/naked-picks/      # separate Worker: live naked call/put picks dashboard (see its README)
+├── workers/naked-picks/      # separate Worker: live long call/put picks dashboard (see its README)
 └── docs/                     # release notes, tech debt, build plans
 ```
 

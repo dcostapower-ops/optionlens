@@ -11,15 +11,17 @@ async function getJson(url, apiKey) {
   return r.json();
 }
 
-// Every contract of `underlying` expiring on/after `minExpiry`, optionally
+// Every contract of `underlying` expiring in [minExpiry, maxExpiry], optionally
 // limited to strikes within ±strikeRange of spot to keep page counts down.
-export async function fetchChain(env, underlying, minExpiry, strikeRange) {
+export async function fetchChain(env, underlying, minExpiry, maxExpiry, strikeRange) {
   const base = env.MASSIVE_REST_URL || 'https://api.massive.com';
   const path = `${base}/v3/snapshot/options/${encodeURIComponent(underlying)}`;
-  const params = new URLSearchParams({ 'expiration_date.gte': minExpiry, limit: String(PAGE_LIMIT) });
+  const params = new URLSearchParams({
+    'expiration_date.gte': minExpiry, 'expiration_date.lte': maxExpiry, limit: String(PAGE_LIMIT),
+  });
 
   if (strikeRange > 0) {
-    const probe = await getJson(`${path}?expiration_date.gte=${minExpiry}&limit=1`, env.MASSIVE_API_KEY);
+    const probe = await getJson(`${path}?expiration_date.gte=${minExpiry}&expiration_date.lte=${maxExpiry}&limit=1`, env.MASSIVE_API_KEY);
     const spot = probe.results?.[0]?.underlying_asset?.price;
     if (spot > 0) {
       params.set('strike_price.gte', (spot * (1 - strikeRange)).toFixed(2));
@@ -35,4 +37,14 @@ export async function fetchChain(env, underlying, minExpiry, strikeRange) {
     next = j.next_url;
   }
   return results;
+}
+
+// Next ex-dividend date on/after `fromDate` (YYYY-MM-DD), or null.
+export async function fetchNextExDividend(env, underlying, fromDate) {
+  const base = env.MASSIVE_REST_URL || 'https://api.massive.com';
+  const params = new URLSearchParams({
+    ticker: underlying, 'ex_dividend_date.gte': fromDate, sort: 'ex_dividend_date', order: 'asc', limit: '1',
+  });
+  const j = await getJson(`${base}/v3/reference/dividends?${params}`, env.MASSIVE_API_KEY);
+  return j.results?.[0]?.ex_dividend_date ?? null;
 }

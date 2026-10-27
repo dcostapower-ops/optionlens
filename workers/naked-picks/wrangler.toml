@@ -23,17 +23,22 @@ crons = ["*/5 13-21 * * MON-FRI"]
 [vars]
 UNIVERSE = "NVDA,AAPL,MSFT,GOOGL,AMZN,META,AVGO,TSLA"
 MIN_DTE = "45"
+MAX_DTE = "365"
+DELTA_MIN = "0.65"
+DELTA_MAX = "0.75"
+MIN_OPEN_INTEREST = "500"
+MIN_VOLUME = "50"
+MAX_SPREAD_PCT = "0.05"
+LIQUIDITY_POOL = "10"
+IV_POOL = "6"
 STRIKE_RANGE = "0.5"
-LIQUIDITY_POOL = "20"
-IV_POOL = "10"
-DELTA_POOL = "6"
-DELTA_TARGET = "0.25"
-DELTA_MIN = "0.15"
-DELTA_MAX = "0.35"
 ROWS_PER_SIDE = "5"
 FETCH_CONCURRENCY = "4"
 MASSIVE_REST_URL = "https://api.massive.com"
 MASSIVE_WS_URL = "wss://socket.massive.com/options"
+# Optional manual earnings dates that win over the Nasdaq lookup, e.g.
+# EARNINGS_OVERRIDES = "TSLA:2027-01-27"
+EARNINGS_OVERRIDES = ""
 
 # Secrets (wrangler secret put <NAME>):
 #   MASSIVE_API_KEY  Massive Options Advanced key (required)
