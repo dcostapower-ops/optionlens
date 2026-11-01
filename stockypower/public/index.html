@@ -525,13 +525,22 @@ function renderChart(st, el, legend, bars, a, LW) {
     const color = a.signal === "SELL" ? "#f85149" : a.signal === "BUY" ? "#3fb950" : "#d29922";
     const mk = (key) =>
       cleanPoints([{ time: anchor.time, value: anchor.close }, ...fc.filter((p) => p[key] != null).map((p) => ({ time: toET(p.t), value: p[key] }))]).filter((p) => p.time >= anchor.time);
+    // Range: clearly visible dashed bounds, with their end values tagged on the price axis.
     for (const key of ["high", "low"]) {
       const d = mk(key);
-      if (d.length > 1) chart.addSeries(LW.LineSeries, { ...quiet, color: color + "66", lineWidth: 1, lineStyle: LW.LineStyle.Dotted }).setData(d);
+      if (d.length > 1)
+        chart.addSeries(LW.LineSeries, {
+          ...quiet, color: rgba(color, 0.85), lineWidth: 2, lineStyle: LW.LineStyle.Dashed,
+          lastValueVisible: true, title: key === "high" ? "Fcst hi" : "Fcst lo",
+        }).setData(d);
     }
     const path = mk("price");
-    if (path.length > 1) chart.addSeries(LW.LineSeries, { ...quiet, color, lineWidth: 2, lineStyle: LW.LineStyle.Dashed }).setData(path);
-    keys.push(`<span><i style="background:${color}"></i>Forecast path · range dotted</span>`);
+    if (path.length > 1) {
+      chart.addSeries(LW.LineSeries, { ...quiet, color, lineWidth: 3, lineStyle: LW.LineStyle.Solid, lastValueVisible: true, title: "Fcst" }).setData(path);
+      // Dot at each forecast bar so the path reads clearly.
+      chart.addSeries(LW.LineSeries, { ...quiet, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2.5, color }).setData(path.slice(1));
+    }
+    keys.push(`<span><i style="background:${color}"></i>Forecast path (solid) · range (dashed)</span>`);
   }
 
   // Targets and stops (dashed, labelled), forecast high/low (dotted, no tag).
@@ -551,9 +560,21 @@ function renderChart(st, el, legend, bars, a, LW) {
   const sigs = a?.signals || [];
   if (sigs.length && LW.createSeriesMarkers) {
     const times = new Set(mainData.map((p) => p.time));
+    const idxOf = new Map(mainData.map((p, i) => [p.time, i]));
+    let lastKept = null;
     const markers = sigs
       .map((sg) => ({ ...sg, time: toET(sg.t) }))
       .filter((sg) => times.has(sg.time))
+      // Merge repeats: same side within 3 bars of the previous label (keep the stronger/first).
+      .filter((sg) => {
+        const i = idxOf.get(sg.time);
+        if (lastKept && lastKept.side === sg.side && i - lastKept.i <= 3) {
+          if (sg.strong && !lastKept.sg.strong) lastKept.sg.strong = true;
+          return false;
+        }
+        lastKept = { side: sg.side, i, sg };
+        return true;
+      })
       .map((sg) => ({
         time: sg.time,
         position: sg.side === "BUY" ? "belowBar" : "aboveBar",
@@ -664,9 +685,10 @@ function renderChart(st, el, legend, bars, a, LW) {
     legend.innerHTML = header({ ...c, color: mainData[idx]?.color }, idx > 0 ? mainData[idx - 1] : null, vals);
   });
 
-  // Open on the last ~130 candles plus the forecast (by time, so other series can't shift it).
+  // Open on the last ~90 candles plus the forecast (by time, so other series can't shift it),
+  // so the forecast gets a readable share of the width. Scroll or zoom for more history.
   if (mainData.length) {
-    const from = mainData[Math.max(0, mainData.length - 130)].time;
+    const from = mainData[Math.max(0, mainData.length - 90)].time;
     const fcTimes = fc.map((p) => toET(p.t)).filter(Number.isFinite);
     const to = Math.max(mainData[mainData.length - 1].time, ...fcTimes);
     chart.timeScale().setVisibleRange({ from, to });
