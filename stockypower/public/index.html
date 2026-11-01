@@ -421,14 +421,13 @@ function settingsText(ind) {
 function renderChart(st, el, legend, bars, a, LW) {
   const intraday = ["15m", "1h", "4h"].includes(st.tf);
   const plan = planIndicators(a, bars, st.calc?.[st.tf]);
-  const useHA = Boolean(plan.ha) && st.candleMode !== "regular";
+  // Price bars: standard Heikin-Ashi by default (as in the user's TradingView layout).
+  const useHA = st.candleMode !== "regular";
   el.style.height = `${430 + plan.panels.length * 130}px`;
 
-  // Candle-type toggle (only when Stocky sent Heikin-Ashi).
+  // Candle-type toggle.
   const bar = $(".chartbar", st.card);
-  bar.innerHTML = plan.ha
-    ? `<button class="mini ${useHA ? "on" : ""}" data-mode="ha">Smoothed Heikin-Ashi</button><button class="mini ${useHA ? "" : "on"}" data-mode="regular">Regular candles</button>`
-    : "";
+  bar.innerHTML = `<button class="mini ${useHA ? "on" : ""}" data-mode="ha">Heikin-Ashi candles</button><button class="mini ${useHA ? "" : "on"}" data-mode="regular">Regular candles</button>`;
   bar.onclick = (ev) => {
     const b = ev.target.closest(".mini");
     if (b) { st.candleMode = b.dataset.mode; drawChart(st); }
@@ -463,9 +462,16 @@ function renderChart(st, el, legend, bars, a, LW) {
   const real = cleanPoints(bars.map((b) => ({ time: toET(b.t), open: b.o, high: b.h, low: b.l, close: b.c, _v: b.v })));
   let mainData;
   if (useHA) {
-    const pts = cleanPoints(plan.ha.candles.map((p) => ({ time: toET(p.t), open: p.o, high: p.h, low: p.l, close: p.c })));
+    // Standard (unsmoothed) Heikin-Ashi candles from the real bars.
+    const pts = [];
+    for (let i = 0; i < real.length; i++) {
+      const r = real[i];
+      const close = (r.open + r.high + r.low + r.close) / 4;
+      const open = i === 0 ? (r.open + r.close) / 2 : (pts[i - 1].open + pts[i - 1].close) / 2;
+      pts.push({ time: r.time, open, close, high: Math.max(r.high, open, close), low: Math.min(r.low, open, close) });
+    }
     mainData = pts.map((p, i) => {
-      const color = haColor({ o: p.open, c: p.close }, i ? { o: pts[i - 1].open, c: pts[i - 1].close } : null, plan.ha.colors);
+      const color = haColor({ o: p.open, c: p.close }, i ? { o: pts[i - 1].open, c: pts[i - 1].close } : null, plan.ha?.colors);
       return { ...p, color, wickColor: color, borderColor: color };
     });
   } else {
@@ -493,10 +499,21 @@ function renderChart(st, el, legend, bars, a, LW) {
   const keys = [];
   const legendSeries = [];
   if (useHA) {
-    const c = plan.ha.colors || {};
+    const c = plan.ha?.colors || {};
     const grad = [haColor({ o: 0, c: 2 }, { o: 0, c: 1 }, c), haColor({ o: 0, c: 1 }, { o: 0, c: 2 }, c), haColor({ o: 1, c: 0 }, { o: 2, c: 0 }, c), haColor({ o: 2, c: 0 }, { o: 1, c: 0 }, c)];
+    keys.push(`<span><i style="background:linear-gradient(90deg,${grad.join(",")})"></i>Heikin-Ashi candles</span>`);
+  }
+
+  // Smoothed HA on top of the candles: a stepped line, green while bullish, red while bearish.
+  if (plan.ha) {
+    const hc = plan.ha.colors || {};
+    const up = hc.bull || hc.up || "#3ddc6e";
+    const dn = hc.bear || hc.down || "#ff3b3b";
+    const sha = chart.addSeries(LW.LineSeries, { ...quiet, lineWidth: 2, lineType: LW.LineType.WithSteps, color: up });
+    sha.setData(cleanPoints(plan.ha.candles.map((p) => ({ time: toET(p.t), value: p.c, color: p.c >= p.o ? up : dn }))));
+    legendSeries.push([plan.ha.name, sha, "#c9d1d9"]);
     const set = settingsText(plan.ha);
-    keys.push(`<span><i style="background:linear-gradient(90deg,${grad.join(",")})"></i>${esc(plan.ha.name)} candles${set ? ` (${esc(set)})` : ""}${plan.ha.reading ? ` · ${esc(plan.ha.reading)}` : ""}</span>`);
+    keys.push(`<span><i style="background:linear-gradient(90deg,${up} 50%,${dn} 50%)"></i>${esc(plan.ha.name)} line${set ? ` (${esc(set)})` : ""}${plan.ha.reading ? ` · ${esc(plan.ha.reading)}` : ""}</span>`);
   }
 
   let colorIdx = 0;

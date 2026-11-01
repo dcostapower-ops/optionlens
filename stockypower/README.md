@@ -110,6 +110,10 @@ draws them as soon as the candles load, and adds them as columns to the CSVs Sto
   averaged gains/losses, centre 50, levels 75/25. DW's exact formula isn't reproduced. Stocky
   is asked to report a material difference in `indicator_note`, which the page shows.
 
+On the chart, the price bars are standard Heikin-Ashi candles (toggle: regular candles) and
+Smoothed HA is drawn over them as a stepped line, green while bullish and red while bearish,
+as in the TradingView layout.
+
 Stocky then only writes its decisions and levels, not chart data, which is much faster.
 Results are remembered per symbol for `STOCKY_CACHE_MINUTES` (default 10; 0 turns it off).
 Re-entering a symbol in that window is instant, and **Run again** forces a fresh run.
