@@ -29,6 +29,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv();
 
 const PORT = Number(process.env.PORT || 8790);
+const APP_VERSION = 3; // bump when the page and server must match
 // Set APP_PASSWORD to require a password (needed before putting Stockypower on the web).
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const APP_USER = process.env.APP_USER || "stocky";
@@ -553,6 +554,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/config") {
     return json(res, 200, {
+      version: APP_VERSION,
       agentId: AGENT_ID,
       environmentId: ENVIRONMENT_ID,
       massiveLive: Boolean(VAULT_ID),
@@ -565,6 +567,17 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `\nStockypower is already running (port ${PORT} is in use).\n` +
+          `Close every other Stockypower window, then start it again, so the newest version runs.`,
+      );
+    } else {
+      console.error(err);
+    }
+    process.exitCode = 1;
+  });
   server.listen(PORT, () => {
     console.log(`Stockypower running at http://localhost:${PORT}`);
     console.log(`  Stocky agent:  ${AGENT_ID}`);

@@ -216,7 +216,7 @@ function renderLevels(st) {
   if (!a) {
     $(".levels", st.card).innerHTML = st.analysis
       ? `<div class="lv"><div class="k">${esc(tfInfo.label)}</div><div class="v">No levels</div><div class="d">Stocky didn't return this timeframe</div></div>`
-      : last != null ? lvBox("", "Last price", last, null, "Waiting for Stocky…") : "";
+      : last != null ? lvBox("", "Last price", last, null, st.failed ? "" : "Waiting for Stocky…") : "";
     $(".checksbox", st.card).innerHTML = "";
     $(".rationale", st.card).textContent = "";
     $(".track", st.card).textContent = "";
@@ -520,6 +520,8 @@ async function analyze(symbol) {
         break;
       }
       case "error": {
+        st.failed = true;
+        renderLevels(st);
         $(".badge", card).className = "badge pending";
         $(".badge", card).textContent = "Error";
         const e = document.createElement("div");
@@ -529,6 +531,10 @@ async function analyze(symbol) {
         break;
       }
       case "done":
+        if (!st.candlesLoaded) {
+          st.candlesLoaded = true;
+          $(".chart", card).innerHTML = `<div class="nochart">No price data arrived for the chart.${serverOutdated ? " An older Stockypower is still running: close every Stockypower window, then double-click start.bat again." : " Check the message above."}</div>`;
+        }
         status.className = "status done";
         setStatus(gotVerdict ? `Done · session ${card.dataset.session || ""}` : "Finished");
         break;
@@ -560,6 +566,19 @@ $("#form").addEventListener("submit", async (ev) => {
   $("#symbol").value = "";
   try { await analyze(symbol); } catch (e) { console.error(e); }
 });
+
+// Warn if the page is newer than the server that's running (an old window left open).
+let serverOutdated = false;
+fetch("/api/config").then((r) => r.json()).then((c) => {
+  if ((c.version || 0) < 3) {
+    serverOutdated = true;
+    const w = document.createElement("div");
+    w.className = "checks bad";
+    w.style.marginBottom = "16px";
+    w.textContent = "An older version of Stockypower is still running, so charts won't load. Close every Stockypower window (the black windows), then double-click start.bat again.";
+    $("main").prepend(w);
+  }
+}).catch(() => {});
 
 renderHistory();
 </script>
