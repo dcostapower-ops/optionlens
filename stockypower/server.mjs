@@ -15,7 +15,6 @@ import {
   TIMEFRAMES,
   TF_KEYS,
   fetchCandles,
-  candlesToCsv,
   atr,
   cleanAnalysis,
   validateLevels,
@@ -25,6 +24,7 @@ import {
   parseLooseJson,
   resultsFromText,
 } from "./lib/market.mjs";
+import { computeIndicators, SETTINGS as IND_SETTINGS } from "./lib/indicators.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -81,9 +81,13 @@ const STRATEGY = [
   `STRATEGY - use these two indicators JOINTLY, with exactly these TradingView settings (inputs in TradingView's order):`,
   `- "Smoothed HA" (smoothed Heikin-Ashi): 12, Exponential, 6, 0.85, 3, Exponential, 6, 0.85.`,
   `- "Ultra RSI [DW]": source close, 12, EMA, Standard, Default, 0.85, 6, 0.666, 0.0645, overbought 75, oversold 25, 0.75.`,
-  `  It shows green crests and red troughs around its centre line.`,
-  `Calculate both on each timeframe's own bars. BUY or SELL for a timeframe must come from both indicators read together;`,
-  `state the joint rule you applied in the rationale. Report these settings in each indicator's "settings".`,
+  `  It shows green crests and red troughs around its centre line (50).`,
+  `To save you time, my app has ALREADY calculated both indicators with these settings and added them to every data file:`,
+  `  ha_open, ha_high, ha_low, ha_close = Smoothed HA (EMA 12 of OHLC -> Heikin-Ashi -> EMA 3),`,
+  `  ultra_rsi = Ultra RSI (RSI of close with EMA-12 averaged gains/losses; centre 50, levels 75/25).`,
+  `Use these columns rather than recalculating, so your decisions match the chart exactly. If your configured Ultra RSI [DW]`,
+  `formula would give materially different readings, say so in "indicator_note".`,
+  `BUY or SELL for a timeframe must come from both indicators read together; state the joint rule you applied in the rationale.`,
 ];
 const UPLOAD_ROOT = "/mnt/session/uploads/data";
 
@@ -105,6 +109,19 @@ async function fetchAllCandles(symbol, send) {
   return candles;
 }
 
+// Candles plus the app-calculated indicator columns, one CSV per timeframe.
+function candlesWithIndicatorsCsv(bars, calc) {
+  const ha = new Map((calc?.ha ?? []).map((p) => [p.t, p]));
+  const rsi = new Map((calc?.ursi ?? []).map((p) => [p.t, p.v]));
+  const r4 = (v) => (v === undefined || v === null ? "" : Math.round(v * 1e4) / 1e4);
+  const lines = ["t,datetime_utc,open,high,low,close,volume,ha_open,ha_high,ha_low,ha_close,ultra_rsi"];
+  for (const b of bars) {
+    const h = ha.get(b.t);
+    lines.push([b.t, new Date(b.t * 1000).toISOString(), b.o, b.h, b.l, b.c, b.v, r4(h?.o), r4(h?.h), r4(h?.l), r4(h?.c), r4(rsi.get(b.t))].join(","));
+  }
+  return lines.join("\n") + "\n";
+}
+
 // ── Prompt ──────────────────────────────────────────────────────────────────
 
 const f2 = (v) => (v === null || v === undefined ? "n/a" : Math.abs(v) >= 1000 ? v.toFixed(2) : v.toFixed(4).replace(/0+$/, "").replace(/\.$/, ""));
@@ -112,14 +129,15 @@ const f2 = (v) => (v === null || v === undefined ? "n/a" : Math.abs(v) >= 1000 ?
 function buildPrompt(symbol, candles, mounted) {
   const lines = [
     `Analyze the stock ${symbol} on six timeframes: ${TIMEFRAMES.map((t) => t.label).join(", ")}.`,
-    `You do the calculations; my app draws all the charts, so don't make images.`,
+    `You make the decisions and calculate the levels; my app draws all the charts, so don't make images or chart data.`,
     ``,
   ];
 
   if (Object.keys(mounted).length) {
     lines.push(
-      `DATA - use these files. They are the exact Massive bars my app charts, so your numbers must line up with them.`,
-      `They are mounted under ${UPLOAD_ROOT}/ (if not, run: find / -name "${symbol}_*.csv" 2>/dev/null).`,
+      `DATA - one CSV per timeframe: the exact Massive bars my app charts, so your numbers must line up with them.`,
+      `Mounted under ${UPLOAD_ROOT}/ (if not, run: find / -name "${symbol}_*.csv" 2>/dev/null).`,
+      `Columns: t,datetime_utc,open,high,low,close,volume,ha_open,ha_high,ha_low,ha_close,ultra_rsi (t = unix seconds, bar open time).`,
     );
     for (const tf of TIMEFRAMES) {
       const bars = candles[tf.key];
@@ -127,79 +145,44 @@ function buildPrompt(symbol, candles, mounted) {
       const last = bars[bars.length - 1];
       const stale = staleWarning(tf.key, bars);
       lines.push(
-        `- ${tf.key} (${tf.label}): ${mounted[tf.key]} - ${bars.length} bars, CSV columns t,datetime_utc,open,high,low,close,volume (t = unix seconds, bar open time).` +
-          ` Latest bar ${new Date(last.t * 1000).toISOString()}, close ${f2(last.c)}, ATR(14) ${f2(atr(bars))}.` +
+        `- ${tf.key} (${tf.label}): ${mounted[tf.key]} - ${bars.length} bars. Latest bar ${new Date(last.t * 1000).toISOString()},` +
+          ` close ${f2(last.c)}, ATR(14) ${f2(atr(bars))}.` +
           (stale ? ` WARNING: ${stale} Say so in that timeframe's rationale.` : ""),
       );
     }
     lines.push(``);
   }
-  if (VAULT_ID) {
-    lines.push(
-      `You can also call the Massive API (${MASSIVE_BASE}) with the MASSIVE_API_KEY environment variable as a header`,
-      `(curl -s -H "Authorization: Bearer $MASSIVE_API_KEY" "${MASSIVE_BASE}/v2/aggs/ticker/${symbol}/range/15/minute/<from>/<to>?adjusted=true&sort=asc&limit=50000"),`,
-      `but base your levels on the files above so they match the chart.`,
-      ``,
-    );
-  }
 
   lines.push(
     ...STRATEGY,
     ``,
-    `FOR EACH TIMEFRAME, using that timeframe's bars:`,
-    `1. Compute Smoothed HA and Ultra RSI [DW] on that timeframe's bars with the settings above.`,
-    `2. Decide BUY or SELL for that timeframe from both indicators together, with a confidence 0-100.`,
-    `3. Calculate Target 1, Target 2, Stop loss 1 and Stop loss 2 from your indicators, using support/resistance and ATR.`,
-    `4. Calculate the forecast high: the highest price ${symbol} is likely to reach during the NEXT bar of that timeframe`,
+    `FOR EACH TIMEFRAME, using that timeframe's file:`,
+    `1. Read Smoothed HA and Ultra RSI from the file and decide BUY or SELL from both together, with a confidence 0-100.`,
+    `2. Calculate Target 1, Target 2, Stop loss 1 and Stop loss 2, using support/resistance and ATR.`,
+    `3. Calculate the forecast high: the highest price ${symbol} is likely to reach during the NEXT bar of that timeframe`,
     `   (${TIMEFRAMES.map((t) => `${t.key}: ${t.next}`).join("; ")}), plus the forecast low for that same period.`,
-    `5. Forecast the path for the next 10 bars of that timeframe (expected price with a low/high range).`,
-    `6. Before writing, check your work:`,
+    `4. Forecast the path for the next 10 bars (expected price with a low/high range).`,
+    `5. List the bars (last 150) where your joint Smoothed HA + Ultra RSI rule gave a buy or sell signal.`,
+    `6. Check your work before writing:`,
     `   - "price" equals the latest close in that timeframe's file.`,
     `   - BUY: stop2 < stop1 < price < target1 < target2. SELL: target2 < target1 < price < stop1 < stop2.`,
     `   - forecast_high >= price >= forecast_low, and the forecast high is realistic for one bar (compare with ATR).`,
     `   - Levels are a sensible distance from price for this timeframe (usually within a few ATRs).`,
     `   - Never invent data. If a timeframe's data is missing, leave that timeframe out.`,
     ``,
-    `Write the results with your file tool to ${OUTPUT_DIR}/${RESULT_FILE} as JSON in exactly this shape:`,
-    `{`,
-    `  "symbol": "${symbol}",`,
-    `  "indicators_used": ["<indicator name>", "..."],`,
-    `  "timeframes": {`,
-    `    "<one of ${TF_KEYS.join(", ")}>": {`,
-    `      "signal": "BUY" | "SELL", "confidence": 0-100, "price": <latest close>,`,
-    `      "target1": n, "target2": n, "stop1": n, "stop2": n,`,
-    `      "forecast_high": n, "forecast_low": n,`,
-    `      "rationale": "one or two sentences",`,
-    `      "forecast": [{"t": <unix seconds of a future bar>, "price": n, "low": n, "high": n}, ... 10 points],`,
-    `      "indicators": [ <one entry per indicator; see INDICATOR FORMAT below> ],`,
-    `      "signals": [{"t": <unix seconds of the bar>, "type": "BUY" | "SELL" | "STRONG BUY" | "STRONG SELL", "label": "optional short text"}, ... every bar in the last 150 where your joint Smoothed HA + Ultra RSI rule fired]`,
-    `    }`,
-    `  }`,
-    `}`,
-    ``,
-    `SETTINGS - use exactly the settings you were configured with for every indicator (lengths, smoothing method and`,
-    `length, source, multipliers, overbought/oversold and centre levels, colours) and your configured signal rules.`,
-    `Do not substitute default values. Report the settings you used in each indicator's "settings" and "colors".`,
-    ``,
-    `INDICATOR FORMAT - my app draws each indicator the way you describe it, so describe it the way it should look:`,
-    `{"name": "...", "pane": "price" (drawn on the price chart) | "separate" (its own panel),`,
-    ` "style": "candles" | "baseline" | "histogram" | "line" | "band",`,
-    ` "group": "optional - indicators with the same group share one panel (e.g. an oscillator and its signal line)",`,
-    ` "base": <centre line for baseline style, e.g. 50 or 0>, "levels": [<threshold lines, e.g. 80, 20>],`,
-    ` "settings": {"<setting name>": <value>, ...} exactly as configured (e.g. {"length": 14, "method": "RMA", "signal_length": 14}),`,
-    ` "colors": {"bull": "#rrggbb", "bear": "#rrggbb", "bull_weak": "#rrggbb", "bear_weak": "#rrggbb", "line": "#rrggbb", "signal": "#rrggbb",`,
-    `            "overbought": "#rrggbb", "oversold": "#rrggbb"} - only the ones your configuration defines,`,
-    ` "color": "#rrggbb (optional)", "value": <latest value>, "reading": "bullish" | "bearish" | "neutral",`,
-    ` "series": the last 150 bars, matching the bars' t values:`,
-    `    line / histogram / baseline: [{"t": n, "v": n}]   candles: [{"t": n, "o": n, "h": n, "l": n, "c": n}]   band: [{"t": n, "upper": n, "lower": n, "mid": n}]}`,
-    `Specifically: Smoothed Heikin-Ashi -> pane "price", style "candles" with its smoothed o/h/l/c per bar (my app shows it in place of the regular candles).`,
-    `Ultra RSI [DW] -> pane "separate", style "baseline" with its centre line as "base" and levels [75, 25];`,
-    `put its signal line, if it has one, in the same "group" as style "line". Any channel/cloud -> style "band".`,
-    ``,
-    `Use plain numbers (no strings, no NaN). Include every timeframe that has data.`,
+    `Write the results with your file tool to ${OUTPUT_DIR}/${RESULT_FILE} as compact JSON in exactly this shape:`,
+    `{"symbol": "${symbol}", "indicators_used": ["Smoothed HA", "Ultra RSI [DW]"], "indicator_note": "optional",`,
+    ` "timeframes": {"<one of ${TF_KEYS.join(", ")}>": {`,
+    `   "signal": "BUY" | "SELL", "confidence": 0-100, "price": <latest close>,`,
+    `   "target1": n, "target2": n, "stop1": n, "stop2": n, "forecast_high": n, "forecast_low": n,`,
+    `   "rationale": "one or two sentences, including the joint rule",`,
+    `   "forecast": [{"t": <unix seconds of a future bar>, "price": n, "low": n, "high": n}, ... 10 points],`,
+    `   "indicators": [{"name": "Smoothed HA", "reading": "bullish" | "bearish" | "neutral"}, {"name": "Ultra RSI [DW]", "value": <latest>, "reading": "..."}],`,
+    `   "signals": [{"t": <unix seconds of the bar>, "type": "BUY" | "SELL" | "STRONG BUY" | "STRONG SELL"}, ...]}}}`,
+    `Do NOT include indicator series or candle data - my app already has them. Plain numbers only (no NaN).`,
     ``,
     `Then reply with a short summary across timeframes and finish with exactly one line (compact JSON, no code fence):`,
-    `VERDICT_JSON: {"symbol":"${symbol}","signal":"BUY or SELL (overall)","confidence":0-100,"summary":"one or two sentences","indicators_used":["..."]}`,
+    `VERDICT_JSON: {"symbol":"${symbol}","signal":"BUY or SELL (overall)","confidence":0-100,"summary":"one or two sentences","indicators_used":["Smoothed HA","Ultra RSI [DW]"]}`,
   );
   return lines.join("\n");
 }
@@ -251,7 +234,10 @@ async function analyze(symbol, send, isClosed) {
     send("status", { message: "MASSIVE_API_KEY isn't set, so the app can't load candles. Run setup.bat." });
   }
   // Send candles right away so the chart can draw while Stocky works.
-  send("candles", { candles, timeframes: TIMEFRAMES });
+  // The app calculates Smoothed HA and Ultra RSI itself (fast, and identical for chart and Stocky).
+  const calc = {};
+  for (const [k, bars] of Object.entries(candles)) calc[k] = computeIndicators(bars);
+  send("candles", { candles, timeframes: TIMEFRAMES, calc, indicatorSettings: IND_SETTINGS });
 
   // Mount one CSV per timeframe in Stocky's sandbox.
   const mounted = {};
@@ -262,7 +248,7 @@ async function analyze(symbol, send, isClosed) {
       TIMEFRAMES.filter((tf) => candles[tf.key]).map(async (tf) => {
         const name = `${symbol}_${tf.key}.csv`;
         const up = await client.files.upload({
-          file: await toFile(Buffer.from(candlesToCsv(candles[tf.key])), name, { type: "text/csv" }),
+          file: await toFile(Buffer.from(candlesWithIndicatorsCsv(candles[tf.key], calc[tf.key])), name, { type: "text/csv" }),
         });
         uploadedIds.push(up.id);
         // The platform mounts files under /mnt/session/uploads/, so a mount_path of
@@ -609,6 +595,10 @@ function describeError(err) {
   return err?.message || String(err);
 }
 
+// Recent results per symbol, replayed instantly (STOCKY_CACHE_MINUTES, default 10; 0 = off).
+const CACHE_MS = Math.max(0, Number(process.env.STOCKY_CACHE_MINUTES ?? 10)) * 60_000;
+const cache = new Map();
+
 // HTTP Basic auth when APP_PASSWORD is set. Constant-time compare.
 function authorized(req) {
   if (!APP_PASSWORD) return true;
@@ -627,9 +617,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/api/analyze") {
-    let symbol;
+    let symbol, refresh;
     try {
-      symbol = String((await readJson(req)).symbol || "").trim().toUpperCase().replace(/^\$/, "");
+      const body = await readJson(req);
+      symbol = String(body.symbol || "").trim().toUpperCase().replace(/^\$/, "");
+      refresh = Boolean(body.refresh);
     } catch (e) {
       return json(res, 400, { error: e.message });
     }
@@ -648,8 +640,29 @@ const server = http.createServer(async (req, res) => {
     };
     const heartbeat = setInterval(() => !closed && res.write(": ping\n\n"), 15_000);
 
+    // Recent result for this symbol? Show it instantly instead of a new Stocky run.
+    const hit = cache.get(symbol);
+    if (!refresh && hit && Date.now() - hit.at < CACHE_MS) {
+      send("cached", { at: hit.at, minutes: Math.round((Date.now() - hit.at) / 60000) });
+      for (const [event, data] of hit.events) send(event, data);
+      clearInterval(heartbeat);
+      send("done", {});
+      return res.end();
+    }
+
+    // Record what we send so a good result can be replayed later.
+    const recorded = [];
+    const sendAndRecord = (event, data) => {
+      if (["candles", "session", "verdict"].includes(event)) recorded.push([event, data]);
+      send(event, data);
+    };
+
     try {
-      await analyze(symbol, send, () => closed);
+      await analyze(symbol, sendAndRecord, () => closed);
+      const verdict = recorded.find(([e]) => e === "verdict")?.[1];
+      if (CACHE_MS > 0 && verdict && Object.keys(verdict.analysis?.timeframes ?? {}).length) {
+        cache.set(symbol, { at: Date.now(), events: recorded });
+      }
     } catch (err) {
       console.error(`[analyze ${symbol}]`, err);
       send("error", { message: describeError(err) });

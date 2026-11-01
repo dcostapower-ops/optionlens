@@ -98,6 +98,22 @@ Stocky does the calculations and the app draws everything.
   path and range, and labelled T1/T2/SL1/SL2 lines with forecast high/low. Times are New York
   market time.
 
+## Indicators and speed
+
+The app calculates the two indicators from the user's TradingView layout itself (`lib/indicators.mjs`),
+draws them as soon as the candles load, and adds them as columns to the CSVs Stocky reads:
+
+- **Smoothed HA** `12, Exponential, 6, 0.85, 3, Exponential, 6, 0.85`: EMA(12) of OHLC, then
+  Heikin-Ashi, then EMA(3) of the HA OHLC. The 6/0.85 values are ALMA inputs, unused with
+  Exponential.
+- **Ultra RSI [DW]** `close, 12, EMA, …, 75, 25, …`: approximated as an RSI of close with EMA-12
+  averaged gains/losses, centre 50, levels 75/25. DW's exact formula isn't reproduced. Stocky
+  is asked to report a material difference in `indicator_note`, which the page shows.
+
+Stocky then only writes its decisions and levels, not chart data, which is much faster.
+Results are remembered per symbol for `STOCKY_CACHE_MINUTES` (default 10; 0 turns it off).
+Re-entering a symbol in that window is instant, and **Run again** forces a fresh run.
+
 ## Accuracy checks and track record
 
 A forecast can't be guaranteed, so every level is checked and every call is tracked:

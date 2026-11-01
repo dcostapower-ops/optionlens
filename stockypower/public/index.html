@@ -319,8 +319,21 @@ function drawChart(st) {
 
 // Turns Stocky's indicators into drawing instructions. Also recognises the
 // older format (plain lines) so Heikin-Ashi and RSI still draw properly.
-function planIndicators(a, bars) {
-  const inds = (a?.indicators || []).map((x) => ({ ...x, levels: [...(x.levels || [])], series: x.series || [], candles: x.candles || [], band: x.band || [] }));
+function planIndicators(a, bars, calc) {
+  let inds = (a?.indicators || []).map((x) => ({ ...x, levels: [...(x.levels || [])], series: x.series || [], candles: x.candles || [], band: x.band || [] }));
+
+  // Smoothed HA and Ultra RSI are calculated by the app (same values Stocky used);
+  // Stocky contributes the readings.
+  if (calc) {
+    const isHA = (i) => /heikin|heiken|smoothed\s*ha|\bha\b/i.test(i.name);
+    const isRSI = (i) => /rsi/i.test(i.name);
+    const haR = inds.find(isHA), rsiR = inds.find(isRSI);
+    inds = inds.filter((i) => !isHA(i) && !isRSI(i));
+    if (calc.ha?.length)
+      inds.unshift({ name: "Smoothed HA", pane: "price", style: "candles", candles: calc.ha, series: [], band: [], levels: [], reading: haR?.reading || "", colors: haR?.colors || {}, settings: { "EMA": 12, "then EMA": 3 } });
+    if (calc.ursi?.length)
+      inds.push({ name: "Ultra RSI [DW]", pane: "separate", style: "baseline", base: 50, levels: [75, 25], group: "ultra rsi", series: calc.ursi, candles: [], band: [], reading: rsiR?.reading || "", colors: rsiR?.colors || {}, settings: { source: "close", length: 12, type: "EMA" } });
+  }
 
   // Heikin-Ashi sent as separate "Open" and "Close" lines -> HA candles.
   let ha = inds.find((i) => i.style === "candles" && i.candles.length);
@@ -407,7 +420,7 @@ function settingsText(ind) {
 
 function renderChart(st, el, legend, bars, a, LW) {
   const intraday = ["15m", "1h", "4h"].includes(st.tf);
-  const plan = planIndicators(a, bars);
+  const plan = planIndicators(a, bars, st.calc?.[st.tf]);
   const useHA = Boolean(plan.ha) && st.candleMode !== "regular";
   el.style.height = `${430 + plan.panels.length * 130}px`;
 
@@ -461,8 +474,13 @@ function renderChart(st, el, legend, bars, a, LW) {
   const main = chart.addSeries(LW.CandlestickSeries, {
     upColor: "#26a641", downColor: "#e5534b", borderVisible: false, wickUpColor: "#26a641", wickDownColor: "#e5534b",
     priceLineColor: "#8b949e", priceLineStyle: LW.LineStyle.Dotted, priceFormat: pricePrecision,
+    // With HA candles the series' own last value is the HA close, not the real price.
+    lastValueVisible: !useHA, priceLineVisible: !useHA,
   });
   main.setData(mainData);
+  if (useHA && real.length) {
+    main.createPriceLine({ price: real[real.length - 1].close, color: "#8b949e", lineWidth: 1, lineStyle: LW.LineStyle.Dotted, axisLabelVisible: true, title: "Last" });
+  }
 
   // Volume along the bottom of the price pane.
   if (real.some((p) => p._v > 0)) {
@@ -678,7 +696,7 @@ function showConfirm(card, data) {
 }
 
 // ── Run ────────────────────────────────────────────────────────────────────
-async function analyze(symbol) {
+async function analyze(symbol, refresh = false) {
   const st = newCard(symbol);
   const card = st.card;
   const status = $(".status", card);
@@ -688,7 +706,7 @@ async function analyze(symbol) {
   const res = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbol }),
+    body: JSON.stringify({ symbol, refresh }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -706,12 +724,14 @@ async function analyze(symbol) {
   const handle = (event, data) => {
     switch (event) {
       case "status": setStatus(data.message); break;
+      case "cached": st.cachedAt = data.at; break;
       case "session": card.dataset.session = data.id; break;
       case "tool": setStatus(`Stocky is using ${data.name}…`); break;
       case "text": raw.textContent += (raw.textContent ? "\n" : "") + data.text; break;
       case "confirm": setStatus("Waiting for your approval…"); showConfirm(card, data); break;
       case "candles":
         st.candles = data.candles || {};
+        st.calc = data.calc || {};
         st.candlesLoaded = true;
         if (Array.isArray(data.timeframes) && data.timeframes.length) st.tfs = data.timeframes;
         if (!st.candles[st.tf]) st.tf = st.tfs.find((t) => st.candles[t.key])?.key || st.tf;
@@ -729,6 +749,7 @@ async function analyze(symbol) {
         else { badge.className = "badge pending"; badge.textContent = "No clear call"; }
         $(".meta", card).innerHTML = [v.confidence != null ? `Overall confidence ${v.confidence}%` : "", (st.analysis?.indicators_used || []).length ? `Indicators: ${esc(st.analysis.indicators_used.join(", "))}` : ""].filter(Boolean).join("<br>");
         $(".summary", card).textContent = v.summary || "";
+        if (st.analysis?.indicator_note) $(".summary", card).textContent += ` (Stocky's note on the indicators: ${st.analysis.indicator_note})`;
         if (!Object.keys(st.analysis?.timeframes || {}).length) {
           const why = (data.diagnostics || []).join("; ");
           const box = document.createElement("div");
@@ -753,14 +774,28 @@ async function analyze(symbol) {
         status.after(e);
         break;
       }
-      case "done":
+      case "done": {
+        const again = document.createElement("button");
+        again.className = "mini";
+        again.style.marginLeft = "10px";
+        again.textContent = "Run again";
+        again.onclick = () => analyze(symbol, true);
+        if (st.cachedAt) {
+          const mins = Math.max(0, Math.round((Date.now() - st.cachedAt) / 60000));
+          status.className = "status done";
+          setStatus(`Stocky's result from ${new Date(st.cachedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (${mins} min ago), shown instantly.`);
+          status.append(again);
+          break;
+        }
         if (!st.candlesLoaded) {
           st.candlesLoaded = true;
           $(".chart", card).innerHTML = `<div class="nochart">No price data arrived for the chart.${serverOutdated ? " An older Stockypower is still running: close every Stockypower window, then double-click start.bat again." : " Check the message above."}</div>`;
         }
         status.className = "status done";
         setStatus(gotVerdict ? `Done · session ${card.dataset.session || ""}` : "Finished");
+        status.append(again);
         break;
+      }
     }
   };
 

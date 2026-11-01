@@ -318,6 +318,7 @@ export function cleanAnalysis(raw) {
   const used = raw.indicators_used ?? raw.indicatorsUsed ?? raw.indicators;
   return {
     indicators_used: Array.isArray(used) ? used.map((u) => (typeof u === "string" ? u : u?.name)).filter(Boolean).map(String).slice(0, 8) : [],
+    indicator_note: typeof raw.indicator_note === "string" ? raw.indicator_note.slice(0, 400) : "",
     timeframes,
   };
 }
