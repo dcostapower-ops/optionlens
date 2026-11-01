@@ -76,6 +76,18 @@ Stocky gets the data two ways, so it still has data if one fails:
 
 The startup log shows which of the two are active.
 
+## Forecast graphs
+
+Each result card can show two kinds of graph:
+
+- **Forecast chart.** The app draws it from the last ~6 months of Massive prices plus the
+  forecast points Stocky returns (expected price, with a low/high range), out to Stocky's horizon.
+- **Stocky's own charts.** Stocky is asked to save its forecast graphs as PNG files in
+  `/mnt/session/outputs/`. Stockypower downloads any images Stocky saved there and shows them
+  in the card. Click one to open it full size.
+
+If Stocky returns neither, the card says so.
+
 ## Notes
 
 - **Tool approvals.** If Stocky's tool permissions pause a call for approval, the page shows

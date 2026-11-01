@@ -24,6 +24,7 @@ const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY || ""; // used here only for
 const MASSIVE_BASE = process.env.MASSIVE_BASE_URL || "https://api.massive.com";
 const HISTORY_YEARS = Number(process.env.STOCKY_HISTORY_YEARS || 2);
 const PUBLIC_DIR = path.join(__dirname, "public");
+const OUTPUT_DIR = "/mnt/session/outputs"; // files saved here can be downloaded after the session
 
 // Resolves ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN / an `ant auth login` profile).
 // ANTHROPIC_BASE_URL is honoured too, which is how the local mock test works.
@@ -82,6 +83,8 @@ async function fetchMassiveSnapshot(symbol) {
     from: ymd(new Date(bars[0].t)),
     to: ymd(new Date(bars[bars.length - 1].t)),
     path: `/workspace/data/${symbol}_daily.csv`,
+    // Last ~6 months of closes, for the chart in the browser.
+    history: bars.slice(-130).map((b) => ({ date: ymd(new Date(b.t)), close: b.c })),
   };
 }
 
@@ -111,9 +114,27 @@ function buildPrompt(symbol, snapshot) {
     `Based on those indicators, tell me whether I should BUY or SELL ${symbol} right now.`,
     ``,
     `Briefly walk through each indicator's current reading, then give your call.`,
+    ``,
+    `Also produce your price forecast for ${symbol}:`,
+    `- Save your forecast graph(s) as PNG image files in ${OUTPUT_DIR}/ (for example ${OUTPUT_DIR}/${symbol}_forecast.png),`,
+    `  showing recent price history, your forecast path, and its likely range. Any PNG you save there is shown to me.`,
+    `- Put the forecast numbers in the "forecast" field below: one point per date, with your expected price`,
+    `  and a low/high range, out to your forecast horizon.`,
+    ``,
     `Finish your reply with exactly one line in this format (compact JSON, no code fence):`,
-    `VERDICT_JSON: {"symbol":"${symbol}","signal":"BUY or SELL","confidence":0-100,"price":last close or null,"as_of":"YYYY-MM-DD of the latest bar","summary":"one or two sentences","indicators":[{"name":"...","value":"...","reading":"bullish|bearish|neutral"}]}`,
+    `VERDICT_JSON: {"symbol":"${symbol}","signal":"BUY or SELL","confidence":0-100,"price":last close or null,"as_of":"YYYY-MM-DD of the latest bar","summary":"one or two sentences","indicators":[{"name":"...","value":"...","reading":"bullish|bearish|neutral"}],"horizon":"e.g. 30 trading days","forecast":[{"date":"YYYY-MM-DD","price":0,"low":0,"high":0}]}`,
   ].join("\n");
+}
+
+// Keep only well-formed forecast points, sorted by date.
+function cleanForecast(f) {
+  if (!Array.isArray(f)) return [];
+  const num = (x) => (x === null || x === undefined || x === "" ? null : Number.isFinite(Number(x)) ? Number(x) : null);
+  return f
+    .map((p) => ({ date: String(p?.date ?? "").slice(0, 10), price: num(p?.price), low: num(p?.low), high: num(p?.high) }))
+    .filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.date) && p.price !== null)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 400);
 }
 
 // Pull the structured verdict out of Stocky's reply. Falls back to scanning
@@ -136,6 +157,8 @@ export function parseVerdict(text, symbol) {
           as_of: v.as_of ?? null,
           summary: v.summary ?? "",
           indicators: Array.isArray(v.indicators) ? v.indicators : [],
+          horizon: v.horizon ?? null,
+          forecast: cleanForecast(v.forecast),
           structured: true,
         };
       }
@@ -153,6 +176,8 @@ export function parseVerdict(text, symbol) {
     as_of: null,
     summary: "",
     indicators: [],
+    horizon: null,
+    forecast: [],
     structured: false,
   };
 }
@@ -288,23 +313,58 @@ async function analyze(symbol, send, isClosed) {
           if (reason === "requires_action") break; // waiting on a confirmation/tool result we're handling
           if (reason === "retries_exhausted") throw new Error("Stocky's session failed after retries.");
           if (reason === "budget_reached") throw new Error("Stocky's session hit its spending budget.");
-          return finalize();
+          return await finalize();
         }
 
         case "session.status_terminated":
-          return finalize();
+          return await finalize();
       }
     }
   } finally {
     stream.controller?.abort?.();
   }
 
-  if (!isClosed()) finalize();
+  if (!isClosed()) await finalize();
 
-  function finalize() {
+  async function finalize() {
     const verdict = parseVerdict(fullText, symbol);
-    send("verdict", { verdict, text: fullText, sessionId: session.id });
+    send("status", { message: "Collecting Stocky's charts…" });
+    const charts = await collectCharts(session.id);
+    send("verdict", {
+      verdict,
+      text: fullText,
+      sessionId: session.id,
+      history: snapshot?.history ?? [],
+      charts,
+    });
   }
+}
+
+// ── Charts Stocky saved ──────────────────────────────────────────────────────
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg)$/i;
+const servableFiles = new Map(); // file id -> { filename, mime } that this server handed out
+
+// Image files Stocky wrote to /mnt/session/outputs during the session.
+async function collectCharts(sessionId) {
+  // Files show up in the listing a second or two after the session goes idle.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const charts = [];
+      for await (const f of client.beta.files.list({ scope_id: sessionId, betas: ["managed-agents-2026-04-01"] })) {
+        const isImage = (f.mime_type || "").startsWith("image/") || IMAGE_EXT.test(f.filename || "");
+        if (!isImage) continue;
+        servableFiles.set(f.id, { filename: f.filename, mime: f.mime_type || "application/octet-stream" });
+        charts.push({ id: f.id, filename: f.filename, url: `/api/file/${f.id}` });
+      }
+      if (charts.length || attempt === 3) return charts;
+    } catch (err) {
+      console.error(`[charts ${sessionId}]`, err);
+      if (attempt === 3) return [];
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return [];
 }
 
 // ── HTTP ───────────────────────────────────────────────────────────────────
@@ -415,6 +475,28 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     } catch (e) {
       return json(res, 400, { error: e.message });
+    }
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/api/file/")) {
+    const id = url.pathname.slice("/api/file/".length);
+    const meta = servableFiles.get(id);
+    if (!meta) return json(res, 404, { error: "Unknown file" });
+    try {
+      const r = await client.beta.files.download(id, { betas: ["managed-agents-2026-04-01"] });
+      const buf = Buffer.from(await r.arrayBuffer());
+      res.writeHead(200, {
+        "Content-Type": meta.mime,
+        "Content-Disposition": `inline; filename="${String(meta.filename).replace(/[^\w.\-]/g, "_")}"`,
+        // Agent-made files are untrusted: never let them run scripts.
+        "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, max-age=3600",
+      });
+      return res.end(buf);
+    } catch (err) {
+      console.error(`[file ${id}]`, err);
+      return json(res, 502, { error: describeError(err) });
     }
   }
 
