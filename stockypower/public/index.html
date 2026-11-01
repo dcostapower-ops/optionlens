@@ -511,8 +511,13 @@ async function analyze(symbol) {
         else { badge.className = "badge pending"; badge.textContent = "No clear call"; }
         $(".meta", card).innerHTML = [v.confidence != null ? `Overall confidence ${v.confidence}%` : "", (st.analysis?.indicators_used || []).length ? `Indicators: ${esc(st.analysis.indicators_used.join(", "))}` : ""].filter(Boolean).join("<br>");
         $(".summary", card).textContent = v.summary || "";
-        if (!data.hasResultFile && !Object.keys(st.analysis?.timeframes || {}).length) {
-          $(".summary", card).textContent += (v.summary ? " " : "") + "(Stocky didn't return per-timeframe levels this time. See its full analysis below.)";
+        if (!Object.keys(st.analysis?.timeframes || {}).length) {
+          const why = (data.diagnostics || []).join("; ");
+          const box = document.createElement("div");
+          box.className = "checks bad";
+          box.style.marginTop = "10px";
+          box.textContent = `Stocky's per-timeframe levels couldn't be read, so the chart shows candles only.${why ? ` Details: ${why}.` : ""} Stocky's full reply is below. A copy is saved in the stockypower\\data folder (last-run-${symbol}.json).`;
+          $(".summary", card).after(box);
           $("details", card).open = true;
         }
         selectTf(st, st.tf);

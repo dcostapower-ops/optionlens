@@ -122,7 +122,18 @@ APP_PASSWORD=choose-a-long-password
 The browser then asks for a login. The user is `stocky` (change it with `APP_USER`).
 Without a password, anyone who finds the address could run Stocky on your Anthropic account.
 
-## Notes
+## If Stocky's levels don't come through
+
+The app looks for Stocky's results in this order: the `stockypower.json` file in the session
+outputs (it waits up to ~15 s for the file to appear), then a `<<<STOCKYPOWER_JSON … STOCKYPOWER_JSON>>>`
+block or a JSON code block in Stocky's reply, then the `VERDICT_JSON` line. Timeframe and field
+names are matched loosely (`15min`, `hourly`, `daily`, `tp1`, `sl1`, nested `levels`, and so on),
+and small JSON mistakes such as `NaN` or trailing commas are repaired.
+
+If nothing usable is found after the first answer, the app asks Stocky once, in the same
+session, to resend the results both ways. If it still fails, the page shows why, and the raw
+reply and file are saved to `data/last-run-<SYMBOL>.json`.
+
 
 - **Tool approvals.** If Stocky's tool permissions pause a call for approval, the page shows
   **Allow / Deny** buttons. If nobody answers within 5 minutes, or the tab is closed, the call

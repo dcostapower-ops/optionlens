@@ -22,19 +22,43 @@ const MAX_BARS = 500;
 const ymd = (d) => d.toISOString().slice(0, 10);
 
 // Candles for one timeframe: [{ t (unix seconds), o, h, l, c, v }], oldest first.
+//
+// Massive (like Polygon) caps each request at 50,000 *base* bars (minutes for
+// intraday timeframes). Asking oldest-first over a long range therefore returns
+// only the OLDEST part and silently drops recent months. So: ask newest-first
+// and follow next_url pages until we have enough bars.
 export async function fetchCandles({ base, apiKey, symbol, tf }) {
-  const to = new Date();
+  const to = new Date(Date.now() + 864e5); // include today
   const from = new Date(to.getTime() - tf.lookbackDays * 864e5);
-  const url =
+  let url =
     `${base}/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/${tf.mult}/${tf.span}/${ymd(from)}/${ymd(to)}` +
-    `?adjusted=true&sort=asc&limit=50000`;
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(25_000) });
-  if (r.status === 401 || r.status === 403) throw new Error(`Massive rejected the API key (HTTP ${r.status})`);
-  if (!r.ok) throw new Error(`Massive HTTP ${r.status} for ${tf.label} bars`);
-  const body = await r.json();
-  return (body.results ?? [])
-    .slice(-MAX_BARS)
-    .map((b) => ({ t: Math.floor(b.t / 1000), o: b.o, h: b.h, l: b.l, c: b.c, v: b.v ?? 0 }));
+    `?adjusted=true&sort=desc&limit=50000`;
+  const byT = new Map();
+  for (let page = 0; page < 6 && url && byT.size < MAX_BARS; page++) {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(25_000) });
+    if (r.status === 401 || r.status === 403) throw new Error(`Massive rejected the API key or plan for ${tf.label} bars (HTTP ${r.status})`);
+    if (!r.ok) throw new Error(`Massive HTTP ${r.status} for ${tf.label} bars`);
+    const body = await r.json();
+    for (const b of body.results ?? []) {
+      const t = Math.floor(b.t / 1000);
+      if (!byT.has(t)) byT.set(t, { t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v ?? 0 });
+    }
+    // next_url points at the next (older) page; the key goes in the header, never the URL.
+    url = body.next_url ? body.next_url.replace(/([?&])apiKey=[^&]*&?/, "$1").replace(/[?&]$/, "") : null;
+    if (url && base && !url.startsWith(base)) url = base + new URL(url).pathname + new URL(url).search;
+  }
+  return [...byT.values()].sort((x, y) => x.t - y.t).slice(-MAX_BARS);
+}
+
+// How old a timeframe's newest bar may be before we call the data stale (seconds).
+const MAX_AGE = { "15m": 4 * 86400, "1h": 4 * 86400, "4h": 5 * 86400, "1D": 6 * 86400, "1W": 16 * 86400, "1M": 62 * 86400 };
+
+// Returns a warning if the newest bar is too old, else null.
+export function staleWarning(tfKey, bars, nowSec = Date.now() / 1000) {
+  if (!bars?.length) return null;
+  const last = bars[bars.length - 1].t;
+  if (nowSec - last <= (MAX_AGE[tfKey] ?? 7 * 86400)) return null;
+  return `Massive's data for this timeframe ends on ${new Date(last * 1000).toISOString().slice(0, 10)}, so it is out of date.`;
 }
 
 export function candlesToCsv(bars) {
@@ -93,40 +117,164 @@ function cleanForecast(arr) {
 
 const SIGNALS = ["BUY", "SELL", "HOLD"];
 
-// Normalises Stocky's stockypower.json (or the timeframes inside VERDICT_JSON).
+// Many ways Stocky might name a timeframe -> our key. ("1m" means 1 month here:
+// there is no 1-minute timeframe in Stockypower.)
+const TF_ALIASES = {
+  "15m": ["15m", "15min", "15mins", "15minute", "15minutes", "m15", "15", "quarterhour"],
+  "1h": ["1h", "1hr", "1hour", "hour", "hourly", "h1", "60m", "60min", "60minutes", "60"],
+  "4h": ["4h", "4hr", "4hrs", "4hour", "4hours", "h4", "240m", "240min", "240"],
+  "1D": ["1d", "d", "d1", "1day", "day", "daily", "1440m"],
+  "1W": ["1w", "w", "w1", "1wk", "1week", "week", "weekly"],
+  "1M": ["1m", "1mo", "1mon", "1mth", "1month", "month", "monthly", "mn", "mn1"],
+};
+const normKey = (k) => String(k).toLowerCase().replace(/[\s_\-.]/g, "");
+const TF_LOOKUP = Object.fromEntries(Object.entries(TF_ALIASES).flatMap(([key, al]) => al.map((a) => [a, key])));
+export const tfKeyOf = (k) => TF_LOOKUP[normKey(k)] ?? null;
+
+const FIELD_ALIASES = {
+  signal: ["signal", "action", "recommendation", "call", "direction", "bias"],
+  confidence: ["confidence", "conf", "probability", "score"],
+  price: ["price", "lastclose", "close", "lastprice", "currentprice", "entry", "entryprice"],
+  target1: ["target1", "t1", "tp1", "takeprofit1", "profittarget1", "firsttarget", "targetone"],
+  target2: ["target2", "t2", "tp2", "takeprofit2", "profittarget2", "secondtarget", "targettwo"],
+  stop1: ["stop1", "sl1", "stoploss1", "stoplossone", "firststop", "stop", "stoploss"],
+  stop2: ["stop2", "sl2", "stoploss2", "stoplosstwo", "secondstop"],
+  forecast_high: ["forecasthigh", "highforecast", "projectedhigh", "predictedhigh", "nexthigh", "nextbarhigh", "maxhigh", "high"],
+  forecast_low: ["forecastlow", "lowforecast", "projectedlow", "predictedlow", "nextlow", "nextbarlow", "minlow", "low"],
+  rationale: ["rationale", "reason", "reasoning", "summary", "notes", "comment"],
+  forecast: ["forecast", "forecastpath", "path", "projection", "forecasts"],
+  indicators: ["indicators", "indicator"],
+};
+
+// Flattens an object (and nested "levels"/"targets"/"stops" objects) into normalised keys.
+function flat(x) {
+  const out = {};
+  const add = (o) => {
+    if (!o || typeof o !== "object" || Array.isArray(o)) return;
+    for (const [k, v] of Object.entries(o)) if (!(normKey(k) in out)) out[normKey(k)] = v;
+  };
+  add(x);
+  for (const nest of ["levels", "level", "tradelevels", "trade", "plan"]) add(out[nest]);
+  // Arrays like "targets": [t1, t2] and "stops": [s1, s2]
+  for (const [name, a, b] of [["targets", "target1", "target2"], ["stops", "stop1", "stop2"], ["stoplosses", "stop1", "stop2"]]) {
+    const arr = out[name];
+    if (Array.isArray(arr)) {
+      if (!(a in out)) out[a] = arr[0];
+      if (!(b in out)) out[b] = arr[1];
+    }
+  }
+  return out;
+}
+const pick = (f, field) => {
+  for (const a of FIELD_ALIASES[field]) if (f[a] !== undefined && f[a] !== null && typeof f[a] !== "object") return f[a];
+  return null;
+};
+const pickObj = (f, field) => {
+  for (const a of FIELD_ALIASES[field]) if (Array.isArray(f[a])) return f[a];
+  return null;
+};
+
+// Finds the per-timeframe objects wherever Stocky put them.
+function findTimeframes(raw) {
+  const found = {};
+  const take = (k, v) => {
+    const key = tfKeyOf(k);
+    if (key && v && typeof v === "object" && !Array.isArray(v) && !found[key]) found[key] = v;
+  };
+  const scan = (container) => {
+    if (Array.isArray(container)) {
+      for (const item of container) {
+        if (!item || typeof item !== "object") continue;
+        const k = item.timeframe ?? item.tf ?? item.interval ?? item.period ?? item.name ?? item.key;
+        if (k != null) take(k, item);
+      }
+    } else if (container && typeof container === "object") {
+      for (const [k, v] of Object.entries(container)) take(k, v);
+    }
+  };
+  for (const name of ["timeframes", "time_frames", "timeFrames", "results", "data", "analysis", "levels", "frames"]) scan(raw?.[name]);
+  if (!Object.keys(found).length) scan(raw); // timeframe keys at the top level
+  return found;
+}
+
+// Normalises Stocky's results (file, reply or VERDICT_JSON). Always returns an object.
 export function cleanAnalysis(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const tfsIn = raw.timeframes && typeof raw.timeframes === "object" ? raw.timeframes : {};
+  if (!raw || typeof raw !== "object") return { indicators_used: [], timeframes: {} };
+  const tfsIn = findTimeframes(raw);
   const timeframes = {};
   for (const key of TF_KEYS) {
-    const x = tfsIn[key] ?? tfsIn[key.toLowerCase()];
-    if (!x || typeof x !== "object") continue;
-    const signal = String(x.signal ?? "").toUpperCase();
+    const x = tfsIn[key];
+    if (!x) continue;
+    const f = flat(x);
+    const signalRaw = String(pick(f, "signal") ?? "").toUpperCase();
+    const signal = /STRONG\s*BUY|^BUY|LONG|BULL/.test(signalRaw) ? "BUY" : /STRONG\s*SELL|^SELL|SHORT|BEAR/.test(signalRaw) ? "SELL" : /HOLD|NEUTRAL|WAIT/.test(signalRaw) ? "HOLD" : null;
+    const inds = pickObj(f, "indicators") ?? [];
     timeframes[key] = {
-      signal: SIGNALS.includes(signal) ? signal : null,
-      confidence: num(x.confidence),
-      price: num(x.price ?? x.last_close),
-      target1: num(x.target1 ?? x.target_1),
-      target2: num(x.target2 ?? x.target_2),
-      stop1: num(x.stop1 ?? x.stop_loss1 ?? x.stop_loss_1),
-      stop2: num(x.stop2 ?? x.stop_loss2 ?? x.stop_loss_2),
-      forecast_high: num(x.forecast_high),
-      forecast_low: num(x.forecast_low),
-      rationale: typeof x.rationale === "string" ? x.rationale.slice(0, 600) : "",
-      forecast: cleanForecast(x.forecast),
-      indicators: (Array.isArray(x.indicators) ? x.indicators : []).slice(0, 8).map((ind) => ({
-        name: String(ind?.name ?? "Indicator").slice(0, 60),
-        pane: ind?.pane === "price" ? "price" : "separate",
+      signal,
+      confidence: num(pick(f, "confidence")),
+      price: num(pick(f, "price")),
+      target1: num(pick(f, "target1")),
+      target2: num(pick(f, "target2")),
+      stop1: num(pick(f, "stop1")),
+      stop2: num(pick(f, "stop2")),
+      forecast_high: num(pick(f, "forecast_high")),
+      forecast_low: num(pick(f, "forecast_low")),
+      rationale: String(pick(f, "rationale") ?? "").slice(0, 600),
+      forecast: cleanForecast(pickObj(f, "forecast")),
+      indicators: inds.slice(0, 8).map((ind) => ({
+        name: String(ind?.name ?? ind?.indicator ?? "Indicator").slice(0, 60),
+        pane: /price|overlay|main/i.test(String(ind?.pane ?? ind?.panel ?? "")) ? "price" : "separate",
         value: ind?.value ?? null,
-        reading: String(ind?.reading ?? "").slice(0, 40),
-        series: cleanSeries(ind?.series, "v"),
+        reading: String(ind?.reading ?? ind?.signal ?? "").slice(0, 40),
+        series: cleanSeries(ind?.series ?? ind?.values ?? ind?.data, "v"),
       })),
     };
   }
+  const used = raw.indicators_used ?? raw.indicatorsUsed ?? raw.indicators;
   return {
-    indicators_used: Array.isArray(raw.indicators_used) ? raw.indicators_used.map(String).slice(0, 8) : [],
+    indicators_used: Array.isArray(used) ? used.map((u) => (typeof u === "string" ? u : u?.name)).filter(Boolean).map(String).slice(0, 8) : [],
     timeframes,
   };
+}
+
+// JSON.parse that forgives what models commonly get wrong: code fences, text
+// around the object, NaN/Infinity, trailing commas. Returns null if hopeless.
+export function parseLooseJson(text) {
+  if (typeof text !== "string") return null;
+  let t = text.replace(/^﻿/, "").trim();
+  t = t.replace(/^```[a-zA-Z]*\s*/, "").replace(/```\s*$/, "");
+  const first = t.indexOf("{");
+  const last = t.lastIndexOf("}");
+  if (first === -1 || last <= first) return null;
+  t = t.slice(first, last + 1);
+  try {
+    return JSON.parse(t);
+  } catch {
+    /* repair below */
+  }
+  const repaired = t
+    .replace(/([:\[,]\s*)-?(NaN|Infinity)\b/g, "$1null")
+    .replace(/,\s*([}\]])/g, "$1");
+  try {
+    return JSON.parse(repaired);
+  } catch {
+    return null;
+  }
+}
+
+// Pulls a results object out of Stocky's written reply: the marked block, or
+// any ```json fence that contains timeframes.
+export function resultsFromText(text) {
+  if (!text) return null;
+  const candidates = [];
+  const m = text.match(/<<<STOCKYPOWER_JSON([\s\S]*?)STOCKYPOWER_JSON>>>/);
+  if (m) candidates.push(m[1]);
+  for (const f of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)) candidates.push(f[1]);
+  for (const c of candidates) {
+    const obj = parseLooseJson(c);
+    if (obj && Object.keys(cleanAnalysis(obj).timeframes).length) return obj;
+  }
+  return null;
 }
 
 // ── Accuracy checks ──────────────────────────────────────────────────────────
@@ -135,11 +283,13 @@ const fmt = (v) => (v === null || v === undefined ? "?" : Math.abs(v) >= 1000 ? 
 
 // Checks one timeframe's levels against the real last close and ATR.
 // Returns { ok, issues: [string], lastClose, atr, rr }.
-export function validateLevels(a, bars) {
+export function validateLevels(a, bars, tfKey) {
   const issues = [];
   const last = bars?.length ? bars[bars.length - 1].c : null;
   const A = atr(bars);
-  if (!a) return { ok: false, issues: ["Stocky returned no levels for this timeframe."], lastClose: last, atr: A, rr: null };
+  const stale = staleWarning(tfKey, bars);
+  if (!a) return { ok: false, issues: [stale, "Stocky returned no levels for this timeframe."].filter(Boolean), lastClose: last, atr: A, rr: null };
+  if (stale) issues.push(stale);
   const { signal, target1: t1, target2: t2, stop1: s1, stop2: s2, forecast_high: fh, forecast_low: fl, price } = a;
 
   for (const [name, v] of [["Target 1", t1], ["Target 2", t2], ["Stop loss 1", s1], ["Stop loss 2", s2], ["Forecast high", fh]]) {

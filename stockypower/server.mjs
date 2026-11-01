@@ -21,6 +21,9 @@ import {
   validateLevels,
   trackStore,
   trackRecord,
+  staleWarning,
+  parseLooseJson,
+  resultsFromText,
 } from "./lib/market.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +74,7 @@ function waitForConfirmation(key, isClosed) {
 // ── Market data (all timeframes) ─────────────────────────────────────────────
 
 const RESULT_FILE = "stockypower.json";
+const UPLOAD_ROOT = "/mnt/session/uploads/data";
 
 // Candles for every timeframe from Massive. Missing timeframes are skipped, not fatal.
 async function fetchAllCandles(symbol, send) {
@@ -102,14 +106,19 @@ function buildPrompt(symbol, candles, mounted) {
   ];
 
   if (Object.keys(mounted).length) {
-    lines.push(`DATA - use these files. They are the exact Massive bars my app charts, so your numbers must line up with them:`);
+    lines.push(
+      `DATA - use these files. They are the exact Massive bars my app charts, so your numbers must line up with them.`,
+      `They are mounted under ${UPLOAD_ROOT}/ (if not, run: find / -name "${symbol}_*.csv" 2>/dev/null).`,
+    );
     for (const tf of TIMEFRAMES) {
       const bars = candles[tf.key];
-      if (!bars) continue;
+      if (!bars || !mounted[tf.key]) continue;
       const last = bars[bars.length - 1];
+      const stale = staleWarning(tf.key, bars);
       lines.push(
         `- ${tf.key} (${tf.label}): ${mounted[tf.key]} - ${bars.length} bars, CSV columns t,datetime_utc,open,high,low,close,volume (t = unix seconds, bar open time).` +
-          ` Latest bar ${new Date(last.t * 1000).toISOString()}, close ${f2(last.c)}, ATR(14) ${f2(atr(bars))}.`,
+          ` Latest bar ${new Date(last.t * 1000).toISOString()}, close ${f2(last.c)}, ATR(14) ${f2(atr(bars))}.` +
+          (stale ? ` WARNING: ${stale} Say so in that timeframe's rationale.` : ""),
       );
     }
     lines.push(``);
@@ -224,8 +233,10 @@ async function analyze(symbol, send, isClosed) {
           file: await toFile(Buffer.from(candlesToCsv(candles[tf.key])), name, { type: "text/csv" }),
         });
         uploadedIds.push(up.id);
-        mounted[tf.key] = `/workspace/data/${name}`;
-        resources.push({ type: "file", file_id: up.id, mount_path: mounted[tf.key] });
+        // The platform mounts files under /mnt/session/uploads/, so a mount_path of
+        // /data/x.csv ends up at /mnt/session/uploads/data/x.csv inside the sandbox.
+        mounted[tf.key] = `${UPLOAD_ROOT}/${name}`;
+        resources.push({ type: "file", file_id: up.id, mount_path: `/data/${name}` });
       }),
     );
   } catch (err) {
@@ -257,6 +268,7 @@ async function analyze(symbol, send, isClosed) {
   send("status", { message: `Stocky is calculating ${symbol} on all six timeframes…` });
 
   let fullText = "";
+  let followupSent = false;
   try {
     for await (const event of stream) {
       if (isClosed()) break;
@@ -332,31 +344,65 @@ async function analyze(symbol, send, isClosed) {
           if (reason === "requires_action") break; // waiting on a confirmation/tool result we're handling
           if (reason === "retries_exhausted") throw new Error("Stocky's session failed after retries.");
           if (reason === "budget_reached") throw new Error("Stocky's session hit its spending budget.");
-          return await finalize();
+          if (await onTurnEnd()) return;
+          break; // we asked Stocky a follow-up; keep listening
         }
 
         case "session.status_terminated":
-          return await finalize();
+          return await finalize(await collectResults());
       }
     }
   } finally {
     stream.controller?.abort?.();
   }
 
-  if (!isClosed()) await finalize();
+  if (!isClosed()) await finalize(await collectResults());
 
-  async function finalize() {
+  // Stocky finished a turn. Returns true when we're done, false if we asked a follow-up.
+  async function onTurnEnd() {
+    const results = await collectResults();
+    if (Object.keys(results.analysis.timeframes).length || followupSent || isClosed()) {
+      await finalize(results);
+      return true;
+    }
+    followupSent = true;
+    send("status", { message: "Stocky's results didn't come through, so I'm asking Stocky to resend them…" });
+    console.log(`[results ${symbol}] none found (${results.diag.join("; ")}); asking Stocky to resend`);
+    await client.beta.sessions.events.send(session.id, {
+      events: [{ type: "user.message", content: [{ type: "text", text: followupPrompt(symbol, results.diag) }] }],
+    });
+    return false;
+  }
+
+  // Looks for Stocky's results: the file first, then the reply, then VERDICT_JSON.
+  async function collectResults() {
+    const diag = [];
+    const file = await readResultFile(session.id, diag);
+    const candidates = [
+      ["file", file?.json],
+      ["reply", resultsFromText(fullText)],
+      ["verdict line", (() => { const v = parseVerdict(fullText, symbol); return v.timeframes ? { timeframes: v.timeframes } : null; })()],
+    ];
+    for (const [source, raw] of candidates) {
+      if (!raw) continue;
+      const analysis = cleanAnalysis(raw);
+      if (Object.keys(analysis.timeframes).length) return { raw, analysis, source, diag, fileText: file?.text ?? null };
+      diag.push(`${source} had no recognisable timeframes (top-level keys: ${Object.keys(raw).slice(0, 8).join(", ") || "none"})`);
+    }
+    return { raw: null, analysis: { indicators_used: [], timeframes: {} }, source: null, diag, fileText: file?.text ?? null };
+  }
+
+  async function finalize(results) {
     const verdict = parseVerdict(fullText, symbol);
-    send("status", { message: "Reading Stocky's results and checking them…" });
-
-    const raw = (await readResultFile(session.id)) ?? (verdict.timeframes ? { timeframes: verdict.timeframes } : null);
-    const analysis = cleanAnalysis(raw) ?? { indicators_used: [], timeframes: {} };
+    send("status", { message: "Checking Stocky's levels against Massive data…" });
+    const { raw, analysis, source, diag } = results;
     if (!analysis.indicators_used.length) analysis.indicators_used = verdict.indicators_used;
+    saveDebug(symbol, { session: session.id, source, diag, fileText: results.fileText, reply: fullText });
 
     // Accuracy checks per timeframe, against the real candles.
     const checks = {};
     for (const tf of TIMEFRAMES) {
-      if (analysis.timeframes[tf.key] || candles[tf.key]) checks[tf.key] = validateLevels(analysis.timeframes[tf.key], candles[tf.key]);
+      if (analysis.timeframes[tf.key] || candles[tf.key]) checks[tf.key] = validateLevels(analysis.timeframes[tf.key], candles[tf.key], tf.key);
     }
 
     // Track record: score this symbol's earlier calls, then save this one.
@@ -392,7 +438,17 @@ async function analyze(symbol, send, isClosed) {
     }
 
     if (!overallSignal(verdict)) verdict.signal = analysis.timeframes["1D"]?.signal ?? verdict.signal;
-    send("verdict", { verdict, text: fullText, sessionId: session.id, analysis, checks, record, hasResultFile: Boolean(raw) });
+    send("verdict", {
+      verdict,
+      text: fullText,
+      sessionId: session.id,
+      analysis,
+      checks,
+      record,
+      hasResultFile: Boolean(raw),
+      resultSource: source,
+      diagnostics: raw ? [] : diag,
+    });
   }
 }
 
@@ -400,31 +456,64 @@ const overallSignal = (v) => v && ["BUY", "SELL", "HOLD"].includes(v.signal);
 
 // ── Stocky's results file ────────────────────────────────────────────────────
 
-// Downloads /mnt/session/outputs/stockypower.json from the session, if Stocky wrote it.
-async function readResultFile(sessionId) {
-  // Files show up in the listing a second or two after the session goes idle.
-  for (let attempt = 0; attempt < 4; attempt++) {
+// Downloads Stocky's results file from the session's outputs, if it's there.
+// Returns { json, text, filename } or null; notes what happened in diag.
+async function readResultFile(sessionId, diag = []) {
+  // Output files appear in the listing a little while after the turn ends.
+  let seen = [];
+  for (let attempt = 0; attempt < 8; attempt++) {
     try {
-      let match = null;
-      for await (const f of client.beta.files.list({ scope_id: sessionId, betas: ["managed-agents-2026-04-01"] })) {
-        if ((f.filename || "").toLowerCase() === RESULT_FILE && (!match || f.created_at > match.created_at)) match = f;
-      }
-      if (match) {
-        const r = await client.beta.files.download(match.id, { betas: ["managed-agents-2026-04-01"] });
-        const text = (await r.text()).replace(/^﻿/, "");
-        try {
-          return JSON.parse(text);
-        } catch {
-          console.error(`[result ${sessionId}] ${RESULT_FILE} is not valid JSON`);
-          return null;
+      const files = [];
+      for await (const f of client.beta.files.list({ scope_id: sessionId, betas: ["managed-agents-2026-04-01"] })) files.push(f);
+      seen = files.map((f) => f.filename);
+      const jsons = files
+        .filter((f) => /\.json$/i.test(f.filename || "") || /json/i.test(f.mime_type || ""))
+        .sort((x, y) => {
+          const pri = (f) => ((f.filename || "").toLowerCase() === RESULT_FILE ? 0 : /stockypower/i.test(f.filename) ? 1 : 2);
+          return pri(x) - pri(y) || String(y.created_at).localeCompare(String(x.created_at));
+        });
+      for (const f of jsons) {
+        const r = await client.beta.files.download(f.id, { betas: ["managed-agents-2026-04-01"] });
+        const text = await r.text();
+        const json = parseLooseJson(text);
+        if (json) {
+          console.log(`[results ${sessionId}] read ${f.filename} (${text.length} bytes)`);
+          return { json, text, filename: f.filename };
         }
+        diag.push(`${f.filename} is not valid JSON`);
       }
     } catch (err) {
-      console.error(`[result ${sessionId}]`, err);
+      console.error(`[results ${sessionId}] listing/downloading outputs failed:`, err?.message || err);
+      if (attempt === 7) diag.push(`couldn't list or download the session's files (${describeError(err)})`);
     }
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 2000));
   }
+  diag.push(seen.length ? `the session's output files were: ${seen.join(", ")}` : "the session listed no output files");
+  console.log(`[results ${sessionId}] no results file; files seen: ${seen.join(", ") || "none"}`);
   return null;
+}
+
+// Follow-up when the results didn't arrive: ask for them in the reply, too.
+function followupPrompt(symbol, diag) {
+  return [
+    `My app couldn't read your per-timeframe results (${diag.join("; ") || "no results found"}).`,
+    `Please send them again in BOTH ways:`,
+    `1. Write the JSON to ${OUTPUT_DIR}/${RESULT_FILE} (overwrite it).`,
+    `2. Also paste the same JSON in your reply, between a line containing only <<<STOCKYPOWER_JSON and a line containing only STOCKYPOWER_JSON>>>.`,
+    `Use exactly the shape from my first message, with timeframe keys ${TF_KEYS.join(", ")}.`,
+    `To keep the reply short you may limit each indicator "series" to the last 100 bars. Plain numbers only (no NaN).`,
+    `Then end with the VERDICT_JSON line again.`,
+  ].join("\n");
+}
+
+// Keeps the last run's raw output per symbol in data/, to see what Stocky sent if something's off.
+function saveDebug(symbol, info) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(path.join(DATA_DIR, `last-run-${symbol}.json`), JSON.stringify({ at: new Date().toISOString(), ...info }, null, 2));
+  } catch (err) {
+    console.error(`[debug ${symbol}]`, err?.message || err);
+  }
 }
 
 // ── HTTP ───────────────────────────────────────────────────────────────────
