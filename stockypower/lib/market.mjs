@@ -105,6 +105,72 @@ function cleanSeries(arr, valueKey) {
     .slice(-MAX_BARS);
 }
 
+// OHLC series for indicators drawn as candles (e.g. smoothed Heikin-Ashi).
+function cleanCandles(arr) {
+  if (!Array.isArray(arr)) return [];
+  const seen = new Set();
+  return arr
+    .map((p) => ({
+      t: toUnix(p?.t ?? p?.time ?? p?.date),
+      o: num(p?.o ?? p?.open),
+      h: num(p?.h ?? p?.high),
+      l: num(p?.l ?? p?.low),
+      c: num(p?.c ?? p?.close),
+    }))
+    .filter((p) => p.t !== null && [p.o, p.h, p.l, p.c].every((v) => v !== null) && !seen.has(p.t) && seen.add(p.t))
+    .map((p) => ({ ...p, h: Math.max(p.h, p.o, p.c), l: Math.min(p.l, p.o, p.c) }))
+    .sort((a, b) => a.t - b.t)
+    .slice(-MAX_BARS);
+}
+
+// Upper/lower (and optional middle) series for indicators drawn as bands.
+function cleanBand(arr) {
+  if (!Array.isArray(arr)) return [];
+  const seen = new Set();
+  return arr
+    .map((p) => ({ t: toUnix(p?.t ?? p?.time ?? p?.date), upper: num(p?.upper ?? p?.top ?? p?.u), lower: num(p?.lower ?? p?.bottom ?? p?.l), mid: num(p?.mid ?? p?.middle ?? p?.m) }))
+    .filter((p) => p.t !== null && p.upper !== null && p.lower !== null && !seen.has(p.t) && seen.add(p.t))
+    .sort((a, b) => a.t - b.t)
+    .slice(-MAX_BARS);
+}
+
+// Buy/sell events from Stocky's strategy, for markers on the chart.
+function cleanSignals(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((p) => {
+      const raw = String(p?.type ?? p?.signal ?? p?.side ?? "").toUpperCase();
+      const side = /BUY|LONG|BULL/.test(raw) ? "BUY" : /SELL|SHORT|BEAR/.test(raw) ? "SELL" : null;
+      const strong = /STRONG/.test(raw) || /strong/i.test(String(p?.strength ?? ""));
+      return { t: toUnix(p?.t ?? p?.time ?? p?.date), side, strong, label: String(p?.label ?? "").slice(0, 16) };
+    })
+    .filter((p) => p.t !== null && p.side)
+    .sort((a, b) => a.t - b.t)
+    .slice(-150);
+}
+
+const STYLES = ["line", "histogram", "baseline", "candles", "band"];
+const okColor = (c) => (typeof c === "string" && /^#[0-9a-f]{3,8}$/i.test(c) ? c : null);
+
+function cleanIndicator(ind) {
+  const style = STYLES.includes(String(ind?.style ?? "").toLowerCase()) ? String(ind.style).toLowerCase() : "line";
+  const raw = ind?.series ?? ind?.values ?? ind?.data;
+  return {
+    name: String(ind?.name ?? ind?.indicator ?? "Indicator").slice(0, 60),
+    pane: /price|overlay|main/i.test(String(ind?.pane ?? ind?.panel ?? "")) ? "price" : "separate",
+    group: ind?.group != null ? String(ind.group).slice(0, 40) : null,
+    style,
+    color: okColor(ind?.color),
+    base: num(ind?.base ?? ind?.centerline ?? ind?.center),
+    levels: (Array.isArray(ind?.levels) ? ind.levels : []).map(num).filter((v) => v !== null).slice(0, 6),
+    value: ind?.value ?? null,
+    reading: String(ind?.reading ?? ind?.signal ?? "").slice(0, 40),
+    series: style === "candles" || style === "band" ? [] : cleanSeries(raw, "v"),
+    candles: style === "candles" ? cleanCandles(raw) : [],
+    band: style === "band" ? cleanBand(raw) : [],
+  };
+}
+
 function cleanForecast(arr) {
   if (!Array.isArray(arr)) return [];
   const seen = new Set();
@@ -144,6 +210,7 @@ const FIELD_ALIASES = {
   rationale: ["rationale", "reason", "reasoning", "summary", "notes", "comment"],
   forecast: ["forecast", "forecastpath", "path", "projection", "forecasts"],
   indicators: ["indicators", "indicator"],
+  signals: ["signals", "signalevents", "events", "trades", "markers"],
 };
 
 // Flattens an object (and nested "levels"/"targets"/"stops" objects) into normalised keys.
@@ -221,13 +288,8 @@ export function cleanAnalysis(raw) {
       forecast_low: num(pick(f, "forecast_low")),
       rationale: String(pick(f, "rationale") ?? "").slice(0, 600),
       forecast: cleanForecast(pickObj(f, "forecast")),
-      indicators: inds.slice(0, 8).map((ind) => ({
-        name: String(ind?.name ?? ind?.indicator ?? "Indicator").slice(0, 60),
-        pane: /price|overlay|main/i.test(String(ind?.pane ?? ind?.panel ?? "")) ? "price" : "separate",
-        value: ind?.value ?? null,
-        reading: String(ind?.reading ?? ind?.signal ?? "").slice(0, 40),
-        series: cleanSeries(ind?.series ?? ind?.values ?? ind?.data, "v"),
-      })),
+      indicators: inds.slice(0, 10).map(cleanIndicator),
+      signals: cleanSignals(pickObj(f, "signals")),
     };
   }
   const used = raw.indicators_used ?? raw.indicatorsUsed ?? raw.indicators;

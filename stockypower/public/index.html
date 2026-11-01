@@ -62,7 +62,7 @@
   .track { margin-top: 8px; font-size: 13px; color: var(--muted); }
   .rationale { margin-top: 8px; font-size: 14px; color: var(--muted); }
 
-  .chartwrap { position: relative; margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #0d1117; }
+  .chartwrap { position: relative; margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #0d1117; }
   .chart { height: 460px; }
   .legend { position: absolute; top: 8px; left: 12px; right: 90px; z-index: 3; font-size: 12px; pointer-events: none; font-variant-numeric: tabular-nums; color: var(--muted); line-height: 1.6; }
   .legend .ttl { color: var(--text); font-weight: 600; margin-right: 10px; }
@@ -70,6 +70,10 @@
   .legend .up { color: #3fb950; } .legend .dn { color: #f85149; }
   .keys { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
   .keys i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  .chartbar { display: flex; gap: 6px; justify-content: flex-end; margin-top: 12px; min-height: 0; }
+  .chartbar:empty { display: none; }
+  .mini { padding: 3px 10px; font-size: 12px; font-weight: 500; background: var(--panel2); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; }
+  .mini.on { color: var(--text); border-color: var(--accent); }
   .nochart { padding: 40px 16px; text-align: center; color: var(--muted); }
 
   .tablewrap { overflow-x: auto; margin-top: 16px; }
@@ -171,6 +175,7 @@ function newCard(symbol) {
     <div class="checksbox"></div>
     <div class="track"></div>
     <div class="rationale"></div>
+    <div class="chartbar"></div>
     <div class="chartwrap"><div class="legend"></div><div class="chart"><div class="nochart">Loading candles…</div></div></div>
     <div class="keys"></div>
     <div class="tablewrap"></div>
@@ -312,11 +317,86 @@ function drawChart(st) {
   }
 }
 
+// Turns Stocky's indicators into drawing instructions. Also recognises the
+// older format (plain lines) so Heikin-Ashi and RSI still draw properly.
+function planIndicators(a, bars) {
+  const inds = (a?.indicators || []).map((x) => ({ ...x, levels: [...(x.levels || [])], series: x.series || [], candles: x.candles || [], band: x.band || [] }));
+
+  // Heikin-Ashi sent as separate "Open" and "Close" lines -> HA candles.
+  let ha = inds.find((i) => i.style === "candles" && i.candles.length);
+  if (!ha) {
+    const isHA = (i) => /heikin|heiken/i.test(i.name) && i.series.length;
+    const op = inds.find((i) => isHA(i) && /open/i.test(i.name));
+    const cl = inds.find((i) => isHA(i) && /close/i.test(i.name));
+    if (op && cl) {
+      const opens = new Map(op.series.map((p) => [p.t, p.v]));
+      const real = new Map(bars.map((b) => [b.t, b]));
+      const candles = cl.series.filter((p) => opens.has(p.t)).map((p) => {
+        const o = opens.get(p.t), c = p.v, b = real.get(p.t);
+        return { t: p.t, o, c, h: Math.max(o, c, b ? b.h : -Infinity), l: Math.min(o, c, b ? b.l : Infinity) };
+      });
+      ha = { name: "Smoothed Heikin-Ashi", pane: "price", style: "candles", candles, reading: cl.reading || op.reading, levels: [], series: [], band: [] };
+      inds.splice(inds.indexOf(op), 1);
+      inds.splice(inds.indexOf(cl), 1);
+      inds.unshift(ha);
+    }
+  }
+
+  for (const i of inds) {
+    // RSI-type oscillators without a style -> filled around their centre line.
+    if (i.pane === "separate" && i.style === "line" && /rsi/i.test(i.name) && !/signal|%d|smooth/i.test(i.name) && i.series.length) {
+      const vals = i.series.map((p) => p.v);
+      const lo = Math.min(...vals), hi = Math.max(...vals);
+      if (lo >= -1 && hi <= 101) {
+        i.style = "baseline";
+        if (i.base == null) i.base = 50;
+        if (!i.levels.length) i.levels = /ultra/i.test(i.name) ? [80, 20] : [70, 30];
+      } else if (lo < 0 && hi > 0) {
+        i.style = "baseline";
+        if (i.base == null) i.base = 0;
+      }
+    }
+    // Panel grouping: "X signal", "X %D", "X histogram" share X's panel.
+    if (!i.group) {
+      const m = i.name.match(/^(.*?)\s*[-–:]?\s*(signal(\s*line)?|%d|%k|line|fast|slow|histogram|hist)$/i);
+      i.group = (m && m[1] ? m[1] : i.name).trim().toLowerCase();
+    }
+  }
+
+  const overlays = inds.filter((i) => i.pane === "price" && i !== ha && (i.series.length || i.band.length));
+  const groups = [];
+  for (const i of inds.filter((x) => x.pane === "separate" && (x.series.length || x.band.length))) {
+    let g = groups.find((x) => x.key === i.group);
+    if (!g) groups.push((g = { key: i.group, items: [] }));
+    g.items.push(i);
+  }
+  return { ha: ha && ha.candles.length ? ha : null, overlays, panels: groups.slice(0, 3) };
+}
+
+// Smoothed-HA colours: strong up green, fading up yellow, fading down purple, strong down red.
+function haColor(cur, prev) {
+  const up = cur.c >= cur.o;
+  const body = Math.abs(cur.c - cur.o);
+  const prevBody = prev ? Math.abs(prev.c - prev.o) : 0;
+  if (up) return body >= prevBody ? "#2fbf71" : "#d4b72c";
+  return body >= prevBody ? "#e5534b" : "#9d6ff0";
+}
+
 function renderChart(st, el, legend, bars, a, LW) {
   const intraday = ["15m", "1h", "4h"].includes(st.tf);
-  const panelInds = (a?.indicators || []).filter((i) => i.pane === "separate" && i.series.length).slice(0, 3);
-  const overlayInds = (a?.indicators || []).filter((i) => i.pane === "price" && i.series.length);
-  el.style.height = `${400 + panelInds.length * 120}px`;
+  const plan = planIndicators(a, bars);
+  const useHA = Boolean(plan.ha) && st.candleMode !== "regular";
+  el.style.height = `${430 + plan.panels.length * 130}px`;
+
+  // Candle-type toggle (only when Stocky sent Heikin-Ashi).
+  const bar = $(".chartbar", st.card);
+  bar.innerHTML = plan.ha
+    ? `<button class="mini ${useHA ? "on" : ""}" data-mode="ha">Smoothed Heikin-Ashi</button><button class="mini ${useHA ? "" : "on"}" data-mode="regular">Regular candles</button>`
+    : "";
+  bar.onclick = (ev) => {
+    const b = ev.target.closest(".mini");
+    if (b) { st.candleMode = b.dataset.mode; drawChart(st); }
+  };
 
   const chart = LW.createChart(el, {
     autoSize: true,
@@ -329,7 +409,7 @@ function renderChart(st, el, legend, bars, a, LW) {
       panes: { separatorColor: "#30363d", separatorHoverColor: "rgba(56,139,253,0.25)", enableResize: false },
     },
     grid: { vertLines: { visible: false }, horzLines: { color: "#161b22" } },
-    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.08 } },
+    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.22 } },
     timeScale: { borderVisible: false, timeVisible: intraday, secondsVisible: false, rightOffset: 6, fixLeftEdge: true },
     crosshair: {
       mode: LW.CrosshairMode.Normal,
@@ -338,115 +418,203 @@ function renderChart(st, el, legend, bars, a, LW) {
     },
   });
   st.chart = chart;
+  const lastClose = bars[bars.length - 1].c;
+  const pricePrecision = lastClose < 1 ? { type: "price", precision: 4, minMove: 0.0001 } : { type: "price", precision: 2, minMove: 0.01 };
+  const two = { type: "price", precision: 2, minMove: 0.01 };
+  const quiet = { priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
 
-  // Pane 0: candles, overlay indicators, forecast, levels.
-  const candle = chart.addSeries(LW.CandlestickSeries, {
+  // ── Price pane ──
+  const real = cleanPoints(bars.map((b) => ({ time: toET(b.t), open: b.o, high: b.h, low: b.l, close: b.c, _v: b.v })));
+  let mainData;
+  if (useHA) {
+    const pts = cleanPoints(plan.ha.candles.map((p) => ({ time: toET(p.t), open: p.o, high: p.h, low: p.l, close: p.c })));
+    mainData = pts.map((p, i) => {
+      const color = haColor({ o: p.open, c: p.close }, i ? { o: pts[i - 1].open, c: pts[i - 1].close } : null);
+      return { ...p, color, wickColor: color, borderColor: color };
+    });
+  } else {
+    mainData = real.map(({ _v, ...p }) => p);
+  }
+  const main = chart.addSeries(LW.CandlestickSeries, {
     upColor: "#26a641", downColor: "#e5534b", borderVisible: false, wickUpColor: "#26a641", wickDownColor: "#e5534b",
-    priceLineColor: "#8b949e", priceLineStyle: LW.LineStyle.Dotted,
-    // Penny stocks need 4 decimals; everything else 2.
-    priceFormat: { type: "price", precision: bars[bars.length - 1].c < 1 ? 4 : 2, minMove: bars[bars.length - 1].c < 1 ? 0.0001 : 0.01 },
+    priceLineColor: "#8b949e", priceLineStyle: LW.LineStyle.Dotted, priceFormat: pricePrecision,
   });
-  const cdata = cleanPoints(bars.map((b) => ({ time: toET(b.t), open: b.o, high: b.h, low: b.l, close: b.c })));
-  candle.setData(cdata);
+  main.setData(mainData);
+
+  // Volume along the bottom of the price pane.
+  if (real.some((p) => p._v > 0)) {
+    const vol = chart.addSeries(LW.HistogramSeries, { ...quiet, priceScaleId: "vol", priceFormat: { type: "volume" } });
+    vol.priceScale().applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
+    const t0 = mainData.length ? mainData[0].time : -Infinity; // keep volume to the candles' range
+    vol.setData(real.filter((p) => p.time >= t0).map((p) => ({ time: p.time, value: p._v, color: p.close >= p.open ? "rgba(38,166,154,0.35)" : "rgba(239,83,80,0.35)" })));
+  }
 
   const keys = [];
   const legendSeries = [];
-  overlayInds.forEach((ind, i) => {
-    const color = IND_COLORS[i % IND_COLORS.length];
-    const s = chart.addSeries(LW.LineSeries, { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-    s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))));
-    keys.push(`<span><i style="background:${color}"></i>${esc(ind.name)}${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
-    legendSeries.push([ind.name, s, color]);
-  });
+  if (useHA) keys.push(`<span><i style="background:linear-gradient(90deg,#2fbf71,#d4b72c,#9d6ff0,#e5534b)"></i>${esc(plan.ha.name)} candles${plan.ha.reading ? ` · ${esc(plan.ha.reading)}` : ""}</span>`);
 
-  // Forecast: dashed expected path plus a faint range, starting at the last candle.
+  let colorIdx = 0;
+  const nextColor = (c) => c || IND_COLORS[colorIdx++ % IND_COLORS.length];
+  for (const ind of plan.overlays) {
+    const color = nextColor(ind.color);
+    if (ind.style === "band" && ind.band.length) {
+      for (const k of ["upper", "lower"]) {
+        chart.addSeries(LW.LineSeries, { ...quiet, color: color + "99", lineWidth: 1 }).setData(cleanPoints(ind.band.map((p) => ({ time: toET(p.t), value: p[k] }))));
+      }
+      if (ind.band.some((p) => p.mid != null))
+        chart.addSeries(LW.LineSeries, { ...quiet, color: color + "66", lineWidth: 1, lineStyle: LW.LineStyle.Dashed }).setData(cleanPoints(ind.band.filter((p) => p.mid != null).map((p) => ({ time: toET(p.t), value: p.mid }))));
+    } else {
+      const s = chart.addSeries(LW.LineSeries, { ...quiet, color, lineWidth: 2 });
+      s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))));
+      legendSeries.push([ind.name, s, color]);
+    }
+    keys.push(`<span><i style="background:${color}"></i>${esc(ind.name)}${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
+  }
+
+  // Forecast continues from the last real close.
   const fc = a?.forecast || [];
-  const lastBar = cdata[cdata.length - 1];
-  if (fc.length && lastBar) {
+  const anchor = real[real.length - 1];
+  if (fc.length && anchor) {
     const color = a.signal === "SELL" ? "#f85149" : a.signal === "BUY" ? "#3fb950" : "#d29922";
     const mk = (key) =>
-      cleanPoints([{ time: lastBar.time, value: lastBar.close }, ...fc.filter((p) => p[key] != null).map((p) => ({ time: toET(p.t), value: p[key] }))])
-        .filter((p) => p.time >= lastBar.time);
-    const opts = { priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+      cleanPoints([{ time: anchor.time, value: anchor.close }, ...fc.filter((p) => p[key] != null).map((p) => ({ time: toET(p.t), value: p[key] }))]).filter((p) => p.time >= anchor.time);
     for (const key of ["high", "low"]) {
       const d = mk(key);
-      if (d.length > 1) chart.addSeries(LW.LineSeries, { ...opts, color: color + "66", lineWidth: 1, lineStyle: LW.LineStyle.Dotted }).setData(d);
+      if (d.length > 1) chart.addSeries(LW.LineSeries, { ...quiet, color: color + "66", lineWidth: 1, lineStyle: LW.LineStyle.Dotted }).setData(d);
     }
     const path = mk("price");
-    if (path.length > 1) {
-      const s = chart.addSeries(LW.LineSeries, { ...opts, color, lineWidth: 2, lineStyle: LW.LineStyle.Dashed });
-      s.setData(path);
-      legendSeries.push(["Forecast", s, color]);
-    }
+    if (path.length > 1) chart.addSeries(LW.LineSeries, { ...quiet, color, lineWidth: 2, lineStyle: LW.LineStyle.Dashed }).setData(path);
     keys.push(`<span><i style="background:${color}"></i>Forecast path · range dotted</span>`);
   }
 
-  // Targets, stops and next-bar forecast high/low as labelled levels.
+  // Targets and stops (dashed, labelled), forecast high/low (dotted, no tag).
   if (a) {
     const levels = [
-      ["T2", a.target2, "#56d364", LW.LineStyle.Solid], ["T1", a.target1, "#3fb950", LW.LineStyle.Solid],
-      ["FH", a.forecast_high, "#58a6ff", LW.LineStyle.Dashed, false], ["FL", a.forecast_low, "#a371f7", LW.LineStyle.Dashed, false],
-      ["SL1", a.stop1, "#f85149", LW.LineStyle.Solid], ["SL2", a.stop2, "#ff7b72", LW.LineStyle.Solid],
+      ["TP2", a.target2, "#56d364", LW.LineStyle.Dashed, true], ["TP1", a.target1, "#3fb950", LW.LineStyle.Dashed, true],
+      ["", a.forecast_high, "#58a6ff", LW.LineStyle.Dotted, false], ["", a.forecast_low, "#a371f7", LW.LineStyle.Dotted, false],
+      ["SL1", a.stop1, "#f85149", LW.LineStyle.Dashed, true], ["SL2", a.stop2, "#ff7b72", LW.LineStyle.Dashed, true],
     ];
-    // FH/FL have no axis tag (their values are in the boxes above), so tags never pile up.
-    for (const [title, price, color, lineStyle, tag = true] of levels) {
-      if (Number.isFinite(price)) candle.createPriceLine({ price, color, lineWidth: 1, lineStyle, axisLabelVisible: tag, title: tag ? title : "", lineVisible: true });
+    for (const [title, price, color, lineStyle, tag] of levels) {
+      if (Number.isFinite(price)) main.createPriceLine({ price, color, lineWidth: 1, lineStyle, axisLabelVisible: tag, title, lineVisible: true });
     }
-    keys.push(`<span><i style="background:#3fb950"></i>T1 / T2 targets</span><span><i style="background:#f85149"></i>SL1 / SL2 stops</span><span><i style="background:#58a6ff"></i>FH / FL forecast high / low (${esc(SHORT_NEXT[st.tf] || "next bar")})</span>`);
+    keys.push(`<span><i style="background:#3fb950"></i>TP1 / TP2 targets</span><span><i style="background:#f85149"></i>SL1 / SL2 stops</span><span><i style="background:#58a6ff"></i>Forecast high / low (${esc(SHORT_NEXT[st.tf] || "next bar")}, dotted)</span>`);
   }
 
-  // Panel indicators (e.g. RSI, MACD): one pane each, with their own scale.
-  panelInds.forEach((ind, i) => {
-    const color = IND_COLORS[(overlayInds.length + i) % IND_COLORS.length];
-    const s = chart.addSeries(LW.LineSeries, { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false, priceFormat: { type: "price", precision: 2, minMove: 0.01 } }, i + 1);
-    s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))));
-    keys.push(`<span><i style="background:${color}"></i>${esc(ind.name)} (panel ${i + 1})${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
-    legendSeries.push([ind.name, s, color]);
+  // Stocky's buy/sell signals as labelled markers.
+  const sigs = a?.signals || [];
+  if (sigs.length && LW.createSeriesMarkers) {
+    const times = new Set(mainData.map((p) => p.time));
+    const markers = sigs
+      .map((sg) => ({ ...sg, time: toET(sg.t) }))
+      .filter((sg) => times.has(sg.time))
+      .map((sg) => ({
+        time: sg.time,
+        position: sg.side === "BUY" ? "belowBar" : "aboveBar",
+        shape: sg.side === "BUY" ? "arrowUp" : "arrowDown",
+        color: sg.side === "BUY" ? (sg.strong ? "#2ea043" : "#3fb950") : sg.strong ? "#da3633" : "#f85149",
+        text: sg.label || `${sg.strong ? "Strong " : ""}${sg.side === "BUY" ? "Buy" : "Sell"}`,
+        size: sg.strong ? 1.4 : 1,
+      }));
+    if (markers.length) {
+      LW.createSeriesMarkers(main, markers);
+      keys.push(`<span><i style="background:#3fb950"></i>Stocky's buy / sell signals</span>`);
+    }
+  }
+
+  // Panel scales always include the centre line and threshold levels.
+  const includeLevels = (extra) => (original) => {
+    const r = original();
+    if (!r || !extra.length) return r;
+    return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...extra), maxValue: Math.max(r.priceRange.maxValue, ...extra) } };
+  };
+
+  // ── Indicator panels ──
+  plan.panels.forEach((g, gi) => {
+    const paneIdx = gi + 1;
+    let title = g.items[0].name;
+    for (const ind of g.items) {
+      const color = nextColor(ind.color);
+      let s;
+      if (ind.style === "baseline") {
+        const base = ind.base ?? 0;
+        s = chart.addSeries(LW.BaselineSeries, {
+          ...quiet, lastValueVisible: true, priceFormat: two, lineWidth: 1,
+          baseValue: { type: "price", price: base },
+          autoscaleInfoProvider: includeLevels([base, ...ind.levels]),
+          topLineColor: "#2ea043", topFillColor1: "rgba(46,160,67,0.55)", topFillColor2: "rgba(46,160,67,0.08)",
+          bottomLineColor: "#da3633", bottomFillColor1: "rgba(218,54,51,0.08)", bottomFillColor2: "rgba(218,54,51,0.55)",
+        }, paneIdx);
+        s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))));
+        s.createPriceLine({ price: base, color: "#6e7681", lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: false, title: "" });
+      } else if (ind.style === "histogram") {
+        const base = ind.base ?? 0;
+        s = chart.addSeries(LW.HistogramSeries, { ...quiet, lastValueVisible: true, priceFormat: two, base }, paneIdx);
+        s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))).map((p) => ({ ...p, color: p.value >= base ? "rgba(46,160,67,0.8)" : "rgba(218,54,51,0.8)" })));
+      } else if (ind.style === "band" && ind.band.length) {
+        for (const k of ["upper", "lower"]) {
+          chart.addSeries(LW.LineSeries, { ...quiet, color: color + "99", lineWidth: 1, priceFormat: two }, paneIdx).setData(cleanPoints(ind.band.map((p) => ({ time: toET(p.t), value: p[k] }))));
+        }
+        keys.push(`<span><i style="background:${color}"></i>${esc(ind.name)}</span>`);
+        continue;
+      } else {
+        s = chart.addSeries(LW.LineSeries, { ...quiet, lastValueVisible: true, color, lineWidth: g.items.length > 1 && ind !== g.items[0] ? 1 : 2, priceFormat: two, autoscaleInfoProvider: includeLevels(ind.levels) }, paneIdx);
+        s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))));
+      }
+      for (const lv of ind.levels) {
+        const above = ind.base != null ? lv > ind.base : lv >= 50;
+        s.createPriceLine({ price: lv, color: above ? "#2ea043" : "#da3633", lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: true, title: "" });
+      }
+      const swatch = ind.style === "baseline" || ind.style === "histogram" ? "linear-gradient(90deg,#2ea043 50%,#da3633 50%)" : color;
+      legendSeries.push([ind.name, s, ind.style === "baseline" || ind.style === "histogram" ? "#c9d1d9" : color]);
+      keys.push(`<span><i style="background:${swatch}"></i>${esc(ind.name)} (panel ${paneIdx})${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
+      if (ind !== g.items[0]) title += ` · ${ind.name}`;
+    }
+    const pane = chart.panes()[paneIdx];
+    if (pane && LW.createTextWatermark) {
+      const reading = g.items[0].reading ? `  ·  ${g.items[0].reading}` : "";
+      LW.createTextWatermark(pane, { horzAlign: "left", vertAlign: "top", lines: [{ text: title + reading, color: "#8b949e", fontSize: 12 }] });
+    }
   });
   const panes = chart.panes();
   panes[0].setStretchFactor(3);
   for (let i = 1; i < panes.length; i++) panes[i].setStretchFactor(1);
-  // Name each indicator panel in its own colour, so it's clear what each line is.
-  panelInds.forEach((ind, i) => {
-    const pane = panes[i + 1];
-    if (!pane || !LW.createTextWatermark) return;
-    const color = IND_COLORS[(overlayInds.length + i) % IND_COLORS.length];
-    LW.createTextWatermark(pane, {
-      horzAlign: "left",
-      vertAlign: "top",
-      lines: [{ text: `${ind.name}${ind.reading ? `  ·  ${ind.reading}` : ""}`, color, fontSize: 12 }],
-    });
-  });
 
   $(".keys", st.card).innerHTML = keys.join("");
 
-  // Header legend: always shows the latest bar; follows the crosshair on hover.
+  // Header: always the latest bar; follows the crosshair on hover.
   const tfLabel = (st.tfs.find((t) => t.key === st.tf) || {}).label || st.tf;
+  const realByTime = new Map(real.map((p) => [p.time, p]));
   const header = (c, prev, vals) => {
     if (!c) return "";
-    const ch = prev ? c.close - prev.close : null;
-    const chs = ch == null ? "" : `<span class="${ch >= 0 ? "up" : "dn"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)} (${pct(c.close, prev.close)})</span>`;
-    let h = `<span class="ttl">${esc(st.symbol)} · ${esc(tfLabel)}</span><span>O ${fmt(c.open)}</span><span>H ${fmt(c.high)}</span><span>L ${fmt(c.low)}</span><span>C ${fmt(c.close)}</span>${chs}<br>`;
+    const r = realByTime.get(c.time) || c;
+    const rPrev = prev ? realByTime.get(prev.time) || prev : null;
+    const ch = rPrev ? r.close - rPrev.close : null;
+    const chs = ch == null ? "" : `<span class="${ch >= 0 ? "up" : "dn"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)} (${pct(r.close, rPrev.close)})</span>`;
+    let h = `<span class="ttl">${esc(st.symbol)} · ${esc(tfLabel)}</span><span>O ${fmt(r.open)}</span><span>H ${fmt(r.high)}</span><span>L ${fmt(r.low)}</span><span>C ${fmt(r.close)}</span>${chs}`;
+    if (useHA) h += `<span style="color:${c.color || "#8b949e"}">HA ${fmt(c.open)} → ${fmt(c.close)}</span>`;
+    h += "<br>";
     for (const [name, , color, v] of vals) if (v != null) h += `<span style="color:${color}">${esc(name)} ${fmt(v)}</span>`;
     return h;
   };
-  const lastVals = () => legendSeries.map(([n, s, c]) => {
-    const d = s.data();
-    return [n, s, c, d.length ? d[d.length - 1].value : null];
-  });
-  const showLatest = () => (legend.innerHTML = header(cdata[cdata.length - 1], cdata[cdata.length - 2], lastVals().filter(([n]) => n !== "Forecast")));
+  const latestVals = () => legendSeries.map(([n, s, c]) => { const d = s.data(); return [n, s, c, d.length ? d[d.length - 1].value : null]; });
+  const showLatest = () => (legend.innerHTML = header(mainData[mainData.length - 1], mainData[mainData.length - 2], latestVals()));
   showLatest();
   chart.subscribeCrosshairMove((param) => {
     if (!param.time || !param.point) return showLatest();
-    const c = param.seriesData.get(candle);
-    const idx = c ? cdata.findIndex((x) => x.time === param.time) : -1;
+    const c = param.seriesData.get(main);
+    if (!c) return showLatest();
+    const idx = mainData.findIndex((x) => x.time === param.time);
     const vals = legendSeries.map(([n, s, col]) => [n, s, col, param.seriesData.get(s)?.value ?? null]);
-    legend.innerHTML = c ? header(c, idx > 0 ? cdata[idx - 1] : null, vals) : header(cdata[cdata.length - 1], cdata[cdata.length - 2], vals);
+    legend.innerHTML = header({ ...c, color: mainData[idx]?.color }, idx > 0 ? mainData[idx - 1] : null, vals);
   });
 
-  // Show roughly the last 120 bars plus the forecast.
-  const total = cdata.length + Math.max(0, fc.length);
-  chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, total - 130), to: total + 2 });
+  // Open on the last ~130 candles plus the forecast (by time, so other series can't shift it).
+  if (mainData.length) {
+    const from = mainData[Math.max(0, mainData.length - 130)].time;
+    const fcTimes = fc.map((p) => toET(p.t)).filter(Number.isFinite);
+    const to = Math.max(mainData[mainData.length - 1].time, ...fcTimes);
+    chart.timeScale().setVisibleRange({ from, to });
+  }
 }
 
 // ── Confirmations ──────────────────────────────────────────────────────────
