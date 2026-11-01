@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stockypower</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+    --buy: #2ea043; --sell: #da3633; --hold: #9e6a03; --accent: #388bfd;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 28px 20px 8px; text-align: center; }
+  header h1 { margin: 0; font-size: 30px; letter-spacing: .5px; }
+  header h1 span { color: var(--accent); }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main { max-width: 860px; margin: 0 auto; padding: 16px 20px 60px; }
+  form { display: flex; gap: 10px; margin: 16px 0 24px; }
+  input[type=text] {
+    flex: 1; padding: 14px 16px; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;
+    background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px; outline: none;
+  }
+  input[type=text]:focus { border-color: var(--accent); }
+  button { cursor: pointer; border: 0; border-radius: 10px; font-weight: 600; }
+  .primary { padding: 0 26px; font-size: 17px; background: var(--accent); color: #fff; }
+  .primary:disabled { opacity: .5; cursor: default; }
+  .history { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+  .chip { padding: 4px 10px; border-radius: 999px; font-size: 13px; background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+  .chip b.BUY { color: var(--buy); } .chip b.SELL { color: var(--sell); } .chip b.HOLD { color: var(--hold); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; }
+  .card-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .sym { font-size: 26px; font-weight: 700; letter-spacing: 1px; }
+  .badge { padding: 6px 18px; border-radius: 8px; font-size: 22px; font-weight: 800; color: #fff; }
+  .badge.BUY { background: var(--buy); } .badge.SELL { background: var(--sell); } .badge.HOLD { background: var(--hold); }
+  .badge.pending { background: #30363d; color: var(--muted); font-size: 15px; font-weight: 600; }
+  .meta { color: var(--muted); font-size: 13px; margin-left: auto; text-align: right; }
+  .summary { margin: 12px 0 0; font-size: 16px; }
+  .status { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .status::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1s infinite alternate; }
+  .status.done::before { animation: none; background: var(--muted); }
+  @keyframes pulse { from { opacity: .3 } to { opacity: 1 } }
+  .error { color: #ff7b72; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  td.bullish { color: var(--buy); } td.bearish { color: var(--sell); } td.neutral { color: var(--muted); }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  pre { white-space: pre-wrap; word-wrap: break-word; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); padding: 12px; border-radius: 8px; max-height: 420px; overflow: auto; }
+  .confirm { margin-top: 12px; padding: 12px; border: 1px solid var(--hold); border-radius: 10px; background: #1f1a0e; }
+  .confirm pre { max-height: 160px; }
+  .confirm button { padding: 6px 16px; margin-right: 8px; }
+  .allow { background: var(--buy); color: #fff; } .deny { background: var(--sell); color: #fff; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Stocky<span>power</span></h1>
+  <p>Enter a symbol. Stocky checks its historical data and indicators and tells you whether to buy or sell.</p>
+</header>
+
+<main>
+  <form id="form" autocomplete="off">
+    <input id="symbol" type="text" placeholder="AAPL" maxlength="10" required autofocus />
+    <button class="primary" id="go" type="submit">Ask Stocky</button>
+  </form>
+
+  <div class="history" id="history"></div>
+  <div id="results"></div>
+</main>
+
+<footer>Signals come from the Stocky agent's indicators. Not financial advice.</footer>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const HISTORY_KEY = "stockypower.history";
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; }
+}
+function saveHistory(entry) {
+  const h = loadHistory().filter((e) => e.symbol !== entry.symbol);
+  h.unshift(entry);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 30)));
+  renderHistory();
+}
+function renderHistory() {
+  const h = loadHistory();
+  $("#history").innerHTML = h.map((e) =>
+    `<button class="chip" data-sym="${esc(e.symbol)}" title="${esc(new Date(e.at).toLocaleString())}">${esc(e.symbol)} <b class="${esc(e.signal)}">${esc(e.signal)}</b></button>`
+  ).join("");
+}
+$("#history").addEventListener("click", (ev) => {
+  const chip = ev.target.closest(".chip");
+  if (chip) { $("#symbol").value = chip.dataset.sym; $("#form").requestSubmit(); }
+});
+
+function newCard(symbol) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `
+    <div class="card-head">
+      <div class="sym">${esc(symbol)}</div>
+      <div class="badge pending">Analyzing…</div>
+      <div class="meta"></div>
+    </div>
+    <div class="summary"></div>
+    <div class="indicators"></div>
+    <div class="confirms"></div>
+    <div class="status">Connecting…</div>
+    <details><summary>Stocky's full analysis</summary><pre class="raw"></pre></details>`;
+  $("#results").prepend(card);
+  return card;
+}
+
+function renderVerdict(card, symbol, verdict) {
+  const badge = $(".badge", card);
+  if (!verdict) {
+    badge.className = "badge pending";
+    badge.textContent = "No clear call";
+    $(".summary", card).textContent = "Stocky didn't return a BUY or SELL signal. See the full analysis below.";
+    $("details", card).open = true;
+    return;
+  }
+  badge.className = `badge ${verdict.signal}`;
+  badge.textContent = verdict.signal;
+  const meta = [];
+  if (verdict.confidence != null) meta.push(`Confidence ${verdict.confidence}%`);
+  if (verdict.price != null) meta.push(`Last ${esc(verdict.price)}`);
+  if (verdict.as_of) meta.push(`as of ${esc(verdict.as_of)}`);
+  $(".meta", card).innerHTML = meta.join("<br>");
+  $(".summary", card).textContent = verdict.summary || "";
+  if (verdict.indicators?.length) {
+    $(".indicators", card).innerHTML = `<table><thead><tr><th>Indicator</th><th>Value</th><th>Reading</th></tr></thead><tbody>${
+      verdict.indicators.map((i) => {
+        const r = String(i.reading || "").toLowerCase();
+        return `<tr><td>${esc(i.name)}</td><td>${esc(i.value)}</td><td class="${esc(r)}">${esc(i.reading)}</td></tr>`;
+      }).join("")
+    }</tbody></table>`;
+  }
+  if (!verdict.structured) $("details", card).open = true;
+  saveHistory({ symbol, signal: verdict.signal, at: Date.now() });
+}
+
+function showConfirm(card, data) {
+  const box = document.createElement("div");
+  box.className = "confirm";
+  box.innerHTML = `
+    <div>Stocky wants to run <b>${esc(data.name)}</b>. Allow it?</div>
+    ${data.input ? `<pre>${esc(JSON.stringify(data.input, null, 2))}</pre>` : ""}
+    <button class="allow">Allow</button><button class="deny">Deny</button>`;
+  const answer = async (result) => {
+    box.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    await fetch("/api/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: data.sessionId, toolUseId: data.toolUseId, result }),
+    });
+    box.innerHTML = `<div>${result === "allow" ? "Allowed" : "Denied"}: ${esc(data.name)}</div>`;
+  };
+  $(".allow", box).onclick = () => answer("allow");
+  $(".deny", box).onclick = () => answer("deny");
+  $(".confirms", card).append(box);
+}
+
+async function analyze(symbol) {
+  const card = newCard(symbol);
+  const status = $(".status", card);
+  const raw = $(".raw", card);
+  const setStatus = (m) => (status.textContent = m);
+
+  const res = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbol }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    $(".badge", card).textContent = "Error";
+    status.className = "error";
+    status.textContent = err.error;
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let gotVerdict = false;
+
+  const handle = (event, data) => {
+    switch (event) {
+      case "status": setStatus(data.message); break;
+      case "session": card.dataset.session = data.id; break;
+      case "tool": setStatus(`Stocky is using ${data.name}…`); break;
+      case "text": raw.textContent += (raw.textContent ? "\n" : "") + data.text; break;
+      case "confirm": setStatus("Waiting for your approval…"); showConfirm(card, data); break;
+      case "verdict":
+        gotVerdict = true;
+        raw.textContent = data.text || raw.textContent;
+        renderVerdict(card, symbol, data.verdict);
+        break;
+      case "error": {
+        $(".badge", card).className = "badge pending";
+        $(".badge", card).textContent = "Error";
+        const e = document.createElement("div");
+        e.className = "error";
+        e.textContent = data.message;
+        status.after(e);
+        break;
+      }
+      case "done":
+        status.className = "status done";
+        setStatus(gotVerdict ? `Done · session ${card.dataset.session || ""}` : "Finished");
+        break;
+    }
+  };
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) !== -1) {
+      const chunk = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      let ev = "message", data = "";
+      for (const line of chunk.split("\n")) {
+        if (line.startsWith("event: ")) ev = line.slice(7);
+        else if (line.startsWith("data: ")) data += line.slice(6);
+      }
+      if (data) { try { handle(ev, JSON.parse(data)); } catch (e) { console.error(e); } }
+    }
+  }
+}
+
+$("#form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const symbol = $("#symbol").value.trim().toUpperCase().replace(/^\$/, "");
+  if (!symbol) return;
+  $("#symbol").value = "";
+  try { await analyze(symbol); } catch (e) { console.error(e); }
+});
+
+renderHistory();
+</script>
+</body>
+</html>
