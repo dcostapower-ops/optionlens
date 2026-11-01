@@ -74,6 +74,17 @@ function waitForConfirmation(key, isClosed) {
 // ── Market data (all timeframes) ─────────────────────────────────────────────
 
 const RESULT_FILE = "stockypower.json";
+
+// The two indicators the user configured Stocky with, exactly as set in their
+// TradingView layout (inputs listed in TradingView's order).
+const STRATEGY = [
+  `STRATEGY - use these two indicators JOINTLY, with exactly these TradingView settings (inputs in TradingView's order):`,
+  `- "Smoothed HA" (smoothed Heikin-Ashi): 12, Exponential, 6, 0.85, 3, Exponential, 6, 0.85.`,
+  `- "Ultra RSI [DW]": source close, 12, EMA, Standard, Default, 0.85, 6, 0.666, 0.0645, overbought 75, oversold 25, 0.75.`,
+  `  It shows green crests and red troughs around its centre line.`,
+  `Calculate both on each timeframe's own bars. BUY or SELL for a timeframe must come from both indicators read together;`,
+  `state the joint rule you applied in the rationale. Report these settings in each indicator's "settings".`,
+];
 const UPLOAD_ROOT = "/mnt/session/uploads/data";
 
 // Candles for every timeframe from Massive. Missing timeframes are skipped, not fatal.
@@ -133,9 +144,11 @@ function buildPrompt(symbol, candles, mounted) {
   }
 
   lines.push(
-    `FOR EACH TIMEFRAME, using that timeframe's bars and the indicators you were programmed to use:`,
-    `1. Compute your indicators on that timeframe's bars.`,
-    `2. Decide BUY or SELL for that timeframe, with a confidence 0-100.`,
+    ...STRATEGY,
+    ``,
+    `FOR EACH TIMEFRAME, using that timeframe's bars:`,
+    `1. Compute Smoothed HA and Ultra RSI [DW] on that timeframe's bars with the settings above.`,
+    `2. Decide BUY or SELL for that timeframe from both indicators together, with a confidence 0-100.`,
     `3. Calculate Target 1, Target 2, Stop loss 1 and Stop loss 2 from your indicators, using support/resistance and ATR.`,
     `4. Calculate the forecast high: the highest price ${symbol} is likely to reach during the NEXT bar of that timeframe`,
     `   (${TIMEFRAMES.map((t) => `${t.key}: ${t.next}`).join("; ")}), plus the forecast low for that same period.`,
@@ -159,7 +172,7 @@ function buildPrompt(symbol, candles, mounted) {
     `      "rationale": "one or two sentences",`,
     `      "forecast": [{"t": <unix seconds of a future bar>, "price": n, "low": n, "high": n}, ... 10 points],`,
     `      "indicators": [ <one entry per indicator; see INDICATOR FORMAT below> ],`,
-    `      "signals": [{"t": <unix seconds of the bar>, "type": "BUY" | "SELL" | "STRONG BUY" | "STRONG SELL", "label": "optional short text"}, ... your strategy's signal events in the last 150 bars]`,
+    `      "signals": [{"t": <unix seconds of the bar>, "type": "BUY" | "SELL" | "STRONG BUY" | "STRONG SELL", "label": "optional short text"}, ... every bar in the last 150 where your joint Smoothed HA + Ultra RSI rule fired]`,
     `    }`,
     `  }`,
     `}`,
@@ -180,7 +193,7 @@ function buildPrompt(symbol, candles, mounted) {
     ` "series": the last 150 bars, matching the bars' t values:`,
     `    line / histogram / baseline: [{"t": n, "v": n}]   candles: [{"t": n, "o": n, "h": n, "l": n, "c": n}]   band: [{"t": n, "upper": n, "lower": n, "mid": n}]}`,
     `Specifically: Smoothed Heikin-Ashi -> pane "price", style "candles" with its smoothed o/h/l/c per bar (my app shows it in place of the regular candles).`,
-    `Ultra RSI -> pane "separate", style "baseline" with its centre line as "base" and its overbought/oversold lines as "levels";`,
+    `Ultra RSI [DW] -> pane "separate", style "baseline" with its centre line as "base" and levels [75, 25];`,
     `put its signal line, if it has one, in the same "group" as style "line". Any channel/cloud -> style "band".`,
     ``,
     `Use plain numbers (no strings, no NaN). Include every timeframe that has data.`,

@@ -350,7 +350,8 @@ function planIndicators(a, bars) {
       if (lo >= -1 && hi <= 101) {
         i.style = "baseline";
         if (i.base == null) i.base = 50;
-        if (!i.levels.length) i.levels = /ultra/i.test(i.name) ? [80, 20] : [70, 30];
+        // Ultra RSI [DW] is configured with 75 / 25 in the user's TradingView layout.
+        if (!i.levels.length) i.levels = /ultra/i.test(i.name) ? [75, 25] : [70, 30];
       } else if (lo < 0 && hi > 0) {
         i.style = "baseline";
         if (i.base == null) i.base = 0;
