@@ -80,17 +80,47 @@ Stocky gets the data two ways, so it still has data if one fails:
 
 The startup log shows which of the two are active.
 
-## Forecast graphs
+## Timeframes, levels and charts
 
-Each result card can show two kinds of graph:
+Stocky does the calculations and the app draws everything.
 
-- **Forecast chart.** The app draws it from the last ~6 months of Massive prices plus the
-  forecast points Stocky returns (expected price, with a low/high range), out to Stocky's horizon.
-- **Stocky's own charts.** Stocky is asked to save its forecast graphs as PNG files in
-  `/mnt/session/outputs/`. Stockypower downloads any images Stocky saved there and shows them
-  in the card. Click one to open it full size.
+- **Timeframes:** 15 min, 1 hour, 4 hours, 1 day, 1 week, 1 month. Click a timeframe, or a row
+  in the table, to switch instantly. Switching doesn't start a new Stocky run.
+- **Data:** for each timeframe, the server loads up to 500 Massive candles. It shows them on
+  the chart and mounts the same candles in Stocky's session as CSV files (`/workspace/data/`),
+  so Stocky's numbers line up with what you see.
+- **Stocky's results:** for every timeframe, Stocky writes `/mnt/session/outputs/stockypower.json`
+  with: signal, confidence, Target 1/2, Stop loss 1/2, forecast high/low for the next bar
+  (next 15 min, hour, 4 hours, day, week or month), a 10-bar forecast path, and its
+  indicator series.
+- **Chart:** TradingView Lightweight Charts (bundled in `public/vendor/`). Candles plus Stocky's
+  overlay indicators, panel indicators such as RSI or MACD in their own pane, the forecast
+  path and range, and labelled T1/T2/SL1/SL2 lines with forecast high/low. Times are New York
+  market time.
 
-If Stocky returns neither, the card says so.
+## Accuracy checks and track record
+
+A forecast can't be guaranteed, so every level is checked and every call is tracked:
+
+- **Checks**, per timeframe, against Massive's real data: Stocky's price matches the latest
+  close; for BUY, `SL2 < SL1 < price < T1 < T2` (mirrored for SELL); forecast high ≥ price ≥
+  forecast low; levels within a sensible number of ATRs for the timeframe; the stop isn't
+  inside normal noise. Failures appear as a ⚠ list instead of looking trustworthy.
+- **Track record:** each call is saved to `data/predictions.jsonl`, which stays on your PC and
+  isn't in git. Later runs on the same symbol score earlier calls against the candles that
+  came after: Target 1, Target 2 or stop hit first (a bar that hits both counts as stopped
+  out), and whether the next bar stayed under the forecast high.
+
+## Using it from the web
+
+Before Stockypower is reachable from the internet, set a password in `.env`:
+
+```
+APP_PASSWORD=choose-a-long-password
+```
+
+The browser then asks for a login. The user is `stocky` (change it with `APP_USER`).
+Without a password, anyone who finds the address could run Stocky on your Anthropic account.
 
 ## Notes
 

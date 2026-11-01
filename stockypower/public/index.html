@@ -4,47 +4,87 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Stockypower</title>
+<script src="vendor/lightweight-charts-5.2.1.js"></script>
 <style>
   :root {
-    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2128; --border: #30363d; --text: #e6edf3; --muted: #8b949e;
     --buy: #2ea043; --sell: #da3633; --hold: #9e6a03; --accent: #388bfd;
+    --t1: #3fb950; --t2: #56d364; --s1: #f85149; --s2: #ff7b72; --fh: #58a6ff; --fl: #a371f7;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
-  header { padding: 28px 20px 8px; text-align: center; }
+  header { padding: 24px 16px 4px; text-align: center; }
   header h1 { margin: 0; font-size: 30px; letter-spacing: .5px; }
   header h1 span { color: var(--accent); }
   header p { margin: 4px 0 0; color: var(--muted); }
-  main { max-width: 860px; margin: 0 auto; padding: 16px 20px 60px; }
-  form { display: flex; gap: 10px; margin: 16px 0 24px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 12px 16px 60px; }
+  form { display: flex; gap: 10px; margin: 16px 0 20px; }
   input[type=text] {
-    flex: 1; padding: 14px 16px; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;
+    flex: 1; min-width: 0; padding: 14px 16px; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;
     background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px; outline: none;
   }
   input[type=text]:focus { border-color: var(--accent); }
-  button { cursor: pointer; border: 0; border-radius: 10px; font-weight: 600; }
-  .primary { padding: 0 26px; font-size: 17px; background: var(--accent); color: #fff; }
-  .primary:disabled { opacity: .5; cursor: default; }
-  .history { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+  button { cursor: pointer; border: 0; border-radius: 10px; font-weight: 600; font: inherit; }
+  .primary { padding: 0 26px; font-size: 17px; font-weight: 600; background: var(--accent); color: #fff; }
+  .history { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
   .chip { padding: 4px 10px; border-radius: 999px; font-size: 13px; background: var(--panel); border: 1px solid var(--border); color: var(--text); }
   .chip b.BUY { color: var(--buy); } .chip b.SELL { color: var(--sell); } .chip b.HOLD { color: var(--hold); }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin-bottom: 20px; }
   .card-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .sym { font-size: 26px; font-weight: 700; letter-spacing: 1px; }
-  .badge { padding: 6px 18px; border-radius: 8px; font-size: 22px; font-weight: 800; color: #fff; }
-  .badge.BUY { background: var(--buy); } .badge.SELL { background: var(--sell); } .badge.HOLD { background: var(--hold); }
+  .badge { padding: 5px 16px; border-radius: 8px; font-size: 20px; font-weight: 800; color: #fff; }
+  .badge.sm { padding: 2px 10px; font-size: 14px; border-radius: 6px; }
+  .BUY { background: var(--buy); } .SELL { background: var(--sell); } .HOLD { background: var(--hold); }
   .badge.pending { background: #30363d; color: var(--muted); font-size: 15px; font-weight: 600; }
   .meta { color: var(--muted); font-size: 13px; margin-left: auto; text-align: right; }
-  .summary { margin: 12px 0 0; font-size: 16px; }
-  .status { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .summary { margin: 10px 0 0; font-size: 16px; }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 10px; }
+  .tab { padding: 6px 14px; background: var(--panel2); color: var(--text); border: 1px solid var(--border); font-size: 14px; }
+  .tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tab .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; vertical-align: middle; background: transparent; }
+  .tab .dot.BUY { background: var(--buy); } .tab .dot.SELL { background: var(--sell); } .tab .dot.HOLD { background: var(--hold); }
+
+  .levels { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
+  @media (max-width: 980px) { .levels { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .lv { background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 7px 9px; min-width: 0; }
+  .lv .k { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; letter-spacing: .3px; }
+  .lv .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .lv .d { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .lv.t1 .v { color: var(--t1); } .lv.t2 .v { color: var(--t2); } .lv.s1 .v { color: var(--s1); } .lv.s2 .v { color: var(--s2); }
+  .lv.fh .v { color: var(--fh); } .lv.fl .v { color: var(--fl); }
+
+  .checks { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+  .checks.ok { background: #0f2a17; border: 1px solid #1f6f35; }
+  .checks.bad { background: #2b1d0a; border: 1px solid #9e6a03; }
+  .checks ul { margin: 6px 0 0; padding-left: 20px; }
+  .track { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .rationale { margin-top: 8px; font-size: 14px; color: var(--muted); }
+
+  .chartwrap { position: relative; margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #0d1117; }
+  .chart { height: 460px; }
+  .legend { position: absolute; top: 8px; left: 12px; right: 90px; z-index: 3; font-size: 12px; pointer-events: none; font-variant-numeric: tabular-nums; color: var(--muted); line-height: 1.6; }
+  .legend .ttl { color: var(--text); font-weight: 600; margin-right: 10px; }
+  .legend span { margin-right: 10px; white-space: nowrap; }
+  .legend .up { color: #3fb950; } .legend .dn { color: #f85149; }
+  .keys { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .keys i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  .nochart { padding: 40px 16px; text-align: center; color: var(--muted); }
+
+  .tablewrap { overflow-x: auto; margin-top: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  tbody tr { cursor: pointer; } tbody tr:hover { background: var(--panel2); } tbody tr.on { background: #1f2a3a; }
+  td.t1 { color: var(--t1); } td.t2 { color: var(--t2); } td.s1 { color: var(--s1); } td.s2 { color: var(--s2); } td.fh { color: var(--fh); }
+
+  .status { color: var(--muted); font-size: 13px; margin-top: 12px; }
   .status::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1s infinite alternate; }
   .status.done::before { animation: none; background: var(--muted); }
   @keyframes pulse { from { opacity: .3 } to { opacity: 1 } }
   .error { color: #ff7b72; margin-top: 10px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 14px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-  th { color: var(--muted); font-weight: 500; }
-  td.bullish { color: var(--buy); } td.bearish { color: var(--sell); } td.neutral { color: var(--muted); }
   details { margin-top: 12px; }
   summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   pre { white-space: pre-wrap; word-wrap: break-word; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); padding: 12px; border-radius: 8px; max-height: 420px; overflow: auto; }
@@ -52,56 +92,62 @@
   .confirm pre { max-height: 160px; }
   .confirm button { padding: 6px 16px; margin-right: 8px; }
   .allow { background: var(--buy); color: #fff; } .deny { background: var(--sell); color: #fff; }
-  .chart { margin-top: 16px; }
-  .chart h4, .gallery h4 { margin: 0 0 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
-  .chart svg { width: 100%; height: auto; display: block; background: var(--bg); border-radius: 10px; }
-  .chart .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
-  .chart .legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; border-radius: 2px; }
-  .gallery { margin-top: 16px; }
-  .gallery .imgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
-  .gallery a { display: block; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
-  .gallery img { width: 100%; display: block; }
-  .gallery .cap { font-size: 12px; color: var(--muted); padding: 4px 8px; background: var(--panel); }
-  .nochart { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  footer a { color: var(--muted); }
   footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px; }
+  @media (max-width: 600px) { .chart { height: 380px; } .card { padding: 14px; } }
 </style>
 </head>
 <body>
 <header>
   <h1>Stocky<span>power</span></h1>
-  <p>Enter a symbol. Stocky checks its historical data and indicators and tells you whether to buy or sell.</p>
+  <p>Enter a symbol. Stocky calculates signals, targets, stops and forecasts on six timeframes.</p>
 </header>
 
 <main>
   <form id="form" autocomplete="off">
     <input id="symbol" type="text" placeholder="AAPL" maxlength="10" required autofocus />
-    <button class="primary" id="go" type="submit">Ask Stocky</button>
+    <button class="primary" type="submit">Ask Stocky</button>
   </form>
-
   <div class="history" id="history"></div>
   <div id="results"></div>
 </main>
 
-<footer>Signals come from the Stocky agent's indicators. Not financial advice.</footer>
+<footer>Calculations by the Stocky agent · prices from Massive · charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>. Not financial advice.</footer>
 
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (v) => (v === null || v === undefined || !Number.isFinite(+v) ? "—" : Math.abs(v) >= 1000 ? (+v).toFixed(2) : Math.abs(v) >= 1 ? (+v).toFixed(2) : (+v).toFixed(4));
+const pct = (v, base) => (v == null || !base ? "" : `${v >= base ? "+" : ""}${(((v - base) / base) * 100).toFixed(2)}%`);
 const HISTORY_KEY = "stockypower.history";
+const SHORT_NEXT = { "15m": "next 15m", "1h": "next hour", "4h": "next 4h", "1D": "next day", "1W": "next week", "1M": "next month" };
+const IND_COLORS = ["#d29922", "#a371f7", "#f778ba", "#79c0ff", "#ffa657", "#3fb950"];
+const DEFAULT_TFS = [
+  { key: "15m", label: "15 min", next: "next 15 minutes" }, { key: "1h", label: "1 hour", next: "next hour" },
+  { key: "4h", label: "4 hours", next: "next 4 hours" }, { key: "1D", label: "1 day", next: "next trading day" },
+  { key: "1W", label: "1 week", next: "next week" }, { key: "1M", label: "1 month", next: "next month" },
+];
 
-function loadHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; }
+// Bars come in UTC; show them in New York (market) time.
+const etFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function toET(sec) {
+  const p = Object.fromEntries(etFmt.formatToParts(new Date(sec * 1000)).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) / 1000;
 }
+
+// ── History chips ──────────────────────────────────────────────────────────
+function loadHistory() { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; } }
 function saveHistory(entry) {
-  const h = loadHistory().filter((e) => e.symbol !== entry.symbol);
-  h.unshift(entry);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 30)));
+  try {
+    const h = loadHistory().filter((e) => e.symbol !== entry.symbol);
+    h.unshift(entry);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 30)));
+  } catch {}
   renderHistory();
 }
 function renderHistory() {
-  const h = loadHistory();
-  $("#history").innerHTML = h.map((e) =>
-    `<button class="chip" data-sym="${esc(e.symbol)}" title="${esc(new Date(e.at).toLocaleString())}">${esc(e.symbol)} <b class="${esc(e.signal)}">${esc(e.signal)}</b></button>`
+  $("#history").innerHTML = loadHistory().map((e) =>
+    `<button class="chip" data-sym="${esc(e.symbol)}" title="${esc(new Date(e.at).toLocaleString())}">${esc(e.symbol)} <b class="${esc(e.signal)}" style="background:none">${esc(e.signal || "")}</b></button>`
   ).join("");
 }
 $("#history").addEventListener("click", (ev) => {
@@ -109,6 +155,7 @@ $("#history").addEventListener("click", (ev) => {
   if (chip) { $("#symbol").value = chip.dataset.sym; $("#form").requestSubmit(); }
 });
 
+// ── Result card ────────────────────────────────────────────────────────────
 function newCard(symbol) {
   const card = document.createElement("div");
   card.className = "card";
@@ -119,121 +166,278 @@ function newCard(symbol) {
       <div class="meta"></div>
     </div>
     <div class="summary"></div>
-    <div class="indicators"></div>
-    <div class="chart"></div>
-    <div class="gallery"></div>
+    <div class="tabs"></div>
+    <div class="levels"></div>
+    <div class="checksbox"></div>
+    <div class="track"></div>
+    <div class="rationale"></div>
+    <div class="chartwrap"><div class="legend"></div><div class="chart"><div class="nochart">Loading candles…</div></div></div>
+    <div class="keys"></div>
+    <div class="tablewrap"></div>
     <div class="confirms"></div>
     <div class="status">Connecting…</div>
     <details><summary>Stocky's full analysis</summary><pre class="raw"></pre></details>`;
   $("#results").prepend(card);
-  return card;
+  const state = { symbol, card, tfs: DEFAULT_TFS, tf: "1D", candles: {}, analysis: null, checks: {}, record: {}, chart: null };
+  card._state = state;
+  renderTabs(state);
+  return state;
 }
 
-// Line chart: Massive price history (solid) + Stocky's forecast (dashed) with its low/high band.
-function drawForecastChart(history, forecast, signal) {
-  const hist = (history || []).filter((p) => p && p.date && Number.isFinite(+p.close));
-  const fc = (forecast || []).filter((p) => p && p.date && Number.isFinite(+p.price));
-  if (!hist.length && !fc.length) return "";
-  const W = 760, H = 300, L = 58, R = 16, T = 16, B = 34;
-  const t = (d) => Date.parse(d + "T00:00:00Z");
-  const xs = [...hist.map((p) => t(p.date)), ...fc.map((p) => t(p.date))];
-  const vals = [
-    ...hist.map((p) => +p.close),
-    ...fc.flatMap((p) => [+p.price, p.low, p.high].filter((v) => v !== null && Number.isFinite(+v)).map(Number)),
-  ];
-  let x0 = Math.min(...xs), x1 = Math.max(...xs); if (x0 === x1) { x0 -= 864e5; x1 += 864e5; }
-  let y0 = Math.min(...vals), y1 = Math.max(...vals); const pad = (y1 - y0) * 0.08 || Math.abs(y1) * 0.05 || 1; y0 -= pad; y1 += pad;
-  const X = (d) => L + ((t(d) - x0) / (x1 - x0)) * (W - L - R);
-  const Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
-  const pts = (arr, key) => arr.map((p) => `${X(p.date).toFixed(1)},${Y(+p[key]).toFixed(1)}`).join(" ");
-  const fcColor = signal === "SELL" ? "#da3633" : signal === "BUY" ? "#2ea043" : "#d29922";
-  const fmt = (v) => (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toFixed(2));
-  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Price history and forecast">`;
-  for (let i = 0; i <= 4; i++) {
-    const v = y0 + ((y1 - y0) * i) / 4, y = Y(v).toFixed(1);
-    svg += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="#30363d" stroke-width="1"/>`;
-    svg += `<text x="${L - 8}" y="${+y + 4}" fill="#8b949e" font-size="11" text-anchor="end">${fmt(v)}</text>`;
-  }
-  const band = fc.filter((p) => p.low !== null && p.high !== null);
-  if (band.length > 1) {
-    const up = band.map((p) => `${X(p.date).toFixed(1)},${Y(+p.high).toFixed(1)}`);
-    const dn = band.slice().reverse().map((p) => `${X(p.date).toFixed(1)},${Y(+p.low).toFixed(1)}`);
-    svg += `<polygon points="${[...up, ...dn].join(" ")}" fill="${fcColor}" fill-opacity="0.15" stroke="none"/>`;
-  }
-  if (hist.length > 1) svg += `<polyline points="${pts(hist, "close")}" fill="none" stroke="#388bfd" stroke-width="2"/>`;
-  if (fc.length) {
-    const start = hist.length ? [{ date: hist[hist.length - 1].date, price: hist[hist.length - 1].close }] : [];
-    const line = [...start, ...fc];
-    if (line.length > 1) svg += `<polyline points="${pts(line, "price")}" fill="none" stroke="${fcColor}" stroke-width="2" stroke-dasharray="6 4"/>`;
-    const last = fc[fc.length - 1];
-    svg += `<circle cx="${X(last.date)}" cy="${Y(+last.price)}" r="4" fill="${fcColor}"><title>${esc(last.date)}: ${fmt(+last.price)}</title></circle>`;
-  }
-  if (hist.length && fc.length) {
-    const xn = X(hist[hist.length - 1].date).toFixed(1);
-    svg += `<line x1="${xn}" x2="${xn}" y1="${T}" y2="${H - B}" stroke="#8b949e" stroke-dasharray="2 3"/>`;
-    svg += `<text x="${+xn + 4}" y="${T + 10}" fill="#8b949e" font-size="11">today</text>`;
-  }
-  const xl = [hist[0]?.date, hist[hist.length - 1]?.date, fc[fc.length - 1]?.date].filter(Boolean);
-  [...new Set(xl)].forEach((d, i, a) => {
-    const anchor = i === 0 ? "start" : i === a.length - 1 ? "end" : "middle";
-    svg += `<text x="${X(d).toFixed(1)}" y="${H - 12}" fill="#8b949e" font-size="11" text-anchor="${anchor}">${esc(d)}</text>`;
-  });
-  svg += `</svg>`;
-  return svg;
+function renderTabs(st) {
+  const tfs = st.analysis?.timeframes || {};
+  $(".tabs", st.card).innerHTML = st.tfs.map((t) =>
+    `<button class="tab ${t.key === st.tf ? "on" : ""}" data-tf="${t.key}">${esc(t.label)}<span class="dot ${esc(tfs[t.key]?.signal || "")}"></span></button>`
+  ).join("");
+  $(".tabs", st.card).onclick = (ev) => {
+    const b = ev.target.closest(".tab");
+    if (b) selectTf(st, b.dataset.tf);
+  };
 }
 
-function renderCharts(card, verdict, data) {
-  const fc = verdict?.forecast || [];
-  const hist = data?.history || [];
-  const svg = drawForecastChart(hist, fc, verdict?.signal);
-  if (svg) {
-    $(".chart", card).innerHTML = `<h4>${fc.length ? `Forecast${verdict.horizon ? ` · ${esc(verdict.horizon)}` : ""}` : "Price history (Massive)"}</h4>${svg}
-      <div class="legend">${hist.length ? `<span><i style="background:#388bfd"></i>Price history (Massive)</span>` : ""}${
-        fc.length ? `<span><i style="background:${verdict.signal === "SELL" ? "#da3633" : verdict.signal === "BUY" ? "#2ea043" : "#d29922"}"></i>Stocky's forecast and range</span>` : ""}</div>`;
-  }
-  const imgs = data?.charts || [];
-  if (imgs.length) {
-    $(".gallery", card).innerHTML = `<h4>Stocky's charts</h4><div class="imgs">${imgs.map((c) =>
-      `<a href="${esc(c.url)}" target="_blank" rel="noopener"><img src="${esc(c.url)}" alt="${esc(c.filename)}" loading="lazy"><div class="cap">${esc(c.filename)}</div></a>`
-    ).join("")}</div>`;
-  }
-  if (!fc.length && !imgs.length) {
-    const n = document.createElement("div");
-    n.className = "nochart";
-    n.textContent = "Stocky didn't return a forecast or any charts this time.";
-    $(".gallery", card).append(n);
-  }
+function selectTf(st, tf) {
+  st.tf = tf;
+  renderTabs(st);
+  renderLevels(st);
+  drawChart(st);
+  renderTable(st);
 }
 
-function renderVerdict(card, symbol, verdict) {
-  const badge = $(".badge", card);
-  if (!verdict) {
-    badge.className = "badge pending";
-    badge.textContent = "No clear call";
-    $(".summary", card).textContent = "Stocky didn't return a BUY or SELL signal. See the full analysis below.";
-    $("details", card).open = true;
+function lvBox(cls, label, v, base, sub) {
+  return `<div class="lv ${cls}"><div class="k">${esc(label)}</div><div class="v">${fmt(v)}</div><div class="d">${esc(sub ?? pct(v, base))}</div></div>`;
+}
+
+function renderLevels(st) {
+  const a = st.analysis?.timeframes?.[st.tf];
+  const chk = st.checks?.[st.tf];
+  const bars = st.candles[st.tf];
+  const last = chk?.lastClose ?? (bars?.length ? bars[bars.length - 1].c : null);
+  const tfInfo = st.tfs.find((t) => t.key === st.tf) || {};
+  if (!a) {
+    $(".levels", st.card).innerHTML = st.analysis
+      ? `<div class="lv"><div class="k">${esc(tfInfo.label)}</div><div class="v">No levels</div><div class="d">Stocky didn't return this timeframe</div></div>`
+      : last != null ? lvBox("", "Last price", last, null, "Waiting for Stocky…") : "";
+    $(".checksbox", st.card).innerHTML = "";
+    $(".rationale", st.card).textContent = "";
+    $(".track", st.card).textContent = "";
     return;
   }
-  badge.className = `badge ${verdict.signal}`;
-  badge.textContent = verdict.signal;
-  const meta = [];
-  if (verdict.confidence != null) meta.push(`Confidence ${verdict.confidence}%`);
-  if (verdict.price != null) meta.push(`Last ${esc(verdict.price)}`);
-  if (verdict.as_of) meta.push(`as of ${esc(verdict.as_of)}`);
-  $(".meta", card).innerHTML = meta.join("<br>");
-  $(".summary", card).textContent = verdict.summary || "";
-  if (verdict.indicators?.length) {
-    $(".indicators", card).innerHTML = `<table><thead><tr><th>Indicator</th><th>Value</th><th>Reading</th></tr></thead><tbody>${
-      verdict.indicators.map((i) => {
-        const r = String(i.reading || "").toLowerCase();
-        return `<tr><td>${esc(i.name)}</td><td>${esc(i.value)}</td><td class="${esc(r)}">${esc(i.reading)}</td></tr>`;
-      }).join("")
-    }</tbody></table>`;
+  const nx = SHORT_NEXT[st.tf] || "next bar";
+  $(".levels", st.card).innerHTML = [
+    `<div class="lv"><div class="k">${esc(tfInfo.label)} signal</div><div class="v"><span class="badge sm ${esc(a.signal || "")}">${esc(a.signal || "—")}</span></div><div class="d">${a.confidence != null ? `Confidence ${a.confidence}%` : ""}</div></div>`,
+    lvBox("", "Last price", last, null, chk?.atr ? `ATR ${fmt(chk.atr)}` : ""),
+    lvBox("t1", "Target 1", a.target1, last),
+    lvBox("t2", "Target 2", a.target2, last),
+    lvBox("s1", "Stop loss 1", a.stop1, last),
+    lvBox("s2", "Stop loss 2", a.stop2, last),
+    lvBox("fh", "Forecast high", a.forecast_high, last, `${pct(a.forecast_high, last)} · ${nx}`),
+    lvBox("fl", "Forecast low", a.forecast_low, last, `${pct(a.forecast_low, last)} · ${nx}`),
+    lvBox("", "Reward : risk", null, null, "T1 vs Stop 1"),
+  ].join("");
+  // reward/risk box shows a ratio, not a price
+  const rrBox = $(".levels", st.card).lastElementChild;
+  $(".v", rrBox).textContent = chk?.rr != null ? `${chk.rr.toFixed(2)} : 1` : "—";
+  $(".levels .fh .k", st.card).title = `Forecast high for the ${tfInfo.next || "next bar"}`;
+  $(".levels .fl .k", st.card).title = `Forecast low for the ${tfInfo.next || "next bar"}`;
+
+  if (chk) {
+    $(".checksbox", st.card).innerHTML = chk.ok
+      ? `<div class="checks ok">✓ All accuracy checks passed: levels are in the right order, on the correct side of the price, a sensible distance for this timeframe, and based on Massive's latest close.</div>`
+      : `<div class="checks bad">⚠ Treat these levels with caution. Checks found:<ul>${chk.issues.map((i) => `<li>${esc(i)}</li>`).join("")}</ul></div>`;
   }
-  if (!verdict.structured) $("details", card).open = true;
-  saveHistory({ symbol, signal: verdict.signal, at: Date.now() });
+  $(".rationale", st.card).textContent = a.rationale || "";
+  const r = st.record?.[st.tf];
+  $(".track", st.card).innerHTML = r && r.calls
+    ? `Track record for ${esc(st.symbol)} on ${esc(tfInfo.label)} (earlier calls): ${r.calls} calls · Target 1 hit ${r.target1} · Target 2 hit ${r.target2} · Stopped out ${r.stop} · Still open ${r.open}` +
+      (r.fhChecked ? ` · Forecast high held ${r.fhHeld}/${r.fhChecked}` : "")
+    : `Track record: no earlier calls for ${esc(st.symbol)} on ${esc(tfInfo.label)} yet. Each run is saved, and later runs show how they turned out.`;
 }
 
+function renderTable(st) {
+  const tfs = st.analysis?.timeframes;
+  if (!tfs) { $(".tablewrap", st.card).innerHTML = ""; return; }
+  const rows = st.tfs.map((t) => {
+    const a = tfs[t.key];
+    const chk = st.checks?.[t.key];
+    if (!a) return `<tr data-tf="${t.key}" class="${t.key === st.tf ? "on" : ""}"><td>${esc(t.label)}</td><td colspan="8" style="text-align:left;color:var(--muted)">No data</td></tr>`;
+    return `<tr data-tf="${t.key}" class="${t.key === st.tf ? "on" : ""}">
+      <td>${esc(t.label)}</td><td><span class="badge sm ${esc(a.signal || "")}">${esc(a.signal || "—")}</span></td>
+      <td>${fmt(chk?.lastClose ?? a.price)}</td><td class="t1">${fmt(a.target1)}</td><td class="t2">${fmt(a.target2)}</td>
+      <td class="s1">${fmt(a.stop1)}</td><td class="s2">${fmt(a.stop2)}</td><td class="fh">${fmt(a.forecast_high)}</td>
+      <td>${chk ? (chk.ok ? "✓" : `⚠ ${chk.issues.length}`) : ""}</td></tr>`;
+  }).join("");
+  $(".tablewrap", st.card).innerHTML = `<table><thead><tr><th>Timeframe</th><th>Signal</th><th>Price</th><th>Target 1</th><th>Target 2</th><th>Stop 1</th><th>Stop 2</th><th>Forecast high (next bar)</th><th>Checks</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $(".tablewrap tbody", st.card).onclick = (ev) => {
+    const tr = ev.target.closest("tr");
+    if (tr) selectTf(st, tr.dataset.tf);
+  };
+}
+
+// ── Chart ──────────────────────────────────────────────────────────────────
+
+// Lightweight Charts needs strictly increasing times. Converting to New York time
+// can repeat an hour when clocks fall back, so drop repeats and bad values here.
+function cleanPoints(points) {
+  const out = [];
+  for (const p of points.slice().sort((x, y) => x.time - y.time)) {
+    const vals = "value" in p ? [p.value] : [p.open, p.high, p.low, p.close];
+    if (!Number.isFinite(p.time) || vals.some((v) => !Number.isFinite(v))) continue;
+    if (out.length && p.time <= out[out.length - 1].time) continue;
+    out.push(p);
+  }
+  return out;
+}
+
+function drawChart(st) {
+  const el = $(".chart", st.card);
+  const legend = $(".legend", st.card);
+  if (st.chart) { st.chart.remove(); st.chart = null; }
+  el.innerHTML = "";
+  legend.innerHTML = "";
+  const bars = st.candles[st.tf] || [];
+  const a = st.analysis?.timeframes?.[st.tf];
+  const LW = window.LightweightCharts;
+  if (!LW) { el.innerHTML = `<div class="nochart">The chart library didn't load.</div>`; return; }
+  if (!bars.length) {
+    el.innerHTML = `<div class="nochart">${st.candlesLoaded ? "No Massive candles for this timeframe." : "Loading candles…"}</div>`;
+    $(".keys", st.card).innerHTML = "";
+    return;
+  }
+  try {
+    renderChart(st, el, legend, bars, a, LW);
+  } catch (err) {
+    console.error(err);
+    if (st.chart) { st.chart.remove(); st.chart = null; }
+    el.innerHTML = `<div class="nochart">This timeframe's chart data couldn't be drawn (${esc(err.message)}).</div>`;
+  }
+}
+
+function renderChart(st, el, legend, bars, a, LW) {
+  const intraday = ["15m", "1h", "4h"].includes(st.tf);
+  const panelInds = (a?.indicators || []).filter((i) => i.pane === "separate" && i.series.length).slice(0, 3);
+  const overlayInds = (a?.indicators || []).filter((i) => i.pane === "price" && i.series.length);
+  el.style.height = `${400 + panelInds.length * 120}px`;
+
+  const chart = LW.createChart(el, {
+    autoSize: true,
+    layout: {
+      background: { type: "solid", color: "#0d1117" },
+      textColor: "#8b949e",
+      fontSize: 11,
+      fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+      attributionLogo: false, // credited with a link in the page footer instead
+      panes: { separatorColor: "#30363d", separatorHoverColor: "rgba(56,139,253,0.25)", enableResize: false },
+    },
+    grid: { vertLines: { visible: false }, horzLines: { color: "#161b22" } },
+    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.08 } },
+    timeScale: { borderVisible: false, timeVisible: intraday, secondsVisible: false, rightOffset: 6, fixLeftEdge: true },
+    crosshair: {
+      mode: LW.CrosshairMode.Normal,
+      vertLine: { color: "#484f58", style: LW.LineStyle.Dashed, labelBackgroundColor: "#30363d" },
+      horzLine: { color: "#484f58", style: LW.LineStyle.Dashed, labelBackgroundColor: "#30363d" },
+    },
+    localization: { priceFormatter: (p) => fmt(p) },
+  });
+  st.chart = chart;
+
+  // Pane 0: candles, overlay indicators, forecast, levels.
+  const candle = chart.addSeries(LW.CandlestickSeries, {
+    upColor: "#26a641", downColor: "#e5534b", borderVisible: false, wickUpColor: "#26a641", wickDownColor: "#e5534b",
+    priceLineColor: "#8b949e", priceLineStyle: LW.LineStyle.Dotted,
+  });
+  const cdata = cleanPoints(bars.map((b) => ({ time: toET(b.t), open: b.o, high: b.h, low: b.l, close: b.c })));
+  candle.setData(cdata);
+
+  const keys = [];
+  const legendSeries = [];
+  overlayInds.forEach((ind, i) => {
+    const color = IND_COLORS[i % IND_COLORS.length];
+    const s = chart.addSeries(LW.LineSeries, { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))));
+    keys.push(`<span><i style="background:${color}"></i>${esc(ind.name)}${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
+    legendSeries.push([ind.name, s, color]);
+  });
+
+  // Forecast: dashed expected path plus a faint range, starting at the last candle.
+  const fc = a?.forecast || [];
+  const lastBar = cdata[cdata.length - 1];
+  if (fc.length && lastBar) {
+    const color = a.signal === "SELL" ? "#f85149" : a.signal === "BUY" ? "#3fb950" : "#d29922";
+    const mk = (key) =>
+      cleanPoints([{ time: lastBar.time, value: lastBar.close }, ...fc.filter((p) => p[key] != null).map((p) => ({ time: toET(p.t), value: p[key] }))])
+        .filter((p) => p.time >= lastBar.time);
+    const opts = { priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+    for (const key of ["high", "low"]) {
+      const d = mk(key);
+      if (d.length > 1) chart.addSeries(LW.LineSeries, { ...opts, color: color + "66", lineWidth: 1, lineStyle: LW.LineStyle.Dotted }).setData(d);
+    }
+    const path = mk("price");
+    if (path.length > 1) {
+      const s = chart.addSeries(LW.LineSeries, { ...opts, color, lineWidth: 2, lineStyle: LW.LineStyle.Dashed });
+      s.setData(path);
+      legendSeries.push(["Forecast", s, color]);
+    }
+    keys.push(`<span><i style="background:${color}"></i>Forecast path · range dotted</span>`);
+  }
+
+  // Targets, stops and next-bar forecast high/low as labelled levels.
+  if (a) {
+    const levels = [
+      ["T2", a.target2, "#56d364", LW.LineStyle.Solid], ["T1", a.target1, "#3fb950", LW.LineStyle.Solid],
+      ["FH", a.forecast_high, "#58a6ff", LW.LineStyle.Dashed, false], ["FL", a.forecast_low, "#a371f7", LW.LineStyle.Dashed, false],
+      ["SL1", a.stop1, "#f85149", LW.LineStyle.Solid], ["SL2", a.stop2, "#ff7b72", LW.LineStyle.Solid],
+    ];
+    // FH/FL have no axis tag (their values are in the boxes above), so tags never pile up.
+    for (const [title, price, color, lineStyle, tag = true] of levels) {
+      if (Number.isFinite(price)) candle.createPriceLine({ price, color, lineWidth: 1, lineStyle, axisLabelVisible: tag, title: tag ? title : "", lineVisible: true });
+    }
+    keys.push(`<span><i style="background:#3fb950"></i>T1 / T2 targets</span><span><i style="background:#f85149"></i>SL1 / SL2 stops</span><span><i style="background:#58a6ff"></i>FH / FL forecast high / low (${esc(SHORT_NEXT[st.tf] || "next bar")})</span>`);
+  }
+
+  // Panel indicators (e.g. RSI, MACD): one pane each, with their own scale.
+  panelInds.forEach((ind, i) => {
+    const color = IND_COLORS[(overlayInds.length + i) % IND_COLORS.length];
+    const s = chart.addSeries(LW.LineSeries, { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false }, i + 1);
+    s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))));
+    keys.push(`<span><i style="background:${color}"></i>${esc(ind.name)}${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
+    legendSeries.push([ind.name, s, color]);
+  });
+  const panes = chart.panes();
+  panes[0].setStretchFactor(3);
+  for (let i = 1; i < panes.length; i++) panes[i].setStretchFactor(1);
+
+  $(".keys", st.card).innerHTML = keys.join("");
+
+  // Header legend: always shows the latest bar; follows the crosshair on hover.
+  const tfLabel = (st.tfs.find((t) => t.key === st.tf) || {}).label || st.tf;
+  const header = (c, prev, vals) => {
+    if (!c) return "";
+    const ch = prev ? c.close - prev.close : null;
+    const chs = ch == null ? "" : `<span class="${ch >= 0 ? "up" : "dn"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)} (${pct(c.close, prev.close)})</span>`;
+    let h = `<span class="ttl">${esc(st.symbol)} · ${esc(tfLabel)}</span><span>O ${fmt(c.open)}</span><span>H ${fmt(c.high)}</span><span>L ${fmt(c.low)}</span><span>C ${fmt(c.close)}</span>${chs}<br>`;
+    for (const [name, , color, v] of vals) if (v != null) h += `<span style="color:${color}">${esc(name)} ${fmt(v)}</span>`;
+    return h;
+  };
+  const lastVals = () => legendSeries.map(([n, s, c]) => {
+    const d = s.data();
+    return [n, s, c, d.length ? d[d.length - 1].value : null];
+  });
+  const showLatest = () => (legend.innerHTML = header(cdata[cdata.length - 1], cdata[cdata.length - 2], lastVals().filter(([n]) => n !== "Forecast")));
+  showLatest();
+  chart.subscribeCrosshairMove((param) => {
+    if (!param.time || !param.point) return showLatest();
+    const c = param.seriesData.get(candle);
+    const idx = c ? cdata.findIndex((x) => x.time === param.time) : -1;
+    const vals = legendSeries.map(([n, s, col]) => [n, s, col, param.seriesData.get(s)?.value ?? null]);
+    legend.innerHTML = c ? header(c, idx > 0 ? cdata[idx - 1] : null, vals) : header(cdata[cdata.length - 1], cdata[cdata.length - 2], vals);
+  });
+
+  // Show roughly the last 120 bars plus the forecast.
+  const total = cdata.length + Math.max(0, fc.length);
+  chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, total - 130), to: total + 2 });
+}
+
+// ── Confirmations ──────────────────────────────────────────────────────────
 function showConfirm(card, data) {
   const box = document.createElement("div");
   box.className = "confirm";
@@ -255,8 +459,10 @@ function showConfirm(card, data) {
   $(".confirms", card).append(box);
 }
 
+// ── Run ────────────────────────────────────────────────────────────────────
 async function analyze(symbol) {
-  const card = newCard(symbol);
+  const st = newCard(symbol);
+  const card = st.card;
   const status = $(".status", card);
   const raw = $(".raw", card);
   const setStatus = (m) => (status.textContent = m);
@@ -286,12 +492,33 @@ async function analyze(symbol) {
       case "tool": setStatus(`Stocky is using ${data.name}…`); break;
       case "text": raw.textContent += (raw.textContent ? "\n" : "") + data.text; break;
       case "confirm": setStatus("Waiting for your approval…"); showConfirm(card, data); break;
-      case "verdict":
+      case "candles":
+        st.candles = data.candles || {};
+        st.candlesLoaded = true;
+        if (Array.isArray(data.timeframes) && data.timeframes.length) st.tfs = data.timeframes;
+        if (!st.candles[st.tf]) st.tf = st.tfs.find((t) => st.candles[t.key])?.key || st.tf;
+        selectTf(st, st.tf);
+        break;
+      case "verdict": {
         gotVerdict = true;
         raw.textContent = data.text || raw.textContent;
-        renderVerdict(card, symbol, data.verdict);
-        renderCharts(card, data.verdict, data);
+        st.analysis = data.analysis;
+        st.checks = data.checks || {};
+        st.record = data.record || {};
+        const v = data.verdict || {};
+        const badge = $(".badge", card);
+        if (v.signal) { badge.className = `badge ${v.signal}`; badge.textContent = v.signal; }
+        else { badge.className = "badge pending"; badge.textContent = "No clear call"; }
+        $(".meta", card).innerHTML = [v.confidence != null ? `Overall confidence ${v.confidence}%` : "", (st.analysis?.indicators_used || []).length ? `Indicators: ${esc(st.analysis.indicators_used.join(", "))}` : ""].filter(Boolean).join("<br>");
+        $(".summary", card).textContent = v.summary || "";
+        if (!data.hasResultFile && !Object.keys(st.analysis?.timeframes || {}).length) {
+          $(".summary", card).textContent += (v.summary ? " " : "") + "(Stocky didn't return per-timeframe levels this time. See its full analysis below.)";
+          $("details", card).open = true;
+        }
+        selectTf(st, st.tf);
+        if (v.signal) saveHistory({ symbol, signal: v.signal, at: Date.now() });
         break;
+      }
       case "error": {
         $(".badge", card).className = "badge pending";
         $(".badge", card).textContent = "Error";

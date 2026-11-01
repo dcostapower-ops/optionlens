@@ -22,3 +22,6 @@ Thumbs.db
 # Node (in case any tooling drags it in)
 node_modules/
 npm-debug.log*
+
+# Stockypower local track record
+stockypower/data/

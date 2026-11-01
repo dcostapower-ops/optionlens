@@ -5,11 +5,23 @@
 // Stocky's progress back to the page as Server-Sent Events.
 
 import http from "node:http";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { loadEnv, makeClient } from "./scripts/load-env.mjs";
+import {
+  TIMEFRAMES,
+  TF_KEYS,
+  fetchCandles,
+  candlesToCsv,
+  atr,
+  cleanAnalysis,
+  validateLevels,
+  trackStore,
+  trackRecord,
+} from "./lib/market.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -17,14 +29,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv();
 
 const PORT = Number(process.env.PORT || 8790);
+// Set APP_PASSWORD to require a password (needed before putting Stockypower on the web).
+const APP_PASSWORD = process.env.APP_PASSWORD || "";
+const APP_USER = process.env.APP_USER || "stocky";
 const AGENT_ID = process.env.STOCKY_AGENT_ID || "agent_01Vs8LnyLYVarn95Uhjm4saV";
 const ENVIRONMENT_ID = process.env.STOCKY_ENVIRONMENT_ID || "env_01DjvqsavJUkxFrZeHNnMHMU";
 const VAULT_ID = process.env.STOCKY_VAULT_ID || ""; // set by scripts/connect-massive.mjs
-const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY || ""; // used here only for the backup snapshot
+const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY || ""; // candles for the chart and for Stocky
 const MASSIVE_BASE = process.env.MASSIVE_BASE_URL || "https://api.massive.com";
-const HISTORY_YEARS = Number(process.env.STOCKY_HISTORY_YEARS || 2);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const OUTPUT_DIR = "/mnt/session/outputs"; // files saved here can be downloaded after the session
+const DATA_DIR = path.join(__dirname, "data"); // local track record of past calls
 
 // Resolves ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN / an `ant auth login` profile).
 // ANTHROPIC_BASE_URL is honoured too, which is how the local mock test works.
@@ -52,92 +67,102 @@ function waitForConfirmation(key, isClosed) {
   });
 }
 
-// ── Massive data snapshot ────────────────────────────────────────────────────
+// ── Market data (all timeframes) ─────────────────────────────────────────────
 
-const ymd = (d) => d.toISOString().slice(0, 10);
+const RESULT_FILE = "stockypower.json";
 
-// Adjusted daily bars for the last HISTORY_YEARS years, as CSV.
-async function fetchMassiveSnapshot(symbol) {
-  const to = new Date();
-  const from = new Date(to);
-  from.setFullYear(from.getFullYear() - HISTORY_YEARS);
-  const url =
-    `${MASSIVE_BASE}/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/day/${ymd(from)}/${ymd(to)}` +
-    `?adjusted=true&sort=asc&limit=50000`;
-  const r = await fetch(url, {
-    headers: { Authorization: `Bearer ${MASSIVE_API_KEY}` },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (r.status === 401 || r.status === 403) throw new Error(`Massive rejected the API key (HTTP ${r.status})`);
-  if (!r.ok) throw new Error(`Massive HTTP ${r.status}`);
-  const body = await r.json();
-  const bars = body.results ?? [];
-  if (!bars.length) return null;
-  const lines = ["date,open,high,low,close,volume,vwap,trades"];
-  for (const b of bars) {
-    lines.push([ymd(new Date(b.t)), b.o, b.h, b.l, b.c, b.v, b.vw ?? "", b.n ?? ""].join(","));
-  }
-  return {
-    csv: lines.join("\n") + "\n",
-    rows: bars.length,
-    from: ymd(new Date(bars[0].t)),
-    to: ymd(new Date(bars[bars.length - 1].t)),
-    path: `/workspace/data/${symbol}_daily.csv`,
-    // Last ~6 months of closes, for the chart in the browser.
-    history: bars.slice(-130).map((b) => ({ date: ymd(new Date(b.t)), close: b.c })),
-  };
+// Candles for every timeframe from Massive. Missing timeframes are skipped, not fatal.
+async function fetchAllCandles(symbol, send) {
+  const candles = {};
+  const errors = [];
+  await Promise.all(
+    TIMEFRAMES.map(async (tf) => {
+      try {
+        const bars = await fetchCandles({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, tf });
+        if (bars.length) candles[tf.key] = bars;
+      } catch (err) {
+        errors.push(`${tf.label}: ${err.message}`);
+      }
+    }),
+  );
+  if (errors.length) send("status", { message: `Some Massive data couldn't be loaded (${errors.join("; ")}).` });
+  return candles;
 }
 
 // ── Prompt ──────────────────────────────────────────────────────────────────
 
-function buildPrompt(symbol, snapshot) {
-  const data = [];
+const f2 = (v) => (v === null || v === undefined ? "n/a" : Math.abs(v) >= 1000 ? v.toFixed(2) : v.toFixed(4).replace(/0+$/, "").replace(/\.$/, ""));
+
+function buildPrompt(symbol, candles, mounted) {
+  const lines = [
+    `Analyze the stock ${symbol} on six timeframes: ${TIMEFRAMES.map((t) => t.label).join(", ")}.`,
+    `You do the calculations; my app draws all the charts, so don't make images.`,
+    ``,
+  ];
+
+  if (Object.keys(mounted).length) {
+    lines.push(`DATA - use these files. They are the exact Massive bars my app charts, so your numbers must line up with them:`);
+    for (const tf of TIMEFRAMES) {
+      const bars = candles[tf.key];
+      if (!bars) continue;
+      const last = bars[bars.length - 1];
+      lines.push(
+        `- ${tf.key} (${tf.label}): ${mounted[tf.key]} - ${bars.length} bars, CSV columns t,datetime_utc,open,high,low,close,volume (t = unix seconds, bar open time).` +
+          ` Latest bar ${new Date(last.t * 1000).toISOString()}, close ${f2(last.c)}, ATR(14) ${f2(atr(bars))}.`,
+      );
+    }
+    lines.push(``);
+  }
   if (VAULT_ID) {
-    data.push(
-      `Market data: you have the Massive (formerly Polygon.io) stocks developer feed at ${MASSIVE_BASE}.`,
-      `Your key is in the MASSIVE_API_KEY environment variable. Send it as a header and never in the URL, e.g.`,
-      `  curl -s -H "Authorization: Bearer $MASSIVE_API_KEY" "${MASSIVE_BASE}/v2/aggs/ticker/${symbol}/range/1/day/<from>/<to>?adjusted=true&sort=asc&limit=50000"`,
-      `Use it to pull or refresh ${symbol}'s history, including the latest bar, before you compute indicators.`,
+    lines.push(
+      `You can also call the Massive API (${MASSIVE_BASE}) with the MASSIVE_API_KEY environment variable as a header`,
+      `(curl -s -H "Authorization: Bearer $MASSIVE_API_KEY" "${MASSIVE_BASE}/v2/aggs/ticker/${symbol}/range/15/minute/<from>/<to>?adjusted=true&sort=asc&limit=50000"),`,
+      `but base your levels on the files above so they match the chart.`,
+      ``,
     );
   }
-  if (snapshot) {
-    data.push(
-      `${data.length ? "As a backup, a" : "A"} snapshot of ${symbol}'s adjusted daily bars from Massive (${snapshot.rows} rows, ${snapshot.from} to ${snapshot.to}) is mounted at ${snapshot.path}`,
-      `(CSV columns: date,open,high,low,close,volume,vwap,trades).`,
-    );
-  }
-  return [
-    `Analyze the stock ${symbol}.`,
+
+  lines.push(
+    `FOR EACH TIMEFRAME, using that timeframe's bars and the indicators you were programmed to use:`,
+    `1. Compute your indicators on that timeframe's bars.`,
+    `2. Decide BUY or SELL for that timeframe, with a confidence 0-100.`,
+    `3. Calculate Target 1, Target 2, Stop loss 1 and Stop loss 2 from your indicators, using support/resistance and ATR.`,
+    `4. Calculate the forecast high: the highest price ${symbol} is likely to reach during the NEXT bar of that timeframe`,
+    `   (${TIMEFRAMES.map((t) => `${t.key}: ${t.next}`).join("; ")}), plus the forecast low for that same period.`,
+    `5. Forecast the path for the next 10 bars of that timeframe (expected price with a low/high range).`,
+    `6. Before writing, check your work:`,
+    `   - "price" equals the latest close in that timeframe's file.`,
+    `   - BUY: stop2 < stop1 < price < target1 < target2. SELL: target2 < target1 < price < stop1 < stop2.`,
+    `   - forecast_high >= price >= forecast_low, and the forecast high is realistic for one bar (compare with ATR).`,
+    `   - Levels are a sensible distance from price for this timeframe (usually within a few ATRs).`,
+    `   - Never invent data. If a timeframe's data is missing, leave that timeframe out.`,
     ``,
-    ...(data.length ? [...data, ``] : []),
-    `Use your historical data for ${symbol} and the technical indicators you were programmed to use.`,
-    `Based on those indicators, tell me whether I should BUY or SELL ${symbol} right now.`,
+    `Write the results with your file tool to ${OUTPUT_DIR}/${RESULT_FILE} as JSON in exactly this shape:`,
+    `{`,
+    `  "symbol": "${symbol}",`,
+    `  "indicators_used": ["<indicator name>", "..."],`,
+    `  "timeframes": {`,
+    `    "<one of ${TF_KEYS.join(", ")}>": {`,
+    `      "signal": "BUY" | "SELL", "confidence": 0-100, "price": <latest close>,`,
+    `      "target1": n, "target2": n, "stop1": n, "stop2": n,`,
+    `      "forecast_high": n, "forecast_low": n,`,
+    `      "rationale": "one or two sentences",`,
+    `      "forecast": [{"t": <unix seconds of a future bar>, "price": n, "low": n, "high": n}, ... 10 points],`,
+    `      "indicators": [{"name": "...", "pane": "price" (drawn over the candles, e.g. moving averages) | "separate" (own panel, e.g. RSI/MACD),`,
+    `                      "value": <latest value>, "reading": "bullish" | "bearish" | "neutral",`,
+    `                      "series": [{"t": <unix seconds matching a bar's t>, "v": n}, ... the last 150 bars]}]`,
+    `    }`,
+    `  }`,
+    `}`,
+    `Use plain numbers (no strings, no NaN). Include every timeframe that has data.`,
     ``,
-    `Briefly walk through each indicator's current reading, then give your call.`,
-    ``,
-    `Also produce your price forecast for ${symbol}:`,
-    `- Save your forecast graph(s) as PNG image files in ${OUTPUT_DIR}/ (for example ${OUTPUT_DIR}/${symbol}_forecast.png),`,
-    `  showing recent price history, your forecast path, and its likely range. Any PNG you save there is shown to me.`,
-    `- Put the forecast numbers in the "forecast" field below: one point per date, with your expected price`,
-    `  and a low/high range, out to your forecast horizon.`,
-    ``,
-    `Finish your reply with exactly one line in this format (compact JSON, no code fence):`,
-    `VERDICT_JSON: {"symbol":"${symbol}","signal":"BUY or SELL","confidence":0-100,"price":last close or null,"as_of":"YYYY-MM-DD of the latest bar","summary":"one or two sentences","indicators":[{"name":"...","value":"...","reading":"bullish|bearish|neutral"}],"horizon":"e.g. 30 trading days","forecast":[{"date":"YYYY-MM-DD","price":0,"low":0,"high":0}]}`,
-  ].join("\n");
+    `Then reply with a short summary across timeframes and finish with exactly one line (compact JSON, no code fence):`,
+    `VERDICT_JSON: {"symbol":"${symbol}","signal":"BUY or SELL (overall)","confidence":0-100,"summary":"one or two sentences","indicators_used":["..."]}`,
+  );
+  return lines.join("\n");
 }
 
-// Keep only well-formed forecast points, sorted by date.
-function cleanForecast(f) {
-  if (!Array.isArray(f)) return [];
-  const num = (x) => (x === null || x === undefined || x === "" ? null : Number.isFinite(Number(x)) ? Number(x) : null);
-  return f
-    .map((p) => ({ date: String(p?.date ?? "").slice(0, 10), price: num(p?.price), low: num(p?.low), high: num(p?.high) }))
-    .filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.date) && p.price !== null)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 400);
-}
-
-// Pull the structured verdict out of Stocky's reply. Falls back to scanning
+// Pull the overall verdict out of Stocky's reply. Falls back to scanning
 // the text for a BUY/SELL/HOLD word if the JSON line is missing or malformed.
 export function parseVerdict(text, symbol) {
   const lines = text.split(/\r?\n/);
@@ -148,36 +173,27 @@ export function parseVerdict(text, symbol) {
     try {
       const v = JSON.parse(raw);
       const signal = String(v.signal || "").toUpperCase();
-      if (["BUY", "SELL", "HOLD"].includes(signal)) {
-        return {
-          symbol: v.symbol || symbol,
-          signal,
-          confidence: Number.isFinite(Number(v.confidence)) ? Number(v.confidence) : null,
-          price: v.price ?? null,
-          as_of: v.as_of ?? null,
-          summary: v.summary ?? "",
-          indicators: Array.isArray(v.indicators) ? v.indicators : [],
-          horizon: v.horizon ?? null,
-          forecast: cleanForecast(v.forecast),
-          structured: true,
-        };
-      }
+      return {
+        symbol: v.symbol || symbol,
+        signal: ["BUY", "SELL", "HOLD"].includes(signal) ? signal : null,
+        confidence: Number.isFinite(Number(v.confidence)) ? Number(v.confidence) : null,
+        summary: v.summary ?? "",
+        indicators_used: Array.isArray(v.indicators_used) ? v.indicators_used.map(String) : [],
+        timeframes: v.timeframes ?? null, // in case Stocky put the levels here instead of the file
+        structured: true,
+      };
     } catch {
       /* fall through to heuristic */
     }
   }
-  const m = text.match(/\b(STRONG\s+)?(BUY|SELL|HOLD)\b(?![\s\S]*\b(BUY|SELL|HOLD)\b)/i);
-  if (!m) return null;
+  const m = text.match(/\b(BUY|SELL|HOLD)\b(?![\s\S]*\b(BUY|SELL|HOLD)\b)/i);
   return {
     symbol,
-    signal: m[2].toUpperCase(),
+    signal: m ? m[1].toUpperCase() : null,
     confidence: null,
-    price: null,
-    as_of: null,
     summary: "",
-    indicators: [],
-    horizon: null,
-    forecast: [],
+    indicators_used: [],
+    timeframes: null,
     structured: false,
   };
 }
@@ -185,26 +201,35 @@ export function parseVerdict(text, symbol) {
 // ── Stocky session ─────────────────────────────────────────────────────────
 
 async function analyze(symbol, send, isClosed) {
-  // Backup: fetch daily bars from Massive here and mount them in Stocky's sandbox.
-  let snapshot = null;
-  let uploadedFileId = null;
+  let candles = {};
   if (MASSIVE_API_KEY) {
-    try {
-      send("status", { message: `Pulling ${symbol} history from Massive…` });
-      snapshot = await fetchMassiveSnapshot(symbol);
-      if (snapshot) {
-        const uploaded = await client.files.upload({
-          file: await toFile(Buffer.from(snapshot.csv), `${symbol}_daily.csv`, { type: "text/csv" }),
+    send("status", { message: `Loading ${symbol} candles from Massive (15 min to 1 month)…` });
+    candles = await fetchAllCandles(symbol, send);
+  } else {
+    send("status", { message: "MASSIVE_API_KEY isn't set, so the app can't load candles. Run setup.bat." });
+  }
+  // Send candles right away so the chart can draw while Stocky works.
+  send("candles", { candles, timeframes: TIMEFRAMES });
+
+  // Mount one CSV per timeframe in Stocky's sandbox.
+  const mounted = {};
+  const resources = [];
+  const uploadedIds = [];
+  try {
+    await Promise.all(
+      TIMEFRAMES.filter((tf) => candles[tf.key]).map(async (tf) => {
+        const name = `${symbol}_${tf.key}.csv`;
+        const up = await client.files.upload({
+          file: await toFile(Buffer.from(candlesToCsv(candles[tf.key])), name, { type: "text/csv" }),
         });
-        uploadedFileId = uploaded.id;
-      } else {
-        send("status", { message: `Massive returned no bars for ${symbol}; Stocky will use its own data.` });
-      }
-    } catch (err) {
-      console.error(`[massive ${symbol}]`, err);
-      send("status", { message: `Couldn't pull Massive data here (${err.message}); Stocky will use its own data.` });
-      snapshot = null;
-    }
+        uploadedIds.push(up.id);
+        mounted[tf.key] = `/workspace/data/${name}`;
+        resources.push({ type: "file", file_id: up.id, mount_path: mounted[tf.key] });
+      }),
+    );
+  } catch (err) {
+    console.error(`[upload ${symbol}]`, err);
+    send("status", { message: `Couldn't hand the candle files to Stocky (${describeError(err)}).` });
   }
 
   send("status", { message: `Starting a Stocky session for ${symbol}…` });
@@ -215,27 +240,20 @@ async function analyze(symbol, send, isClosed) {
       environment_id: ENVIRONMENT_ID,
       title: `Stockypower: ${symbol}`,
       ...(VAULT_ID ? { vault_ids: [VAULT_ID] } : {}),
-      ...(uploadedFileId ? { resources: [{ type: "file", file_id: uploadedFileId, mount_path: snapshot.path }] } : {}),
+      ...(resources.length ? { resources } : {}),
     });
   } finally {
-    // The session gets its own copy of the file, so the upload can go.
-    if (uploadedFileId) client.files.delete(uploadedFileId).catch(() => {});
+    // The session gets its own copies of the files, so the uploads can go.
+    for (const id of uploadedIds) client.files.delete(id).catch(() => {});
   }
   send("session", { id: session.id });
-  send("status", {
-    message: VAULT_ID
-      ? "Stocky has live access to the Massive feed for this session."
-      : snapshot
-        ? "Stocky has a Massive data snapshot (no live access: run npm run connect-massive)."
-        : "Massive isn't set up; Stocky will use its own data.",
-  });
 
   // Stream-first: open the stream before sending the message so no early event is missed.
   const stream = await client.beta.sessions.events.stream(session.id);
   await client.beta.sessions.events.send(session.id, {
-    events: [{ type: "user.message", content: [{ type: "text", text: buildPrompt(symbol, snapshot) }] }],
+    events: [{ type: "user.message", content: [{ type: "text", text: buildPrompt(symbol, candles, mounted) }] }],
   });
-  send("status", { message: `Stocky is checking ${symbol}'s history and indicators…` });
+  send("status", { message: `Stocky is calculating ${symbol} on all six timeframes…` });
 
   let fullText = "";
   try {
@@ -328,43 +346,84 @@ async function analyze(symbol, send, isClosed) {
 
   async function finalize() {
     const verdict = parseVerdict(fullText, symbol);
-    send("status", { message: "Collecting Stocky's charts…" });
-    const charts = await collectCharts(session.id);
-    send("verdict", {
-      verdict,
-      text: fullText,
-      sessionId: session.id,
-      history: snapshot?.history ?? [],
-      charts,
-    });
+    send("status", { message: "Reading Stocky's results and checking them…" });
+
+    const raw = (await readResultFile(session.id)) ?? (verdict.timeframes ? { timeframes: verdict.timeframes } : null);
+    const analysis = cleanAnalysis(raw) ?? { indicators_used: [], timeframes: {} };
+    if (!analysis.indicators_used.length) analysis.indicators_used = verdict.indicators_used;
+
+    // Accuracy checks per timeframe, against the real candles.
+    const checks = {};
+    for (const tf of TIMEFRAMES) {
+      if (analysis.timeframes[tf.key] || candles[tf.key]) checks[tf.key] = validateLevels(analysis.timeframes[tf.key], candles[tf.key]);
+    }
+
+    // Track record: score this symbol's earlier calls, then save this one.
+    const store = trackStore(DATA_DIR);
+    let record = {};
+    try {
+      record = trackRecord(store.load(symbol), candles);
+      const now = new Date().toISOString();
+      const rows = [];
+      for (const tf of TIMEFRAMES) {
+        const a = analysis.timeframes[tf.key];
+        const bars = candles[tf.key];
+        if (!a || !bars?.length || !a.signal) continue;
+        rows.push({
+          symbol,
+          tf: tf.key,
+          created: now,
+          session: session.id,
+          asOfT: bars[bars.length - 1].t,
+          entry: bars[bars.length - 1].c,
+          signal: a.signal,
+          target1: a.target1,
+          target2: a.target2,
+          stop1: a.stop1,
+          stop2: a.stop2,
+          forecast_high: a.forecast_high,
+          checksPassed: checks[tf.key]?.ok ?? false,
+        });
+      }
+      if (rows.length) store.save(rows);
+    } catch (err) {
+      console.error(`[track ${symbol}]`, err);
+    }
+
+    if (!overallSignal(verdict)) verdict.signal = analysis.timeframes["1D"]?.signal ?? verdict.signal;
+    send("verdict", { verdict, text: fullText, sessionId: session.id, analysis, checks, record, hasResultFile: Boolean(raw) });
   }
 }
 
-// ── Charts Stocky saved ──────────────────────────────────────────────────────
+const overallSignal = (v) => v && ["BUY", "SELL", "HOLD"].includes(v.signal);
 
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg)$/i;
-const servableFiles = new Map(); // file id -> { filename, mime } that this server handed out
+// ── Stocky's results file ────────────────────────────────────────────────────
 
-// Image files Stocky wrote to /mnt/session/outputs during the session.
-async function collectCharts(sessionId) {
+// Downloads /mnt/session/outputs/stockypower.json from the session, if Stocky wrote it.
+async function readResultFile(sessionId) {
   // Files show up in the listing a second or two after the session goes idle.
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const charts = [];
+      let match = null;
       for await (const f of client.beta.files.list({ scope_id: sessionId, betas: ["managed-agents-2026-04-01"] })) {
-        const isImage = (f.mime_type || "").startsWith("image/") || IMAGE_EXT.test(f.filename || "");
-        if (!isImage) continue;
-        servableFiles.set(f.id, { filename: f.filename, mime: f.mime_type || "application/octet-stream" });
-        charts.push({ id: f.id, filename: f.filename, url: `/api/file/${f.id}` });
+        if ((f.filename || "").toLowerCase() === RESULT_FILE && (!match || f.created_at > match.created_at)) match = f;
       }
-      if (charts.length || attempt === 3) return charts;
+      if (match) {
+        const r = await client.beta.files.download(match.id, { betas: ["managed-agents-2026-04-01"] });
+        const text = (await r.text()).replace(/^﻿/, "");
+        try {
+          return JSON.parse(text);
+        } catch {
+          console.error(`[result ${sessionId}] ${RESULT_FILE} is not valid JSON`);
+          return null;
+        }
+      }
     } catch (err) {
-      console.error(`[charts ${sessionId}]`, err);
-      if (attempt === 3) return [];
+      console.error(`[result ${sessionId}]`, err);
     }
     await new Promise((r) => setTimeout(r, 1500));
   }
-  return [];
+  return null;
 }
 
 // ── HTTP ───────────────────────────────────────────────────────────────────
@@ -428,8 +487,22 @@ function describeError(err) {
   return err?.message || String(err);
 }
 
+// HTTP Basic auth when APP_PASSWORD is set. Constant-time compare.
+function authorized(req) {
+  if (!APP_PASSWORD) return true;
+  const m = /^Basic (.+)$/i.exec(req.headers.authorization || "");
+  if (!m) return false;
+  const given = Buffer.from(Buffer.from(m[1], "base64").toString("utf8"));
+  const want = Buffer.from(`${APP_USER}:${APP_PASSWORD}`);
+  return given.length === want.length && crypto.timingSafeEqual(given, want);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
+  if (!authorized(req)) {
+    res.writeHead(401, { "WWW-Authenticate": 'Basic realm="Stockypower", charset="UTF-8"', "Content-Type": "text/plain" });
+    return res.end("Password required.");
+  }
 
   if (req.method === "POST" && url.pathname === "/api/analyze") {
     let symbol;
@@ -478,34 +551,12 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (req.method === "GET" && url.pathname.startsWith("/api/file/")) {
-    const id = url.pathname.slice("/api/file/".length);
-    const meta = servableFiles.get(id);
-    if (!meta) return json(res, 404, { error: "Unknown file" });
-    try {
-      const r = await client.beta.files.download(id, { betas: ["managed-agents-2026-04-01"] });
-      const buf = Buffer.from(await r.arrayBuffer());
-      res.writeHead(200, {
-        "Content-Type": meta.mime,
-        "Content-Disposition": `inline; filename="${String(meta.filename).replace(/[^\w.\-]/g, "_")}"`,
-        // Agent-made files are untrusted: never let them run scripts.
-        "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "private, max-age=3600",
-      });
-      return res.end(buf);
-    } catch (err) {
-      console.error(`[file ${id}]`, err);
-      return json(res, 502, { error: describeError(err) });
-    }
-  }
-
   if (req.method === "GET" && url.pathname === "/api/config") {
     return json(res, 200, {
       agentId: AGENT_ID,
       environmentId: ENVIRONMENT_ID,
       massiveLive: Boolean(VAULT_ID),
-      massiveSnapshot: Boolean(MASSIVE_API_KEY),
+      massiveCandles: Boolean(MASSIVE_API_KEY),
     });
   }
 
@@ -519,6 +570,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log(`  Stocky agent:  ${AGENT_ID}`);
     console.log(`  Environment:   ${ENVIRONMENT_ID}`);
     console.log(`  Massive live:  ${VAULT_ID ? `yes (vault ${VAULT_ID})` : "no - run npm run connect-massive"}`);
-    console.log(`  Massive snapshot: ${MASSIVE_API_KEY ? "yes" : "no - set MASSIVE_API_KEY"}`);
+    console.log(`  Massive candles: ${MASSIVE_API_KEY ? "yes" : "no - set MASSIVE_API_KEY"}`);
+    console.log(`  Password:      ${APP_PASSWORD ? `on (user "${APP_USER}")` : "off (fine on your own PC; required before going on the web)"}`);
   });
 }
