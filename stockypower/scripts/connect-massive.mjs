@@ -18,7 +18,7 @@
 // host twice.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { loadEnv, writeEnvValues, ENV_PATH } from "./load-env.mjs";
+import { loadEnv, makeClient, writeEnvValues, ENV_PATH } from "./load-env.mjs";
 
 loadEnv();
 
@@ -28,7 +28,7 @@ const VAULT_NAME = "Stockypower - Massive";
 const SECRET_NAME = "MASSIVE_API_KEY";
 const MASSIVE_HOSTS = ["api.massive.com", "api.polygon.io"];
 
-const client = new Anthropic();
+const client = await makeClient();
 
 try {
   await connectMassive();

@@ -42,3 +42,16 @@ export function writeEnvValues(values) {
   }
   fs.writeFileSync(ENV_PATH, text);
 }
+
+// Anthropic client for Stockypower. Normally the SDK default. If setup found
+// that the API only accepts this key in the classic `x-api-key` header, it
+// sets ANTHROPIC_KEY_HEADER=x-api-key and we send it that way instead.
+export async function makeClient(opts = {}) {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const key = opts.apiKey ?? process.env.ANTHROPIC_API_KEY;
+  if (process.env.ANTHROPIC_KEY_HEADER === "x-api-key" && key) {
+    const { apiKey, ...rest } = opts;
+    return new Anthropic({ ...rest, apiKey: null, authToken: null, defaultHeaders: { "x-api-key": key } });
+  }
+  return new Anthropic(opts);
+}

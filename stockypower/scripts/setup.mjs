@@ -5,13 +5,13 @@
 //  3. Saves both to stockypower/.env.
 //  4. Connects Stocky to Massive (scripts/connect-massive.mjs).
 //
-// Keys you type are hidden on screen and only ever written to .env.
+// Keys are only ever written to .env. The key's line is erased from the screen after Enter.
 
 import readline from "node:readline";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
-import { loadEnv, readEnvFile, writeEnvValues, ROOT, ENV_PATH } from "./load-env.mjs";
+import { loadEnv, makeClient, readEnvFile, writeEnvValues, ROOT, ENV_PATH } from "./load-env.mjs";
 
 loadEnv();
 
@@ -22,54 +22,108 @@ const MASSIVE_BASE = process.env.MASSIVE_BASE_URL || "https://api.massive.com";
 const clean = (s) => String(s ?? "").trim().replace(/^["']|["']$/g, "").trim();
 const tail = (k) => (k.length > 8 ? `…${k.slice(-4)}` : "");
 
-// One prompt reader for the whole run; typed text is hidden (pasting works too).
+// One plain prompt reader for the whole run. Typing and pasting are visible
+// (hidden input confused people on Windows: pasting showed nothing). Once Enter
+// is pressed, the line with the key is erased from the screen.
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY) });
-let muted = false;
-rl._writeToOutput = (s) => {
-  if (!muted) rl.output.write(s);
-};
 const lines = rl[Symbol.asyncIterator]();
 
-async function askHidden(question) {
+async function askKey(question) {
   process.stdout.write(question);
-  muted = true;
   const { value, done } = await lines.next();
-  muted = false;
-  process.stdout.write("\n");
   if (done) throw new Error("Input closed before a key was entered.");
+  if (process.stdout.isTTY) {
+    readline.moveCursor(process.stdout, 0, -1);
+    readline.clearLine(process.stdout, 0);
+    readline.cursorTo(process.stdout, 0);
+    process.stdout.write("> (key entered)\n");
+  } else {
+    process.stdout.write("\n");
+  }
   return clean(value);
 }
 
 // ── Anthropic ──────────────────────────────────────────────────────────────
 
 // Returns { ok: true } or { ok: false, why }.
-async function checkAnthropicKey(apiKey) {
-  if (!apiKey.startsWith("sk-ant-")) {
-    return { ok: false, why: "That doesn't look like an Anthropic API key. Keys start with sk-ant-." };
+const ANTHROPIC_BASE = (process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/+$/, "");
+
+// Non-secret description of a key, for comparing with the hint the Console shows.
+const keyShape = (k) => `${k.slice(0, 13)}…${k.slice(-4)}, ${k.length} characters`;
+
+// Second opinion: is the key accepted in the classic x-api-key header?
+async function acceptedViaXApiKey(apiKey) {
+  try {
+    const r = await fetch(`${ANTHROPIC_BASE}/v1/models?limit=1`, {
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    return r.ok;
+  } catch {
+    return false;
   }
-  const client = new Anthropic({ apiKey, authToken: null, maxRetries: 1 });
+}
+
+// Can this key see Stocky and its environment? Returns null if yes, else an error object.
+async function tryStocky(client) {
   try {
     await client.beta.agents.retrieve(AGENT_ID);
-  } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError)
-      return { ok: false, why: "Anthropic says this key is invalid. It may have been mistyped, deleted or disabled." };
-    if (err instanceof Anthropic.NotFoundError || err instanceof Anthropic.PermissionDeniedError)
-      return {
-        ok: false,
-        why: `The key works, but it can't see Stocky (${AGENT_ID}). Make the key in the same Console workspace as Stocky.`,
-      };
-    if (err instanceof Anthropic.APIConnectionError)
-      return { ok: false, why: "Couldn't reach Anthropic. Check your internet connection." };
-    return { ok: false, why: `Anthropic error: ${err.message}` };
-  }
-  try {
     await client.beta.environments.retrieve(ENVIRONMENT_ID);
+    return null;
   } catch (err) {
-    if (err instanceof Anthropic.NotFoundError || err instanceof Anthropic.PermissionDeniedError)
-      return { ok: false, why: `The key can see Stocky but not its environment (${ENVIRONMENT_ID}).` };
-    return { ok: false, why: `Anthropic error: ${err.message}` };
+    return err;
   }
-  return { ok: true };
+}
+
+// Returns { ok: true, extra? } or { ok: false, why }.
+async function checkAnthropicKey(apiKey) {
+  if (apiKey.startsWith("sk-ant-oat"))
+    return {
+      ok: false,
+      why:
+        "That's a Claude subscription / Claude Code login token (sk-ant-oat…), not an API key.\n" +
+        "  Create an API key at https://platform.claude.com -> API Keys. It starts with sk-ant-api03-.",
+    };
+  if (apiKey.startsWith("sk-ant-admin"))
+    return {
+      ok: false,
+      why: "That's an Admin API key (sk-ant-admin…). Stockypower needs a regular API key (sk-ant-api03-…).",
+    };
+  if (!apiKey.startsWith("sk-ant-"))
+    return { ok: false, why: "That doesn't look like an Anthropic API key. API keys start with sk-ant-api03-." };
+
+  let extra = {};
+  let err = await tryStocky(await makeClient({ apiKey, authToken: null, maxRetries: 1 }));
+
+  if (err instanceof Anthropic.AuthenticationError && process.env.ANTHROPIC_KEY_HEADER !== "x-api-key") {
+    // Rule out the SDK's header style before blaming the key.
+    if (await acceptedViaXApiKey(apiKey)) {
+      process.env.ANTHROPIC_KEY_HEADER = "x-api-key";
+      extra = { ANTHROPIC_KEY_HEADER: "x-api-key" };
+      err = await tryStocky(await makeClient({ apiKey, authToken: null, maxRetries: 1 }));
+    }
+  }
+
+  if (!err) return { ok: true, extra };
+  if (err instanceof Anthropic.AuthenticationError)
+    return {
+      ok: false,
+      why:
+        `Anthropic says this key is invalid (key read as: ${keyShape(apiKey)}).\n` +
+        "  It was checked two different ways, so the key itself is the problem: it was deleted,\n" +
+        "  disabled, or copied incompletely. In https://platform.claude.com -> API Keys,\n" +
+        "  click Create Key and copy the NEW key straight away (the full key is shown only once).",
+    };
+  if (err instanceof Anthropic.NotFoundError || err instanceof Anthropic.PermissionDeniedError)
+    return {
+      ok: false,
+      why:
+        `The key is valid, but it can't see Stocky (${AGENT_ID}) or its environment.\n` +
+        "  Create the key in the same Console workspace where you built Stocky.",
+    };
+  if (err instanceof Anthropic.APIConnectionError)
+    return { ok: false, why: "Couldn't reach Anthropic. Check your internet connection." };
+  return { ok: false, why: `Anthropic error: ${err.message}` };
 }
 
 // ── Massive ────────────────────────────────────────────────────────────────
@@ -97,6 +151,7 @@ async function getKey({ name, label, help, current, check }) {
     process.stdout.write(`Checking the ${label} already in .env (${tail(current)})… `);
     const res = await check(current);
     if (res.ok) {
+      if (res.extra && Object.keys(res.extra).length) writeEnvValues(res.extra);
       console.log("works.");
       if (res.warn) console.log(`  Note: ${res.warn}`);
       return current;
@@ -105,9 +160,9 @@ async function getKey({ name, label, help, current, check }) {
   }
   console.log(`\n${help}`);
   for (;;) {
-    const key = await askHidden(`Paste your ${label} and press Enter (it stays hidden): `);
+    const key = await askKey(`Paste your ${label} here, then press Enter:\n> `);
     if (!key) {
-      console.log("  Nothing was entered. Right-click usually pastes in this window.");
+      console.log("  Nothing was entered. To paste: right-click inside this window, or press Ctrl+V.");
       continue;
     }
     process.stdout.write("  Checking… ");
@@ -115,7 +170,7 @@ async function getKey({ name, label, help, current, check }) {
     if (res.ok) {
       console.log(`works (${tail(key)}).`);
       if (res.warn) console.log(`  Note: ${res.warn}`);
-      writeEnvValues({ [name]: key });
+      writeEnvValues({ [name]: key, ...(res.extra ?? {}) });
       return key;
     }
     console.log(`\n  ${res.why}\n  Let's try again.`);

@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
-import { loadEnv } from "./scripts/load-env.mjs";
+import { loadEnv, makeClient } from "./scripts/load-env.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,7 +27,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 
 // Resolves ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN / an `ant auth login` profile).
 // ANTHROPIC_BASE_URL is honoured too, which is how the local mock test works.
-const client = new Anthropic();
+const client = await makeClient();
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;
 
