@@ -336,7 +336,6 @@ function renderChart(st, el, legend, bars, a, LW) {
       vertLine: { color: "#484f58", style: LW.LineStyle.Dashed, labelBackgroundColor: "#30363d" },
       horzLine: { color: "#484f58", style: LW.LineStyle.Dashed, labelBackgroundColor: "#30363d" },
     },
-    localization: { priceFormatter: (p) => fmt(p) },
   });
   st.chart = chart;
 
@@ -344,6 +343,8 @@ function renderChart(st, el, legend, bars, a, LW) {
   const candle = chart.addSeries(LW.CandlestickSeries, {
     upColor: "#26a641", downColor: "#e5534b", borderVisible: false, wickUpColor: "#26a641", wickDownColor: "#e5534b",
     priceLineColor: "#8b949e", priceLineStyle: LW.LineStyle.Dotted,
+    // Penny stocks need 4 decimals; everything else 2.
+    priceFormat: { type: "price", precision: bars[bars.length - 1].c < 1 ? 4 : 2, minMove: bars[bars.length - 1].c < 1 ? 0.0001 : 0.01 },
   });
   const cdata = cleanPoints(bars.map((b) => ({ time: toET(b.t), open: b.o, high: b.h, low: b.l, close: b.c })));
   candle.setData(cdata);
@@ -397,14 +398,25 @@ function renderChart(st, el, legend, bars, a, LW) {
   // Panel indicators (e.g. RSI, MACD): one pane each, with their own scale.
   panelInds.forEach((ind, i) => {
     const color = IND_COLORS[(overlayInds.length + i) % IND_COLORS.length];
-    const s = chart.addSeries(LW.LineSeries, { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false }, i + 1);
+    const s = chart.addSeries(LW.LineSeries, { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false, priceFormat: { type: "price", precision: 2, minMove: 0.01 } }, i + 1);
     s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))));
-    keys.push(`<span><i style="background:${color}"></i>${esc(ind.name)}${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
+    keys.push(`<span><i style="background:${color}"></i>${esc(ind.name)} (panel ${i + 1})${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
     legendSeries.push([ind.name, s, color]);
   });
   const panes = chart.panes();
   panes[0].setStretchFactor(3);
   for (let i = 1; i < panes.length; i++) panes[i].setStretchFactor(1);
+  // Name each indicator panel in its own colour, so it's clear what each line is.
+  panelInds.forEach((ind, i) => {
+    const pane = panes[i + 1];
+    if (!pane || !LW.createTextWatermark) return;
+    const color = IND_COLORS[(overlayInds.length + i) % IND_COLORS.length];
+    LW.createTextWatermark(pane, {
+      horzAlign: "left",
+      vertAlign: "top",
+      lines: [{ text: `${ind.name}${ind.reading ? `  ·  ${ind.reading}` : ""}`, color, fontSize: 12 }],
+    });
+  });
 
   $(".keys", st.card).innerHTML = keys.join("");
 
