@@ -8,7 +8,8 @@
   "scripts": {
     "start": "node server.mjs",
     "connect-massive": "node scripts/connect-massive.mjs",
-    "setup": "node scripts/setup.mjs"
+    "setup": "node scripts/setup.mjs",
+    "update": "node scripts/update.mjs"
   },
   "engines": {
     "node": ">=20.12"

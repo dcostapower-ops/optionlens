@@ -28,6 +28,10 @@ Browser ──POST /api/analyze──▶ server.mjs ──Managed Agents API─�
 4. Setup saves the keys to `.env`, connects Stocky to Massive, starts Stockypower, and opens
    http://localhost:8790.
 
+To get a newer version later, **double-click `update.bat`**. It downloads the latest files
+into this same folder, keeps your `.env` and `setup.bat` (your keys) as they are, and starts
+the app.
+
 After that, **double-click `start.bat`** to run Stockypower. Keep its window open while you
 use the app, and close it to stop. Run `setup.bat` again whenever you change a key.
 
