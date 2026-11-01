@@ -355,6 +355,10 @@ function serveStatic(req, res) {
 }
 
 function describeError(err) {
+  if (err instanceof Anthropic.APIError && /usage limit/i.test(err.message))
+    return "Your Anthropic account reached its monthly spend limit, so Stocky can't run. Raise it at https://platform.claude.com under Settings -> Limits (and check the workspace's own limit), or wait until it resets.";
+  if (err instanceof Anthropic.APIError && /credit balance/i.test(err.message))
+    return "Your Anthropic account is out of credit. Add credit at https://platform.claude.com under Settings -> Billing.";
   if (err instanceof Anthropic.AuthenticationError) return "Anthropic rejected the API key. Check ANTHROPIC_API_KEY in stockypower/.env.";
   if (err instanceof Anthropic.NotFoundError) return "Stocky's agent or environment ID was not found. Check STOCKY_AGENT_ID / STOCKY_ENVIRONMENT_ID.";
   if (err instanceof Anthropic.PermissionDeniedError) return "This API key cannot use the Stocky agent (wrong workspace?).";
