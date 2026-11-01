@@ -16,6 +16,10 @@ Browser ──POST /api/analyze──▶ server.mjs ──Managed Agents API─�
 
 1. Install **Node.js LTS** from https://nodejs.org if you don't have it.
 2. Open the `stockypower` folder and **double-click `setup.bat`**.
+   - Or, to skip typing: right-click `setup.bat` → **Edit** (or open it in Notepad), put
+     your keys in the two lines `set "ANTHROPIC_KEY="` and `set "MASSIVE_KEY="` near the top,
+     for example `set "ANTHROPIC_KEY=sk-ant-api03-..."`, save, then double-click it. Don't share
+     the file afterwards.
 3. When asked, paste your **Anthropic API key**, then your **Massive API key**. Right-click
    pastes in the black window. What you paste stays hidden.
    - Each key is tested right away. If one is wrong, the window explains why and asks again.

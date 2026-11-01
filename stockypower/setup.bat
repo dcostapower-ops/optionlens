@@ -1,5 +1,19 @@
 @echo off
 setlocal
+
+rem ====================================================================
+rem  OPTIONAL: put your keys between the = and the closing quote below,
+rem  save this file, then double-click it. Example:
+rem      set "ANTHROPIC_KEY=sk-ant-api03-AbCd..."
+rem  Leave them empty to be asked for the keys instead.
+rem  Do not share this file once your keys are in it.
+rem ====================================================================
+set "ANTHROPIC_KEY="
+set "MASSIVE_KEY="
+rem ====================================================================
+
+set "STOCKYPOWER_ANTHROPIC_KEY=%ANTHROPIC_KEY%"
+set "STOCKYPOWER_MASSIVE_KEY=%MASSIVE_KEY%"
 cd /d "%~dp0"
 title Stockypower setup
 

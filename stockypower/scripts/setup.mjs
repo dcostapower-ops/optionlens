@@ -148,10 +148,10 @@ async function checkMassiveKey(key) {
 
 async function getKey({ name, label, help, current, check }) {
   if (current) {
-    process.stdout.write(`Checking the ${label} already in .env (${tail(current)})… `);
+    process.stdout.write(`Checking the ${label} you already provided (${tail(current)})… `);
     const res = await check(current);
     if (res.ok) {
-      if (res.extra && Object.keys(res.extra).length) writeEnvValues(res.extra);
+      writeEnvValues({ [name]: current, ...(res.extra ?? {}) });
       console.log("works.");
       if (res.warn) console.log(`  Note: ${res.warn}`);
       return current;
@@ -188,7 +188,7 @@ await getKey({
     "Step 1 of 2: Anthropic API key.\n" +
     "  Get one at https://platform.claude.com -> API Keys -> Create Key,\n" +
     "  in the SAME workspace where your Stocky agent lives.",
-  current: clean(fileVals.ANTHROPIC_API_KEY),
+  current: clean(process.env.STOCKYPOWER_ANTHROPIC_KEY) || clean(fileVals.ANTHROPIC_API_KEY),
   check: checkAnthropicKey,
 });
 
@@ -196,7 +196,7 @@ await getKey({
   name: "MASSIVE_API_KEY",
   label: "Massive API key",
   help: "\nStep 2 of 2: Massive API key.\n  Copy it from your Massive account dashboard (API Keys).",
-  current: clean(fileVals.MASSIVE_API_KEY),
+  current: clean(process.env.STOCKYPOWER_MASSIVE_KEY) || clean(fileVals.MASSIVE_API_KEY),
   check: checkMassiveKey,
 });
 
