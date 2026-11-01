@@ -373,13 +373,35 @@ function planIndicators(a, bars) {
   return { ha: ha && ha.candles.length ? ha : null, overlays, panels: groups.slice(0, 3) };
 }
 
-// Smoothed-HA colours: strong up green, fading up yellow, fading down purple, strong down red.
-function haColor(cur, prev) {
+// Smoothed-HA colours: strong up, fading up, fading down, strong down. Stocky's
+// configured colours win; these defaults are used only if it doesn't send any.
+function haColor(cur, prev, colors = {}) {
   const up = cur.c >= cur.o;
   const body = Math.abs(cur.c - cur.o);
   const prevBody = prev ? Math.abs(prev.c - prev.o) : 0;
-  if (up) return body >= prevBody ? "#2fbf71" : "#d4b72c";
-  return body >= prevBody ? "#e5534b" : "#9d6ff0";
+  const bull = colors.bull || colors.up || colors.bullish || "#2fbf71";
+  const bear = colors.bear || colors.down || colors.bearish || "#e5534b";
+  const bullWeak = colors.bullweak || colors.upweak || (colors.bull || colors.up ? bull : "#d4b72c");
+  const bearWeak = colors.bearweak || colors.downweak || (colors.bear || colors.down ? bear : "#9d6ff0");
+  if (up) return body >= prevBody ? bull : bullWeak;
+  return body >= prevBody ? bear : bearWeak;
+}
+
+// "#rrggbb" + alpha -> "rgba(...)".
+function rgba(hex, alpha) {
+  let h = String(hex || "").replace("#", "");
+  if (h.length === 3) h = [...h].map((c) => c + c).join("");
+  const n = parseInt(h.slice(0, 6), 16);
+  if (!Number.isFinite(n)) return `rgba(139,148,158,${alpha})`;
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+// "length 14 · method RMA · levels 80 / 20" from what Stocky reported.
+function settingsText(ind) {
+  const parts = Object.entries(ind.settings || {}).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`);
+  if (ind.levels?.length) parts.push(`levels ${ind.levels.join(" / ")}`);
+  if (ind.base != null && ind.style === "baseline") parts.push(`centre ${ind.base}`);
+  return parts.join(" · ");
 }
 
 function renderChart(st, el, legend, bars, a, LW) {
@@ -429,7 +451,7 @@ function renderChart(st, el, legend, bars, a, LW) {
   if (useHA) {
     const pts = cleanPoints(plan.ha.candles.map((p) => ({ time: toET(p.t), open: p.o, high: p.h, low: p.l, close: p.c })));
     mainData = pts.map((p, i) => {
-      const color = haColor({ o: p.open, c: p.close }, i ? { o: pts[i - 1].open, c: pts[i - 1].close } : null);
+      const color = haColor({ o: p.open, c: p.close }, i ? { o: pts[i - 1].open, c: pts[i - 1].close } : null, plan.ha.colors);
       return { ...p, color, wickColor: color, borderColor: color };
     });
   } else {
@@ -451,12 +473,17 @@ function renderChart(st, el, legend, bars, a, LW) {
 
   const keys = [];
   const legendSeries = [];
-  if (useHA) keys.push(`<span><i style="background:linear-gradient(90deg,#2fbf71,#d4b72c,#9d6ff0,#e5534b)"></i>${esc(plan.ha.name)} candles${plan.ha.reading ? ` · ${esc(plan.ha.reading)}` : ""}</span>`);
+  if (useHA) {
+    const c = plan.ha.colors || {};
+    const grad = [haColor({ o: 0, c: 2 }, { o: 0, c: 1 }, c), haColor({ o: 0, c: 1 }, { o: 0, c: 2 }, c), haColor({ o: 1, c: 0 }, { o: 2, c: 0 }, c), haColor({ o: 2, c: 0 }, { o: 1, c: 0 }, c)];
+    const set = settingsText(plan.ha);
+    keys.push(`<span><i style="background:linear-gradient(90deg,${grad.join(",")})"></i>${esc(plan.ha.name)} candles${set ? ` (${esc(set)})` : ""}${plan.ha.reading ? ` · ${esc(plan.ha.reading)}` : ""}</span>`);
+  }
 
   let colorIdx = 0;
   const nextColor = (c) => c || IND_COLORS[colorIdx++ % IND_COLORS.length];
   for (const ind of plan.overlays) {
-    const color = nextColor(ind.color);
+    const color = nextColor(ind.color || ind.colors?.line);
     if (ind.style === "band" && ind.band.length) {
       for (const k of ["upper", "lower"]) {
         chart.addSeries(LW.LineSeries, { ...quiet, color: color + "99", lineWidth: 1 }).setData(cleanPoints(ind.band.map((p) => ({ time: toET(p.t), value: p[k] }))));
@@ -468,7 +495,8 @@ function renderChart(st, el, legend, bars, a, LW) {
       s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))));
       legendSeries.push([ind.name, s, color]);
     }
-    keys.push(`<span><i style="background:${color}"></i>${esc(ind.name)}${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
+    const set = settingsText(ind);
+    keys.push(`<span><i style="background:${color}"></i>${esc(ind.name)}${set ? ` (${esc(set)})` : ""}${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
   }
 
   // Forecast continues from the last real close.
@@ -533,7 +561,10 @@ function renderChart(st, el, legend, bars, a, LW) {
     const paneIdx = gi + 1;
     let title = g.items[0].name;
     for (const ind of g.items) {
-      const color = nextColor(ind.color);
+      const cc = ind.colors || {};
+      const color = nextColor(ind.color || (ind !== g.items[0] ? cc.signal : null) || cc.line || cc.signal);
+      const bull = cc.bull || cc.up || cc.above || cc.bullish || "#2ea043";
+      const bear = cc.bear || cc.down || cc.below || cc.bearish || "#da3633";
       let s;
       if (ind.style === "baseline") {
         const base = ind.base ?? 0;
@@ -541,15 +572,15 @@ function renderChart(st, el, legend, bars, a, LW) {
           ...quiet, lastValueVisible: true, priceFormat: two, lineWidth: 1,
           baseValue: { type: "price", price: base },
           autoscaleInfoProvider: includeLevels([base, ...ind.levels]),
-          topLineColor: "#2ea043", topFillColor1: "rgba(46,160,67,0.55)", topFillColor2: "rgba(46,160,67,0.08)",
-          bottomLineColor: "#da3633", bottomFillColor1: "rgba(218,54,51,0.08)", bottomFillColor2: "rgba(218,54,51,0.55)",
+          topLineColor: bull, topFillColor1: rgba(bull, 0.55), topFillColor2: rgba(bull, 0.08),
+          bottomLineColor: bear, bottomFillColor1: rgba(bear, 0.08), bottomFillColor2: rgba(bear, 0.55),
         }, paneIdx);
         s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))));
         s.createPriceLine({ price: base, color: "#6e7681", lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: false, title: "" });
       } else if (ind.style === "histogram") {
         const base = ind.base ?? 0;
         s = chart.addSeries(LW.HistogramSeries, { ...quiet, lastValueVisible: true, priceFormat: two, base }, paneIdx);
-        s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))).map((p) => ({ ...p, color: p.value >= base ? "rgba(46,160,67,0.8)" : "rgba(218,54,51,0.8)" })));
+        s.setData(cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v }))).map((p) => ({ ...p, color: rgba(p.value >= base ? bull : bear, 0.8) })));
       } else if (ind.style === "band" && ind.band.length) {
         for (const k of ["upper", "lower"]) {
           chart.addSeries(LW.LineSeries, { ...quiet, color: color + "99", lineWidth: 1, priceFormat: two }, paneIdx).setData(cleanPoints(ind.band.map((p) => ({ time: toET(p.t), value: p[k] }))));
@@ -562,17 +593,23 @@ function renderChart(st, el, legend, bars, a, LW) {
       }
       for (const lv of ind.levels) {
         const above = ind.base != null ? lv > ind.base : lv >= 50;
-        s.createPriceLine({ price: lv, color: above ? "#2ea043" : "#da3633", lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: true, title: "" });
+        s.createPriceLine({ price: lv, color: above ? cc.overbought || bull : cc.oversold || bear, lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: true, title: "" });
       }
-      const swatch = ind.style === "baseline" || ind.style === "histogram" ? "linear-gradient(90deg,#2ea043 50%,#da3633 50%)" : color;
+      const swatch = ind.style === "baseline" || ind.style === "histogram" ? `linear-gradient(90deg,${bull} 50%,${bear} 50%)` : color;
       legendSeries.push([ind.name, s, ind.style === "baseline" || ind.style === "histogram" ? "#c9d1d9" : color]);
-      keys.push(`<span><i style="background:${swatch}"></i>${esc(ind.name)} (panel ${paneIdx})${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
+      const set = settingsText(ind);
+      keys.push(`<span><i style="background:${swatch}"></i>${esc(ind.name)} (panel ${paneIdx}${set ? ` · ${esc(set)}` : ""})${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
       if (ind !== g.items[0]) title += ` · ${ind.name}`;
     }
     const pane = chart.panes()[paneIdx];
     if (pane && LW.createTextWatermark) {
       const reading = g.items[0].reading ? `  ·  ${g.items[0].reading}` : "";
-      LW.createTextWatermark(pane, { horzAlign: "left", vertAlign: "top", lines: [{ text: title + reading, color: "#8b949e", fontSize: 12 }] });
+      const set = settingsText(g.items[0]);
+      LW.createTextWatermark(pane, {
+        horzAlign: "left",
+        vertAlign: "top",
+        lines: [{ text: title + reading, color: "#8b949e", fontSize: 12 }, ...(set ? [{ text: set, color: "#6e7681", fontSize: 11 }] : [])],
+      });
     }
   });
   const panes = chart.panes();

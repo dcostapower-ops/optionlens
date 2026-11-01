@@ -152,6 +152,27 @@ function cleanSignals(arr) {
 const STYLES = ["line", "histogram", "baseline", "candles", "band"];
 const okColor = (c) => (typeof c === "string" && /^#[0-9a-f]{3,8}$/i.test(c) ? c : null);
 
+// Indicator settings as reported by Stocky: simple key -> value pairs only.
+function cleanSettings(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(obj).slice(0, 14)) {
+    if (["string", "number", "boolean"].includes(typeof v)) out[String(k).slice(0, 30)] = typeof v === "string" ? v.slice(0, 30) : v;
+  }
+  return out;
+}
+
+// Named colours (e.g. bull, bear, bull_weak, bear_weak, line, signal, overbought, oversold).
+function cleanColors(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(obj).slice(0, 12)) {
+    const c = okColor(v);
+    if (c) out[normKey(k)] = c;
+  }
+  return out;
+}
+
 function cleanIndicator(ind) {
   const style = STYLES.includes(String(ind?.style ?? "").toLowerCase()) ? String(ind.style).toLowerCase() : "line";
   const raw = ind?.series ?? ind?.values ?? ind?.data;
@@ -161,6 +182,8 @@ function cleanIndicator(ind) {
     group: ind?.group != null ? String(ind.group).slice(0, 40) : null,
     style,
     color: okColor(ind?.color),
+    colors: cleanColors(ind?.colors),
+    settings: cleanSettings(ind?.settings ?? ind?.params ?? ind?.parameters ?? ind?.inputs),
     base: num(ind?.base ?? ind?.centerline ?? ind?.center),
     levels: (Array.isArray(ind?.levels) ? ind.levels : []).map(num).filter((v) => v !== null).slice(0, 6),
     value: ind?.value ?? null,
