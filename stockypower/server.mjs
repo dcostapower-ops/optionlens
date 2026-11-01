@@ -9,15 +9,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
+import { loadEnv } from "./scripts/load-env.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Load .env if present (Node 20.12+ / 22).
-try {
-  process.loadEnvFile(path.join(__dirname, ".env"));
-} catch {
-  /* no .env — rely on the real environment */
-}
+// Load .env. Its values win over variables already set in the OS.
+loadEnv();
 
 const PORT = Number(process.env.PORT || 8790);
 const AGENT_ID = process.env.STOCKY_AGENT_ID || "agent_01Vs8LnyLYVarn95Uhjm4saV";

@@ -7,10 +7,11 @@
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
-    "connect-massive": "node scripts/connect-massive.mjs"
+    "connect-massive": "node scripts/connect-massive.mjs",
+    "setup": "node scripts/setup.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.12"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0"

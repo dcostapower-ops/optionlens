@@ -12,47 +12,52 @@ Browser ──POST /api/analyze──▶ server.mjs ──Managed Agents API─�
                                        └─ Massive snapshot (backup)   └─ Massive live (via vault)
 ```
 
-## Setup
+## Setup on Windows (easiest)
 
-You need Node 20 or newer.
+1. Install **Node.js LTS** from https://nodejs.org if you don't have it.
+2. Open the `stockypower` folder and **double-click `setup.bat`**.
+3. When asked, paste your **Anthropic API key**, then your **Massive API key**. Right-click
+   pastes in the black window. What you paste stays hidden.
+   - Each key is tested right away. If one is wrong, the window explains why and asks again.
+   - Your Anthropic key must come from https://platform.claude.com → **API Keys**, in the
+     **same workspace as Stocky**.
+4. Setup saves the keys to `.env`, connects Stocky to Massive, starts Stockypower, and opens
+   http://localhost:8790.
+
+After that, **double-click `start.bat`** to run Stockypower. Keep its window open while you
+use the app, and close it to stop. Run `setup.bat` again whenever you change a key.
+
+Keys in `.env` take priority over any `ANTHROPIC_API_KEY` set in Windows itself, so an old
+key stored in Windows can't get in the way.
+
+## Setup from a terminal (any OS)
+
+You need Node 20.12 or newer.
 
 ```bash
 cd stockypower
 npm install
-cp .env.example .env
+npm run setup     # asks for both keys, tests them, writes .env, connects Massive
+npm start
 ```
 
-Edit `.env` on your machine and fill in:
+Or by hand: copy `.env.example` to `.env`, fill in the keys below, and run
+`npm run connect-massive`.
 
 | Variable | What it is |
 |---|---|
 | `ANTHROPIC_API_KEY` | API key from the Claude Console workspace where Stocky lives |
 | `MASSIVE_API_KEY` | Your Massive stocks developer subscription key |
 | `STOCKY_AGENT_ID` / `STOCKY_ENVIRONMENT_ID` | Already filled in with Stocky's IDs |
+| `STOCKY_VAULT_ID` | Written for you by setup / `connect-massive` |
 
-Then connect Stocky to Massive. This is a one-time step:
-
-```bash
-npm run connect-massive
-```
-
-That script:
+What `connect-massive` does:
 
 1. Stores your Massive key in an Anthropic **vault** as the `MASSIVE_API_KEY` environment-variable
    credential. Stocky's sandbox only ever sees a placeholder. Anthropic substitutes the real key
    into request headers on the way out, and only for `api.massive.com` and `api.polygon.io`.
 2. If Stocky's environment uses `limited` networking, adds those two hosts to its `allowed_hosts`.
 3. Writes `STOCKY_VAULT_ID` to `.env` so every session attaches the vault.
-
-You can run it again safely, for example after you rotate the Massive key.
-
-## Run
-
-```bash
-npm start
-```
-
-Open http://localhost:8790. Enter a symbol, for example `AAPL`, `NVDA` or `BRK.B`.
 
 ## How Stocky gets Massive data
 
