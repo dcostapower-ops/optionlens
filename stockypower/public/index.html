@@ -74,6 +74,8 @@
   .chartbar:empty { display: none; }
   .mini { padding: 3px 10px; font-size: 12px; font-weight: 500; background: var(--panel2); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; }
   .mini.on { color: var(--text); border-color: var(--accent); }
+  .chartbar .lbl { font-size: 12px; color: var(--muted); align-self: center; margin-left: 10px; }
+  .chartbar .lbl:first-child { margin-left: 0; }
   .nochart { padding: 40px 16px; text-align: center; color: var(--muted); }
 
   .tablewrap { overflow-x: auto; margin-top: 16px; }
@@ -317,6 +319,10 @@ function drawChart(st) {
   }
 }
 
+const PREFS_KEY = "stockypower.chart";
+function loadChartPrefs() { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch { return {}; } }
+function saveChartPrefs(p) { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch {} }
+
 // Turns Stocky's indicators into drawing instructions. Also recognises the
 // older format (plain lines) so Heikin-Ashi and RSI still draw properly.
 function planIndicators(a, bars, calc) {
@@ -421,16 +427,30 @@ function settingsText(ind) {
 function renderChart(st, el, legend, bars, a, LW) {
   const intraday = ["15m", "1h", "4h"].includes(st.tf);
   const plan = planIndicators(a, bars, st.calc?.[st.tf]);
-  // Price bars: standard Heikin-Ashi by default (as in the user's TradingView layout).
-  const useHA = st.candleMode !== "regular";
+  // Display choices (remembered): bars = Heikin-Ashi | Smoothed HA candles | regular; Smoothed HA line on/off.
+  const prefs = loadChartPrefs();
+  const mode = ["ha", "sha", "regular"].includes(prefs.bars) ? prefs.bars : "ha";
+  const barsMode = mode === "sha" && !plan.ha ? "ha" : mode;
+  const showShaLine = prefs.shaLine !== false;
+  const useHA = barsMode !== "regular"; // any Heikin-Ashi style bars
   el.style.height = `${430 + plan.panels.length * 130}px`;
 
-  // Candle-type toggle.
   const bar = $(".chartbar", st.card);
-  bar.innerHTML = `<button class="mini ${useHA ? "on" : ""}" data-mode="ha">Heikin-Ashi candles</button><button class="mini ${useHA ? "" : "on"}" data-mode="regular">Regular candles</button>`;
+  bar.innerHTML =
+    `<span class="lbl">Bars</span>` +
+    [["ha", "Heikin-Ashi"], ...(plan.ha ? [["sha", "Smoothed HA candles"]] : []), ["regular", "Regular"]]
+      .map(([m, label]) => `<button class="mini ${barsMode === m ? "on" : ""}" data-bars="${m}">${label}</button>`)
+      .join("") +
+    (plan.ha ? `<span class="lbl">Smoothed HA line</span><button class="mini ${showShaLine ? "on" : ""}" data-line="1">${showShaLine ? "On" : "Off"}</button>` : "");
   bar.onclick = (ev) => {
     const b = ev.target.closest(".mini");
-    if (b) { st.candleMode = b.dataset.mode; drawChart(st); }
+    if (!b) return;
+    const p = loadChartPrefs();
+    if (b.dataset.bars) p.bars = b.dataset.bars;
+    if (b.dataset.line) p.shaLine = !(p.shaLine !== false);
+    saveChartPrefs(p);
+    // Redraw every open card so they all follow the same choice.
+    document.querySelectorAll(".card").forEach((c) => c._state && drawChart(c._state));
   };
 
   const chart = LW.createChart(el, {
@@ -461,7 +481,13 @@ function renderChart(st, el, legend, bars, a, LW) {
   // ── Price pane ──
   const real = cleanPoints(bars.map((b) => ({ time: toET(b.t), open: b.o, high: b.h, low: b.l, close: b.c, _v: b.v })));
   let mainData;
-  if (useHA) {
+  if (barsMode === "sha") {
+    const pts = cleanPoints(plan.ha.candles.map((p) => ({ time: toET(p.t), open: p.o, high: p.h, low: p.l, close: p.c })));
+    mainData = pts.map((p, i) => {
+      const color = haColor({ o: p.open, c: p.close }, i ? { o: pts[i - 1].open, c: pts[i - 1].close } : null, plan.ha?.colors);
+      return { ...p, color, wickColor: color, borderColor: color };
+    });
+  } else if (useHA) {
     // Standard (unsmoothed) Heikin-Ashi candles from the real bars.
     const pts = [];
     for (let i = 0; i < real.length; i++) {
@@ -501,11 +527,11 @@ function renderChart(st, el, legend, bars, a, LW) {
   if (useHA) {
     const c = plan.ha?.colors || {};
     const grad = [haColor({ o: 0, c: 2 }, { o: 0, c: 1 }, c), haColor({ o: 0, c: 1 }, { o: 0, c: 2 }, c), haColor({ o: 1, c: 0 }, { o: 2, c: 0 }, c), haColor({ o: 2, c: 0 }, { o: 1, c: 0 }, c)];
-    keys.push(`<span><i style="background:linear-gradient(90deg,${grad.join(",")})"></i>Heikin-Ashi candles</span>`);
+    keys.push(`<span><i style="background:linear-gradient(90deg,${grad.join(",")})"></i>${barsMode === "sha" ? "Smoothed HA candles" : "Heikin-Ashi candles"}</span>`);
   }
 
   // Smoothed HA on top of the candles: a stepped line, green while bullish, red while bearish.
-  if (plan.ha) {
+  if (plan.ha && showShaLine) {
     const hc = plan.ha.colors || {};
     const up = hc.bull || hc.up || "#3ddc6e";
     const dn = hc.bear || hc.down || "#ff3b3b";
@@ -685,7 +711,7 @@ function renderChart(st, el, legend, bars, a, LW) {
     const ch = rPrev ? r.close - rPrev.close : null;
     const chs = ch == null ? "" : `<span class="${ch >= 0 ? "up" : "dn"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)} (${pct(r.close, rPrev.close)})</span>`;
     let h = `<span class="ttl">${esc(st.symbol)} · ${esc(tfLabel)}</span><span>O ${fmt(r.open)}</span><span>H ${fmt(r.high)}</span><span>L ${fmt(r.low)}</span><span>C ${fmt(r.close)}</span>${chs}`;
-    if (useHA) h += `<span style="color:${c.color || "#8b949e"}">HA ${fmt(c.open)} → ${fmt(c.close)}</span>`;
+    if (useHA) h += `<span style="color:${c.color || "#8b949e"}">${barsMode === "sha" ? "Smoothed HA" : "HA"} ${fmt(c.open)} → ${fmt(c.close)}</span>`;
     h += "<br>";
     for (const [name, , color, v] of vals) if (v != null) h += `<span style="color:${color}">${esc(name)} ${fmt(v)}</span>`;
     return h;
