@@ -35,9 +35,9 @@ const ymd = (d) => d.toISOString().slice(0, 10);
 // Massive (like Polygon) caps each request at 50,000 *base* bars (minutes for
 // intraday). Asking oldest-first over a long range returns only the OLDEST part
 // and silently drops recent months, so ask newest-first and follow next_url.
-async function fetchBars({ base, apiKey, symbol, src, label }) {
+async function fetchBars({ base, apiKey, symbol, src, label, lookbackDays }) {
   const to = new Date(Date.now() + 864e5); // include today
-  const from = new Date(to.getTime() - src.lookbackDays * 864e5);
+  const from = new Date(to.getTime() - (lookbackDays ?? src.lookbackDays) * 864e5);
   let url =
     `${base}/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/${src.mult}/${src.span}/${ymd(from)}/${ymd(to)}` +
     `?adjusted=true&sort=desc&limit=50000`;
@@ -91,23 +91,61 @@ export function buildTimeframe(raw, tf, { extendedHours = false } = {}) {
 }
 
 // All timeframes for a symbol. Sources shared by several timeframes are fetched once.
+// Returns the raw source bars too, so live updates can fetch just the newest bars.
 export async function fetchTimeframes({ base, apiKey, symbol, extendedHours = false }) {
-  const sources = new Map();
-  const candles = {};
+  const raw = {};
   const errors = [];
+  const keys = [...new Set(TIMEFRAMES.map(srcKey))];
   await Promise.all(
-    TIMEFRAMES.map(async (tf) => {
-      const key = `${tf.source.mult}/${tf.source.span}`;
-      if (!sources.has(key)) sources.set(key, fetchBars({ base, apiKey, symbol, src: tf.source, label: tf.label }));
+    keys.map(async (key) => {
+      const tf = TIMEFRAMES.find((t) => srcKey(t) === key);
       try {
-        const bars = buildTimeframe(await sources.get(key), tf, { extendedHours });
-        if (bars.length) candles[tf.key] = bars;
+        raw[key] = await fetchBars({ base, apiKey, symbol, src: tf.source, label: tf.label });
+      } catch (err) {
+        errors.push(`${TIMEFRAMES.filter((t) => srcKey(t) === key).map((t) => t.label).join("/")}: ${err.message}`);
+      }
+    }),
+  );
+  return { candles: buildAll(raw, extendedHours), errors, raw };
+}
+
+const srcKey = (tf) => `${tf.source.mult}/${tf.source.span}`;
+
+function buildAll(raw, extendedHours) {
+  const candles = {};
+  for (const tf of TIMEFRAMES) {
+    const bars = raw[srcKey(tf)];
+    if (!bars?.length) continue;
+    const built = buildTimeframe(bars, tf, { extendedHours });
+    if (built.length) candles[tf.key] = built;
+  }
+  return candles;
+}
+
+// How far back a live update re-fetches each source (enough to cover the
+// newest bars and any late corrections; delayed data updates the last bars).
+const LIVE_LOOKBACK = { minute: 4, day: 20, week: 70, month: 400 };
+
+// Fetches just the newest bars for each source, merges them into `raw`
+// (newer data replaces older for the same bar), and rebuilds all timeframes.
+export async function refreshTimeframes({ base, apiKey, symbol, raw, extendedHours = false }) {
+  const errors = [];
+  const merged = { ...raw };
+  const keys = [...new Set(TIMEFRAMES.map(srcKey))];
+  await Promise.all(
+    keys.map(async (key) => {
+      const tf = TIMEFRAMES.find((t) => srcKey(t) === key);
+      try {
+        const fresh = await fetchBars({ base, apiKey, symbol, src: tf.source, label: tf.label, lookbackDays: LIVE_LOOKBACK[tf.source.span] ?? 10 });
+        const byT = new Map((raw[key] ?? []).map((b) => [b.t, b]));
+        for (const b of fresh) byT.set(b.t, b);
+        merged[key] = [...byT.values()].sort((x, y) => x.t - y.t).slice(-tf.source.maxRaw);
       } catch (err) {
         errors.push(`${tf.label}: ${err.message}`);
       }
     }),
   );
-  return { candles, errors };
+  return { candles: buildAll(merged, extendedHours), errors, raw: merged };
 }
 
 // How old a timeframe's newest bar may be before we call the data stale (seconds).

@@ -15,6 +15,7 @@ import {
   TIMEFRAMES,
   TF_KEYS,
   fetchTimeframes,
+  refreshTimeframes,
   atr,
   cleanAnalysis,
   validateLevels,
@@ -76,6 +77,10 @@ function waitForConfirmation(key, isClosed) {
 const RESULT_FILE = "stockypower.json";
 // Intraday bars use regular trading hours (TradingView's default) unless STOCKY_EXTENDED_HOURS=1.
 const EXTENDED_HOURS = /^(1|true|yes)$/i.test(process.env.STOCKY_EXTENDED_HOURS || "");
+// Live chart updates: how often the page refreshes (0 = off) and the data delay of the
+// Massive plan (Stocks Developer = 15 minutes; 0 for a real-time plan).
+const LIVE_SECONDS = Math.max(0, Number(process.env.STOCKY_LIVE_SECONDS ?? 60));
+const DATA_DELAY_MINUTES = Math.max(0, Number(process.env.MASSIVE_DELAY_MINUTES ?? 15));
 
 // The two indicators the user configured Stocky with, exactly as set in their
 // TradingView layout (inputs listed in TradingView's order).
@@ -95,9 +100,35 @@ const UPLOAD_ROOT = "/mnt/session/uploads/data";
 
 // Candles for every timeframe from Massive. Missing timeframes are skipped, not fatal.
 async function fetchAllCandles(symbol, send) {
-  const { candles, errors } = await fetchTimeframes({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, extendedHours: EXTENDED_HOURS });
+  const { candles, errors, raw } = await fetchTimeframes({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, extendedHours: EXTENDED_HOURS });
   if (errors.length) send("status", { message: `Some Massive data couldn't be loaded (${errors.join("; ")}).` });
+  liveData.set(symbol, { raw, at: Date.now() });
   return candles;
+}
+
+// Raw Massive bars per symbol, so live updates only fetch the newest bars.
+const liveData = new Map();
+const liveBusy = new Map(); // symbol -> in-flight refresh promise (shared by all open pages)
+
+// Newest candles + indicators for a symbol (no Stocky involved).
+async function liveUpdate(symbol) {
+  if (liveBusy.has(symbol)) return liveBusy.get(symbol);
+  const job = (async () => {
+    const prev = liveData.get(symbol);
+    const result = prev
+      ? await refreshTimeframes({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, raw: prev.raw, extendedHours: EXTENDED_HOURS })
+      : await fetchTimeframes({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, extendedHours: EXTENDED_HOURS });
+    liveData.set(symbol, { raw: result.raw, at: Date.now() });
+    const calc = {};
+    for (const [k, bars] of Object.entries(result.candles)) calc[k] = computeIndicators(bars);
+    return { candles: result.candles, calc, errors: result.errors, at: Date.now() };
+  })();
+  liveBusy.set(symbol, job);
+  try {
+    return await job;
+  } finally {
+    liveBusy.delete(symbol);
+  }
 }
 
 // Candles plus the app-calculated indicator columns, one CSV per timeframe.
@@ -681,9 +712,22 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "GET" && url.pathname === "/api/live") {
+    const symbol = String(url.searchParams.get("symbol") || "").toUpperCase();
+    if (!SYMBOL_RE.test(symbol)) return json(res, 400, { error: "Bad symbol" });
+    if (!MASSIVE_API_KEY) return json(res, 400, { error: "MASSIVE_API_KEY isn't set" });
+    try {
+      return json(res, 200, { ...(await liveUpdate(symbol)), delayMinutes: DATA_DELAY_MINUTES });
+    } catch (err) {
+      return json(res, 502, { error: err?.message || String(err) });
+    }
+  }
+
   if (req.method === "GET" && url.pathname === "/api/config") {
     return json(res, 200, {
       version: APP_VERSION,
+      liveSeconds: LIVE_SECONDS,
+      delayMinutes: DATA_DELAY_MINUTES,
       agentId: AGENT_ID,
       environmentId: ENVIRONMENT_ID,
       massiveLive: Boolean(VAULT_ID),

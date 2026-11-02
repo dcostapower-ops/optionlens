@@ -126,6 +126,22 @@ Stocky then only writes its decisions and levels, not chart data, which is much 
 Results are remembered per symbol for `STOCKY_CACHE_MINUTES` (default 10; 0 turns it off).
 Re-entering a symbol in that window is instant, and **Run again** forces a fresh run.
 
+## Live chart and alerts
+
+While a result is open, the page asks the server for the newest Massive bars every
+`STOCKY_LIVE_SECONDS` (default 60; 0 turns it off). The server re-fetches only the last few
+days, merges them in, and recalculates Heikin-Ashi, Smoothed HA and Ultra RSI. Stocky isn't
+called, so this costs nothing. Updates pause while the tab is hidden, and your zoom and scroll
+position are kept.
+
+The label says how fresh the data is. The Massive Stocks Developer plan is 15 minutes delayed
+(`MASSIVE_DELAY_MINUTES=15`; set 0 for a real-time plan). Stocky's TP/SL/forecast stay as
+calculated until **Run again**.
+
+Alerts, for the timeframe you're viewing, appear in the card (and as desktop notifications if
+you switch them on): price crossing Target 1/2 or Stop loss 1/2, Smoothed HA turning bullish
+or bearish, and Ultra RSI crossing 50, 75 or 25.
+
 ## Accuracy checks and track record
 
 A forecast can't be guaranteed, so every level is checked and every call is tracked:

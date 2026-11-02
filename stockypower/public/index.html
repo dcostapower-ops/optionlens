@@ -70,7 +70,16 @@
   .legend .up { color: #3fb950; } .legend .dn { color: #f85149; }
   .keys { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
   .keys i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
-  .chartbar { display: flex; gap: 6px; justify-content: flex-end; margin-top: 12px; min-height: 0; }
+  .livebar { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .livebar:empty { display: none; }
+  .livebar .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+  .livebar .dot.off { background: #6e7681; box-shadow: none; }
+  .alerts { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+  .alerts:empty { display: none; }
+  .alert { font-size: 13px; padding: 6px 10px; border-radius: 8px; background: #1f2a3a; border: 1px solid #2f4a6b; }
+  .alert.up { background: #0f2a17; border-color: #1f6f35; } .alert.dn { background: #2d1214; border-color: #7a2328; }
+  .alert time { color: var(--muted); margin-right: 8px; font-variant-numeric: tabular-nums; }
+  .chartbar { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; min-height: 0; }
   .chartbar:empty { display: none; }
   .mini { padding: 3px 10px; font-size: 12px; font-weight: 500; background: var(--panel2); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; }
   .mini.on { color: var(--text); border-color: var(--accent); }
@@ -177,6 +186,8 @@ function newCard(symbol) {
     <div class="checksbox"></div>
     <div class="track"></div>
     <div class="rationale"></div>
+    <div class="livebar"></div>
+    <div class="alerts"></div>
     <div class="chartbar"></div>
     <div class="chartwrap"><div class="legend"></div><div class="chart"><div class="nochart">Loading candles…</div></div></div>
     <div class="keys"></div>
@@ -204,6 +215,8 @@ function renderTabs(st) {
 
 function selectTf(st, tf) {
   st.tf = tf;
+  st.alertState = null; // alerts compare within one timeframe
+  if (st.candles?.[tf]) checkAlerts(st); // remember where things stand now, so the next update can compare
   renderTabs(st);
   renderLevels(st);
   drawChart(st);
@@ -218,7 +231,7 @@ function renderLevels(st) {
   const a = st.analysis?.timeframes?.[st.tf];
   const chk = st.checks?.[st.tf];
   const bars = st.candles[st.tf];
-  const last = chk?.lastClose ?? (bars?.length ? bars[bars.length - 1].c : null);
+  const last = bars?.length ? bars[bars.length - 1].c : chk?.lastClose ?? null; // live price when available
   const tfInfo = st.tfs.find((t) => t.key === st.tf) || {};
   if (!a) {
     $(".levels", st.card).innerHTML = st.analysis
@@ -770,6 +783,122 @@ function renderChart(st, el, legend, bars, a, LW) {
   }
 }
 
+// ── Live updates & alerts ────────────────────────────────────────────────
+// While a result is open, fetch the newest Massive bars every LIVE.seconds and redraw
+// candles + indicators (calculated by the app; Stocky isn't called). Stocky's levels
+// stay as they were. Alerts fire on level crosses and indicator flips.
+const liveBySymbol = new Map();
+
+function startLive(st) {
+  if (!LIVE.seconds || st.live) return;
+  const prev = liveBySymbol.get(st.symbol);
+  if (prev && prev !== st) stopLive(prev, "Replaced by a newer result for this symbol.");
+  liveBySymbol.set(st.symbol, st);
+  st.live = { timer: setInterval(() => liveTick(st), LIVE.seconds * 1000), updated: Date.now(), error: null };
+  renderLive(st);
+}
+
+function stopLive(st, why) {
+  if (!st.live) return;
+  clearInterval(st.live.timer);
+  st.live = null;
+  st.liveStopped = why || "Live updates stopped.";
+  renderLive(st);
+}
+
+async function liveTick(st) {
+  if (document.hidden || !st.live || st.liveBusy) return renderLive(st);
+  if (!document.body.contains(st.card)) return stopLive(st);
+  st.liveBusy = true;
+  try {
+    const r = await fetch(`/api/live?symbol=${encodeURIComponent(st.symbol)}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    const range = st.chart?.timeScale().getVisibleLogicalRange();
+    st.candles = d.candles || st.candles;
+    st.calc = d.calc || st.calc;
+    renderLevels(st);
+    drawChart(st);
+    // Keep your zoom/scroll, but only if that view still contains candles.
+    const n = st.candles[st.tf]?.length || 0;
+    if (range && st.chart && range.from < n - 1 && range.to > 0) st.chart.timeScale().setVisibleLogicalRange(range);
+    st.live.updated = d.at || Date.now();
+    st.live.error = null;
+    checkAlerts(st);
+  } catch (err) {
+    if (st.live) st.live.error = err.message;
+  } finally {
+    st.liveBusy = false;
+    renderLive(st);
+  }
+}
+
+function renderLive(st) {
+  const el = $(".livebar", st.card);
+  if (!el) return;
+  const t = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const delay = LIVE.delay ? `${LIVE.delay}-min delayed (Massive plan)` : "real-time";
+  let text;
+  if (st.live) {
+    text = document.hidden
+      ? `<span class="dot off"></span>Live · paused while this tab is hidden`
+      : `<span class="dot"></span>Live · ${delay} · updates every ${LIVE.seconds}s · last ${t(st.live.updated)}`;
+    if (st.live.error) text += ` · <span style="color:#ff7b72">update failed (${esc(st.live.error)}), retrying</span>`;
+  } else {
+    text = `<span class="dot off"></span>${esc(st.liveStopped || "Live updates off")}`;
+  }
+  const notifyOn = "Notification" in window && Notification.permission === "granted";
+  const btn = "Notification" in window ? `<button class="mini ${notifyOn ? "on" : ""}" data-notify="1">Desktop alerts: ${notifyOn ? "On" : "Off"}</button>` : "";
+  el.innerHTML = `${text}${btn}`;
+  const b = $("[data-notify]", el);
+  if (b) b.onclick = async () => { if (Notification.permission !== "granted") await Notification.requestPermission(); renderLive(st); };
+}
+document.addEventListener("visibilitychange", () => {
+  for (const st of liveBySymbol.values()) document.hidden ? renderLive(st) : liveTick(st);
+});
+
+function alert_(st, text, kind = "") {
+  const box = $(".alerts", st.card);
+  const row = document.createElement("div");
+  row.className = `alert ${kind}`;
+  row.innerHTML = `<time>${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>${esc(text)}`;
+  box.prepend(row);
+  while (box.children.length > 8) box.lastChild.remove();
+  if ("Notification" in window && Notification.permission === "granted") {
+    try { new Notification(`Stockypower · ${st.symbol}`, { body: text }); } catch {}
+  }
+}
+
+// Compares the newest data with the previous update on the timeframe you're viewing.
+function checkAlerts(st) {
+  const tf = st.tf;
+  const label = (st.tfs.find((t) => t.key === tf) || {}).label || tf;
+  const bars = st.candles[tf];
+  if (!bars?.length) return;
+  const price = (st.candles["15m"]?.length ? st.candles["15m"] : bars).at(-1).c; // most current price
+  const sha = st.calc?.[tf]?.ha?.at(-1);
+  const rsi = st.calc?.[tf]?.ursi?.at(-1)?.v;
+  const now = { tf, price, shaUp: sha ? sha.c >= sha.o : null, rsi };
+  const prev = st.alertState;
+  st.alertState = now;
+  if (!prev || prev.tf !== tf) return; // first look at this timeframe: nothing to compare yet
+  const a = st.analysis?.timeframes?.[tf];
+  const crossed = (L) => Number.isFinite(L) && ((prev.price < L && price >= L) || (prev.price > L && price <= L));
+  if (a) {
+    for (const [name, L] of [["Target 1", a.target1], ["Target 2", a.target2], ["Stop loss 1", a.stop1], ["Stop loss 2", a.stop2]]) {
+      if (crossed(L)) alert_(st, `${label}: price ${fmt(price)} crossed ${name} (${fmt(L)})`, /Target/.test(name) ? "up" : "dn");
+    }
+  }
+  if (prev.shaUp !== null && now.shaUp !== null && prev.shaUp !== now.shaUp)
+    alert_(st, `${label}: Smoothed HA turned ${now.shaUp ? "bullish (yellow)" : "bearish (purple)"}`, now.shaUp ? "up" : "dn");
+  if (Number.isFinite(prev.rsi) && Number.isFinite(rsi)) {
+    for (const [lvl, name] of [[50, "the 50 midline"], [75, "overbought 75"], [25, "oversold 25"]]) {
+      if (prev.rsi < lvl && rsi >= lvl) alert_(st, `${label}: Ultra RSI rose above ${name} (${rsi.toFixed(1)})`, "up");
+      if (prev.rsi > lvl && rsi <= lvl) alert_(st, `${label}: Ultra RSI fell below ${name} (${rsi.toFixed(1)})`, "dn");
+    }
+  }
+}
+
 // ── Confirmations ──────────────────────────────────────────────────────────
 function showConfirm(card, data) {
   const box = document.createElement("div");
@@ -833,6 +962,7 @@ async function analyze(symbol, refresh = false) {
         if (Array.isArray(data.timeframes) && data.timeframes.length) st.tfs = data.timeframes;
         if (!st.candles[st.tf]) st.tf = st.tfs.find((t) => st.candles[t.key])?.key || st.tf;
         selectTf(st, st.tf);
+        startLive(st);
         break;
       case "verdict": {
         gotVerdict = true;
@@ -924,7 +1054,10 @@ $("#form").addEventListener("submit", async (ev) => {
 
 // Warn if the page is newer than the server that's running (an old window left open).
 let serverOutdated = false;
+const LIVE = { seconds: 60, delay: 15 };
 fetch("/api/config").then((r) => r.json()).then((c) => {
+  if (Number.isFinite(c.liveSeconds)) LIVE.seconds = c.liveSeconds;
+  if (Number.isFinite(c.delayMinutes)) LIVE.delay = c.delayMinutes;
   if ((c.version || 0) < 3) {
     serverOutdated = true;
     const w = document.createElement("div");
