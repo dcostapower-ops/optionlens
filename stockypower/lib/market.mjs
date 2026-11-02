@@ -8,36 +8,44 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// Each timeframe says where its bars come from. Intraday timeframes use regular
+// trading hours (09:30-16:00 New York) like TradingView's default, and 1h/4h bars
+// are built from 30-minute bars anchored at the 09:30 open (9:30, 10:30, ... and
+// 9:30 / 13:30), exactly as TradingView draws them. Massive's own hourly bars are
+// clock-aligned and include pre/after-market trading, which doesn't match.
+const SRC_15M = { mult: 15, span: "minute", lookbackDays: 35, maxRaw: 5000 };
+const SRC_30M = { mult: 30, span: "minute", lookbackDays: 230, maxRaw: 12000 };
 export const TIMEFRAMES = [
-  { key: "15m", label: "15 min", mult: 15, span: "minute", lookbackDays: 10, next: "next 15 minutes" },
-  { key: "1h", label: "1 hour", mult: 1, span: "hour", lookbackDays: 60, next: "next hour" },
-  { key: "4h", label: "4 hours", mult: 4, span: "hour", lookbackDays: 240, next: "next 4 hours" },
-  { key: "1D", label: "1 day", mult: 1, span: "day", lookbackDays: 730, next: "next trading day" },
-  { key: "1W", label: "1 week", mult: 1, span: "week", lookbackDays: 365 * 6, next: "next week" },
-  { key: "1M", label: "1 month", mult: 1, span: "month", lookbackDays: 365 * 20, next: "next month" },
+  { key: "15m", label: "15 min", next: "next 15 minutes", source: SRC_15M, intraday: true, aggMinutes: null },
+  { key: "1h", label: "1 hour", next: "next hour", source: SRC_30M, intraday: true, aggMinutes: 60 },
+  { key: "4h", label: "4 hours", next: "next 4 hours", source: SRC_30M, intraday: true, aggMinutes: 240 },
+  { key: "1D", label: "1 day", next: "next trading day", source: { mult: 1, span: "day", lookbackDays: 730, maxRaw: 600 } },
+  { key: "1W", label: "1 week", next: "next week", source: { mult: 1, span: "week", lookbackDays: 365 * 10, maxRaw: 600 } },
+  { key: "1M", label: "1 month", next: "next month", source: { mult: 1, span: "month", lookbackDays: 365 * 30, maxRaw: 600 } },
 ];
 export const TF_KEYS = TIMEFRAMES.map((t) => t.key);
 const MAX_BARS = 500;
+const RTH_OPEN = 9 * 60 + 30; // 09:30 New York
+const RTH_CLOSE = 16 * 60; // 16:00 New York
 
 const ymd = (d) => d.toISOString().slice(0, 10);
 
-// Candles for one timeframe: [{ t (unix seconds), o, h, l, c, v }], oldest first.
+// Raw bars for one source: [{ t (unix seconds), o, h, l, c, v }], oldest first.
 //
 // Massive (like Polygon) caps each request at 50,000 *base* bars (minutes for
-// intraday timeframes). Asking oldest-first over a long range therefore returns
-// only the OLDEST part and silently drops recent months. So: ask newest-first
-// and follow next_url pages until we have enough bars.
-export async function fetchCandles({ base, apiKey, symbol, tf }) {
+// intraday). Asking oldest-first over a long range returns only the OLDEST part
+// and silently drops recent months, so ask newest-first and follow next_url.
+async function fetchBars({ base, apiKey, symbol, src, label }) {
   const to = new Date(Date.now() + 864e5); // include today
-  const from = new Date(to.getTime() - tf.lookbackDays * 864e5);
+  const from = new Date(to.getTime() - src.lookbackDays * 864e5);
   let url =
-    `${base}/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/${tf.mult}/${tf.span}/${ymd(from)}/${ymd(to)}` +
+    `${base}/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/${src.mult}/${src.span}/${ymd(from)}/${ymd(to)}` +
     `?adjusted=true&sort=desc&limit=50000`;
   const byT = new Map();
-  for (let page = 0; page < 6 && url && byT.size < MAX_BARS; page++) {
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(25_000) });
-    if (r.status === 401 || r.status === 403) throw new Error(`Massive rejected the API key or plan for ${tf.label} bars (HTTP ${r.status})`);
-    if (!r.ok) throw new Error(`Massive HTTP ${r.status} for ${tf.label} bars`);
+  for (let page = 0; page < 12 && url && byT.size < src.maxRaw; page++) {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(30_000) });
+    if (r.status === 401 || r.status === 403) throw new Error(`Massive rejected the API key or plan for ${label} bars (HTTP ${r.status})`);
+    if (!r.ok) throw new Error(`Massive HTTP ${r.status} for ${label} bars`);
     const body = await r.json();
     for (const b of body.results ?? []) {
       const t = Math.floor(b.t / 1000);
@@ -47,7 +55,59 @@ export async function fetchCandles({ base, apiKey, symbol, tf }) {
     url = body.next_url ? body.next_url.replace(/([?&])apiKey=[^&]*&?/, "$1").replace(/[?&]$/, "") : null;
     if (url && base && !url.startsWith(base)) url = base + new URL(url).pathname + new URL(url).search;
   }
-  return [...byT.values()].sort((x, y) => x.t - y.t).slice(-MAX_BARS);
+  return [...byT.values()].sort((x, y) => x.t - y.t);
+}
+
+// New York calendar date and minute-of-day for a unix time.
+const nyFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+function nyTime(sec) {
+  const p = Object.fromEntries(nyFmt.formatToParts(new Date(sec * 1000)).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, min: (+p.hour % 24) * 60 + +p.minute };
+}
+
+// Regular-hours filter and session-anchored aggregation (TradingView style).
+export function buildTimeframe(raw, tf, { extendedHours = false } = {}) {
+  if (!tf.intraday) return raw.slice(-MAX_BARS);
+  const tagged = raw.map((b) => ({ ...b, ny: nyTime(b.t) }));
+  const kept = extendedHours ? tagged : tagged.filter((b) => b.ny.min >= RTH_OPEN && b.ny.min < RTH_CLOSE);
+  if (!tf.aggMinutes) return kept.map(({ ny, ...b }) => b).slice(-MAX_BARS);
+  const anchor = extendedHours ? 0 : RTH_OPEN;
+  const out = [];
+  let cur = null;
+  for (const b of kept) {
+    const key = `${b.ny.date}|${Math.floor((b.ny.min - anchor) / tf.aggMinutes)}`;
+    if (!cur || cur.key !== key) {
+      if (cur) out.push(cur.bar);
+      cur = { key, bar: { t: b.t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v } };
+    } else {
+      cur.bar.h = Math.max(cur.bar.h, b.h);
+      cur.bar.l = Math.min(cur.bar.l, b.l);
+      cur.bar.c = b.c;
+      cur.bar.v += b.v;
+    }
+  }
+  if (cur) out.push(cur.bar);
+  return out.slice(-MAX_BARS);
+}
+
+// All timeframes for a symbol. Sources shared by several timeframes are fetched once.
+export async function fetchTimeframes({ base, apiKey, symbol, extendedHours = false }) {
+  const sources = new Map();
+  const candles = {};
+  const errors = [];
+  await Promise.all(
+    TIMEFRAMES.map(async (tf) => {
+      const key = `${tf.source.mult}/${tf.source.span}`;
+      if (!sources.has(key)) sources.set(key, fetchBars({ base, apiKey, symbol, src: tf.source, label: tf.label }));
+      try {
+        const bars = buildTimeframe(await sources.get(key), tf, { extendedHours });
+        if (bars.length) candles[tf.key] = bars;
+      } catch (err) {
+        errors.push(`${tf.label}: ${err.message}`);
+      }
+    }),
+  );
+  return { candles, errors };
 }
 
 // How old a timeframe's newest bar may be before we call the data stale (seconds).

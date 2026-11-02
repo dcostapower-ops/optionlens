@@ -14,7 +14,7 @@ import { loadEnv, makeClient } from "./scripts/load-env.mjs";
 import {
   TIMEFRAMES,
   TF_KEYS,
-  fetchCandles,
+  fetchTimeframes,
   atr,
   cleanAnalysis,
   validateLevels,
@@ -74,6 +74,8 @@ function waitForConfirmation(key, isClosed) {
 // ── Market data (all timeframes) ─────────────────────────────────────────────
 
 const RESULT_FILE = "stockypower.json";
+// Intraday bars use regular trading hours (TradingView's default) unless STOCKY_EXTENDED_HOURS=1.
+const EXTENDED_HOURS = /^(1|true|yes)$/i.test(process.env.STOCKY_EXTENDED_HOURS || "");
 
 // The two indicators the user configured Stocky with, exactly as set in their
 // TradingView layout (inputs listed in TradingView's order).
@@ -93,18 +95,7 @@ const UPLOAD_ROOT = "/mnt/session/uploads/data";
 
 // Candles for every timeframe from Massive. Missing timeframes are skipped, not fatal.
 async function fetchAllCandles(symbol, send) {
-  const candles = {};
-  const errors = [];
-  await Promise.all(
-    TIMEFRAMES.map(async (tf) => {
-      try {
-        const bars = await fetchCandles({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, tf });
-        if (bars.length) candles[tf.key] = bars;
-      } catch (err) {
-        errors.push(`${tf.label}: ${err.message}`);
-      }
-    }),
-  );
+  const { candles, errors } = await fetchTimeframes({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, extendedHours: EXTENDED_HOURS });
   if (errors.length) send("status", { message: `Some Massive data couldn't be loaded (${errors.join("; ")}).` });
   return candles;
 }
@@ -138,6 +129,10 @@ function buildPrompt(symbol, candles, mounted) {
       `DATA - one CSV per timeframe: the exact Massive bars my app charts, so your numbers must line up with them.`,
       `Mounted under ${UPLOAD_ROOT}/ (if not, run: find / -name "${symbol}_*.csv" 2>/dev/null).`,
       `Columns: t,datetime_utc,open,high,low,close,volume,ha_open,ha_high,ha_low,ha_close,ultra_rsi (t = unix seconds, bar open time).`,
+      EXTENDED_HOURS
+        ? `Intraday bars include pre-market and after-hours trading.`
+        : `Intraday bars are regular trading hours only (09:30-16:00 New York), like TradingView: 15m bars from 09:30,` +
+          ` 1h bars at 09:30, 10:30 ... 15:30, 4h bars at 09:30 and 13:30. Forecast bar times must follow that same schedule.`,
     );
     for (const tf of TIMEFRAMES) {
       const bars = candles[tf.key];

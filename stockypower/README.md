@@ -86,6 +86,11 @@ Stocky does the calculations and the app draws everything.
 
 - **Timeframes:** 15 min, 1 hour, 4 hours, 1 day, 1 week, 1 month. Click a timeframe, or a row
   in the table, to switch instantly. Switching doesn't start a new Stocky run.
+- **Sessions:** intraday bars are regular trading hours only (09:30–16:00 New York), like
+  TradingView's default. 1h and 4h bars are built from 30-minute bars anchored at the open
+  (1h: 9:30, 10:30 … 15:30; 4h: 9:30 and 13:30). Massive's own hourly bars are clock-aligned
+  and include extended hours, so they don't match. Set `STOCKY_EXTENDED_HOURS=1` to include
+  pre/after-market bars.
 - **Data:** for each timeframe, the server loads up to 500 Massive candles. It shows them on
   the chart and mounts the same candles in Stocky's session as CSV files (`/workspace/data/`),
   so Stocky's numbers line up with what you see.
