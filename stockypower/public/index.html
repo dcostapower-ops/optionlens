@@ -324,6 +324,19 @@ function drawChart(st) {
 const HA_UP = "#2ee65a", HA_DN = "#f23645";
 const SHA_UP = "#e6d84c", SHA_DN = "#6c4cb8"; // from the indicator's Inputs tab
 
+// Ultra RSI [DW] Style tab: threshold/midline colours, 5 RSI line colours, fill colours.
+const DW = {
+  ob: "#1fae1f", mid: "#c86a00", os: "#b30000",
+  line: ["#00ff00", "#008000", "#ff0000", "#800000", "#ff8000"], // above&rising, above&falling, below&falling, below&rising, at midline
+  fill: ["rgba(16,160,16,0.55)", "rgba(10,80,10,0.75)", "rgba(190,16,16,0.55)", "rgba(95,10,10,0.75)", "rgba(255,128,0,0.4)"],
+};
+// Which of the five DW states a value is in.
+function dwState(v, prev, mid = 50) {
+  if (v > mid) return prev == null || v >= prev ? 0 : 1;
+  if (v < mid) return prev == null || v <= prev ? 2 : 3;
+  return 4;
+}
+
 const PREFS_KEY = "stockypower.chart";
 function loadChartPrefs() { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch { return {}; } }
 function saveChartPrefs(p) { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch {} }
@@ -343,7 +356,7 @@ function planIndicators(a, bars, calc) {
     if (calc.ha?.length)
       inds.unshift({ name: "Smoothed HA", pane: "price", style: "candles", candles: calc.ha, series: [], band: [], levels: [], reading: haR?.reading || "", colors: haR?.colors || {}, settings: { "EMA": 12, "then EMA": 3 } });
     if (calc.ursi?.length)
-      inds.push({ name: "Ultra RSI [DW]", pane: "separate", style: "baseline", base: 50, levels: [75, 25], group: "ultra rsi", series: calc.ursi, candles: [], band: [], reading: rsiR?.reading || "", colors: rsiR?.colors || {}, settings: { source: "close", length: 12, type: "EMA" } });
+      inds.push({ name: "Ultra RSI [DW]", dw: true, pane: "separate", style: "baseline", base: 50, levels: [75, 25], group: "ultra rsi", series: calc.ursi, candles: [], band: [], reading: rsiR?.reading || "", colors: rsiR?.colors || {}, settings: { source: "close", period: 12, filter: "EMA", type: "Standard", volume: "Default" } });
   }
 
   // Heikin-Ashi sent as separate "Open" and "Close" lines -> HA candles.
@@ -647,7 +660,25 @@ function renderChart(st, el, legend, bars, a, LW) {
       const bull = cc.bull || cc.up || cc.above || cc.bullish || "#2ea043";
       const bear = cc.bear || cc.down || cc.below || cc.bearish || "#da3633";
       let s;
-      if (ind.style === "baseline") {
+      if (ind.dw) {
+        // Ultra RSI [DW] as TradingView draws it: per-bar shaded fill between the RSI and
+        // the midline, a 5-colour RSI line, and green / orange / red threshold lines.
+        const mid = ind.base ?? 50;
+        const pts = cleanPoints(ind.series.map((p) => ({ time: toET(p.t), value: p.v })));
+        const states = pts.map((p, i) => dwState(p.value, i ? pts[i - 1].value : null, mid));
+        const fill = chart.addSeries(LW.HistogramSeries, { ...quiet, base: mid, priceFormat: two, autoscaleInfoProvider: includeLevels([mid, ...ind.levels]) }, paneIdx);
+        fill.setData(pts.map((p, i) => ({ ...p, color: DW.fill[states[i]] })));
+        s = chart.addSeries(LW.LineSeries, { ...quiet, lastValueVisible: true, lineWidth: 2, color: DW.line[0], priceFormat: two }, paneIdx);
+        s.setData(pts.map((p, i) => ({ ...p, color: DW.line[states[i]] })));
+        s.createPriceLine({ price: mid, color: DW.mid, lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: false, title: "" });
+        const [ob, os] = [Math.max(...ind.levels), Math.min(...ind.levels)];
+        if (Number.isFinite(ob)) s.createPriceLine({ price: ob, color: DW.ob, lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: true, title: "" });
+        if (Number.isFinite(os)) s.createPriceLine({ price: os, color: DW.os, lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: true, title: "" });
+        legendSeries.push([ind.name, s, "#c9d1d9"]);
+        const set = settingsText(ind);
+        keys.push(`<span><i style="background:linear-gradient(90deg,${DW.line.slice(0, 4).join(",")})"></i>${esc(ind.name)} (panel ${paneIdx}${set ? ` · ${esc(set)}` : ""})${ind.reading ? ` · ${esc(ind.reading)}` : ""}</span>`);
+        continue;
+      } else if (ind.style === "baseline") {
         const base = ind.base ?? 0;
         s = chart.addSeries(LW.BaselineSeries, {
           ...quiet, lastValueVisible: true, priceFormat: two, lineWidth: 1,

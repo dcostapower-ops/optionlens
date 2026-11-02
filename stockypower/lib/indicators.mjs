@@ -9,12 +9,12 @@
 //   unused with Exponential), Heikin-Ashi on those, then stage 2: EMA(3) of the
 //   HA open/high/low/close. This is the standard "Smoothed Heiken Ashi" recipe.
 //
-// Ultra RSI [DW], inputs "close, 12, EMA, Standard, Default, 0.85, 6, 0.666,
-//   0.0645, 75, 25, 0.75": approximated as an RSI of close whose gains/losses are
-//   averaged with EMA(12) instead of Wilder's RMA, centre 50, levels 75 / 25.
-//   (0.85/6 are ALMA and 0.666/0.0645 KAMA parameters, unused with EMA.)
-//   The exact DW formula isn't available here; Stocky is asked to flag it if its
-//   configured version would read materially differently.
+// Ultra RSI [DW] (confirmed from the indicator's Inputs tab): Source close, Sampling
+//   Period 12, Filter Type EMA, RSI Type Standard, Volume Type Default, Overbought 75,
+//   Oversold 25. Offset/Sigma apply only to ALMA, the Fast/Slow constants only to
+//   KAMA and Gamma only to Laguerre mode, so with EMA + Standard + Default this is a
+//   standard RSI of close whose gains/losses are averaged with EMA(12), no volume
+//   weighting: 100 * EMA(gain) / (EMA(gain) + EMA(loss)). Centre 50, levels 75 / 25.
 
 export const SETTINGS = {
   smoothedHA: { length1: 12, type1: "EMA", length2: 3, type2: "EMA" },

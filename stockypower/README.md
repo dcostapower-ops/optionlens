@@ -108,16 +108,19 @@ Stocky does the calculations and the app draws everything.
 The app calculates the two indicators from the user's TradingView layout itself (`lib/indicators.mjs`),
 draws them as soon as the candles load, and adds them as columns to the CSVs Stocky reads:
 
-- **Smoothed HA** `12, Exponential, 6, 0.85, 3, Exponential, 6, 0.85`: EMA(12) of OHLC, then
-  Heikin-Ashi, then EMA(3) of the HA OHLC. The 6/0.85 values are ALMA inputs, unused with
-  Exponential.
-- **Ultra RSI [DW]** `close, 12, EMA, …, 75, 25, …`: approximated as an RSI of close with EMA-12
-  averaged gains/losses, centre 50, levels 75/25. DW's exact formula isn't reproduced. Stocky
-  is asked to report a material difference in `indicator_note`, which the page shows.
+- **Smoothed HA** (from its Inputs tab): HA price input smoothing 12, Exponential; double-smoothing
+  3, Exponential; wicks on; bullish yellow, bearish purple. That's EMA(12) of OHLC, then
+  Heikin-Ashi, then EMA(3) of the HA OHLC. The ALMA sigma/offset only apply to ALMA. It's drawn
+  as its own candles alongside the green/red Heikin-Ashi candles.
+- **Ultra RSI [DW]** (from its Inputs tab): Source close, Sampling Period 12, Filter Type EMA,
+  RSI Type Standard, Volume Type Default, levels 75/25. With these choices it is a standard RSI
+  whose gains/losses are averaged with EMA(12), no volume weighting. The ALMA, KAMA and Laguerre
+  inputs don't apply.
 
-On the chart, the price bars are standard Heikin-Ashi candles (toggle: regular candles) and
-Smoothed HA is drawn over them as a stepped line, green while bullish and red while bearish,
-as in the TradingView layout.
+On the chart, the price bars are standard Heikin-Ashi candles, green/red (toggle: regular
+candles), with the Smoothed HA candles in yellow/purple alongside them. Ultra RSI [DW] is
+drawn with its Style-tab colours: a 5-colour RSI line, per-bar shaded fill to the 50 midline
+(orange), and green 75 / red 25 threshold lines. All of this matches the TradingView layout.
 
 Stocky then only writes its decisions and levels, not chart data, which is much faster.
 Results are remembered per symbol for `STOCKY_CACHE_MINUTES` (default 10; 0 turns it off).

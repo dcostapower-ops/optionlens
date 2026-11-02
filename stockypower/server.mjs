@@ -82,13 +82,13 @@ const EXTENDED_HOURS = /^(1|true|yes)$/i.test(process.env.STOCKY_EXTENDED_HOURS 
 const STRATEGY = [
   `STRATEGY - use these two indicators JOINTLY, with exactly these TradingView settings (inputs in TradingView's order):`,
   `- "Smoothed HA" (smoothed Heikin-Ashi): 12, Exponential, 6, 0.85, 3, Exponential, 6, 0.85.`,
-  `- "Ultra RSI [DW]": source close, 12, EMA, Standard, Default, 0.85, 6, 0.666, 0.0645, overbought 75, oversold 25, 0.75.`,
+  `- "Ultra RSI [DW]": Source close, Sampling Period 12, Filter Type EMA, RSI Type Standard, Volume Type Default,`,
+  `  Overbought 75, Oversold 25 (the ALMA, KAMA and Laguerre inputs don't apply with these choices).`,
   `  It shows green crests and red troughs around its centre line (50).`,
   `To save you time, my app has ALREADY calculated both indicators with these settings and added them to every data file:`,
-  `  ha_open, ha_high, ha_low, ha_close = Smoothed HA (EMA 12 of OHLC -> Heikin-Ashi -> EMA 3),`,
-  `  ultra_rsi = Ultra RSI (RSI of close with EMA-12 averaged gains/losses; centre 50, levels 75/25).`,
-  `Use these columns rather than recalculating, so your decisions match the chart exactly. If your configured Ultra RSI [DW]`,
-  `formula would give materially different readings, say so in "indicator_note".`,
+  `  ha_open, ha_high, ha_low, ha_close = Smoothed HA (EMA 12 of OHLC -> Heikin-Ashi -> double-smoothing EMA 3),`,
+  `  ultra_rsi = Ultra RSI [DW] (standard RSI of close, gains/losses averaged with EMA 12, no volume weighting).`,
+  `Use these columns rather than recalculating, so your decisions match the chart exactly.`,
   `BUY or SELL for a timeframe must come from both indicators read together; state the joint rule you applied in the rationale.`,
 ];
 const UPLOAD_ROOT = "/mnt/session/uploads/data";
