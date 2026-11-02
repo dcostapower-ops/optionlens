@@ -1,7 +1,10 @@
 // The two indicators from the user's TradingView layout, calculated by the app
 // from Massive candles so they can be drawn immediately and handed to Stocky.
 //
-// Smoothed HA, inputs "12, Exponential, 6, 0.85, 3, Exponential, 6, 0.85":
+// Smoothed HA (confirmed from the indicator's Inputs tab): HA Price Input Smoothing
+// Length 12, Exponential; ALMA sigma 6 / offset 0.85 (ALMA only); double-smoothing
+// enabled, length 3, Exponential; wicks shown; bullish yellow, bearish purple.
+// Inputs "12, Exponential, 6, 0.85, 3, Exponential, 6, 0.85":
 //   stage 1: EMA(12) of open/high/low/close   (6 / 0.85 are ALMA sigma/offset,
 //   unused with Exponential), Heikin-Ashi on those, then stage 2: EMA(3) of the
 //   HA open/high/low/close. This is the standard "Smoothed Heiken Ashi" recipe.

@@ -319,6 +319,11 @@ function drawChart(st) {
   }
 }
 
+// Colours from the user's TradingView layout: Heikin-Ashi bars green/red,
+// Smoothed HA (12, Exponential) candles yellow/purple.
+const HA_UP = "#2ee65a", HA_DN = "#f23645";
+const SHA_UP = "#e6d84c", SHA_DN = "#6c4cb8"; // from the indicator's Inputs tab
+
 const PREFS_KEY = "stockypower.chart";
 function loadChartPrefs() { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch { return {}; } }
 function saveChartPrefs(p) { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch {} }
@@ -427,27 +432,26 @@ function settingsText(ind) {
 function renderChart(st, el, legend, bars, a, LW) {
   const intraday = ["15m", "1h", "4h"].includes(st.tf);
   const plan = planIndicators(a, bars, st.calc?.[st.tf]);
-  // Display choices (remembered): bars = Heikin-Ashi | Smoothed HA candles | regular; Smoothed HA line on/off.
+  // Display choices (remembered): bars = Heikin-Ashi | regular; Smoothed HA indicator on/off.
   const prefs = loadChartPrefs();
-  const mode = ["ha", "sha", "regular"].includes(prefs.bars) ? prefs.bars : "ha";
-  const barsMode = mode === "sha" && !plan.ha ? "ha" : mode;
-  const showShaLine = prefs.shaLine !== false;
-  const useHA = barsMode !== "regular"; // any Heikin-Ashi style bars
+  const barsMode = prefs.bars === "regular" ? "regular" : "ha";
+  const showSha = Boolean(plan.ha) && prefs.sha !== false;
+  const useHA = barsMode === "ha";
   el.style.height = `${430 + plan.panels.length * 130}px`;
 
   const bar = $(".chartbar", st.card);
   bar.innerHTML =
     `<span class="lbl">Bars</span>` +
-    [["ha", "Heikin-Ashi"], ...(plan.ha ? [["sha", "Smoothed HA candles"]] : []), ["regular", "Regular"]]
+    [["ha", "Heikin-Ashi"], ["regular", "Regular"]]
       .map(([m, label]) => `<button class="mini ${barsMode === m ? "on" : ""}" data-bars="${m}">${label}</button>`)
       .join("") +
-    (plan.ha ? `<span class="lbl">Smoothed HA line</span><button class="mini ${showShaLine ? "on" : ""}" data-line="1">${showShaLine ? "On" : "Off"}</button>` : "");
+    (plan.ha ? `<span class="lbl">Smoothed HA (12, Exponential)</span><button class="mini ${showSha ? "on" : ""}" data-sha="1">${showSha ? "On" : "Off"}</button>` : "");
   bar.onclick = (ev) => {
     const b = ev.target.closest(".mini");
     if (!b) return;
     const p = loadChartPrefs();
     if (b.dataset.bars) p.bars = b.dataset.bars;
-    if (b.dataset.line) p.shaLine = !(p.shaLine !== false);
+    if (b.dataset.sha) p.sha = !(p.sha !== false);
     saveChartPrefs(p);
     // Redraw every open card so they all follow the same choice.
     document.querySelectorAll(".card").forEach((c) => c._state && drawChart(c._state));
@@ -481,13 +485,7 @@ function renderChart(st, el, legend, bars, a, LW) {
   // ── Price pane ──
   const real = cleanPoints(bars.map((b) => ({ time: toET(b.t), open: b.o, high: b.h, low: b.l, close: b.c, _v: b.v })));
   let mainData;
-  if (barsMode === "sha") {
-    const pts = cleanPoints(plan.ha.candles.map((p) => ({ time: toET(p.t), open: p.o, high: p.h, low: p.l, close: p.c })));
-    mainData = pts.map((p, i) => {
-      const color = haColor({ o: p.open, c: p.close }, i ? { o: pts[i - 1].open, c: pts[i - 1].close } : null, plan.ha?.colors);
-      return { ...p, color, wickColor: color, borderColor: color };
-    });
-  } else if (useHA) {
+  if (useHA) {
     // Standard (unsmoothed) Heikin-Ashi candles from the real bars.
     const pts = [];
     for (let i = 0; i < real.length; i++) {
@@ -496,8 +494,8 @@ function renderChart(st, el, legend, bars, a, LW) {
       const open = i === 0 ? (r.open + r.close) / 2 : (pts[i - 1].open + pts[i - 1].close) / 2;
       pts.push({ time: r.time, open, close, high: Math.max(r.high, open, close), low: Math.min(r.low, open, close) });
     }
-    mainData = pts.map((p, i) => {
-      const color = haColor({ o: p.open, c: p.close }, i ? { o: pts[i - 1].open, c: pts[i - 1].close } : null, plan.ha?.colors);
+    mainData = pts.map((p) => {
+      const color = p.close >= p.open ? HA_UP : HA_DN;
       return { ...p, color, wickColor: color, borderColor: color };
     });
   } else {
@@ -524,22 +522,22 @@ function renderChart(st, el, legend, bars, a, LW) {
 
   const keys = [];
   const legendSeries = [];
-  if (useHA) {
-    const c = plan.ha?.colors || {};
-    const grad = [haColor({ o: 0, c: 2 }, { o: 0, c: 1 }, c), haColor({ o: 0, c: 1 }, { o: 0, c: 2 }, c), haColor({ o: 1, c: 0 }, { o: 2, c: 0 }, c), haColor({ o: 2, c: 0 }, { o: 1, c: 0 }, c)];
-    keys.push(`<span><i style="background:linear-gradient(90deg,${grad.join(",")})"></i>${barsMode === "sha" ? "Smoothed HA candles" : "Heikin-Ashi candles"}</span>`);
-  }
+  if (useHA) keys.push(`<span><i style="background:linear-gradient(90deg,${HA_UP} 50%,${HA_DN} 50%)"></i>Heikin-Ashi candles</span>`);
 
-  // Smoothed HA on top of the candles: a stepped line, green while bullish, red while bearish.
-  if (plan.ha && showShaLine) {
+  // The Smoothed HA (12, Exponential) indicator: its own candles drawn over the chart's
+  // candles, as the indicator does in TradingView.
+  let shaSeries = null, shaData = [];
+  if (showSha) {
+    const pts = cleanPoints(plan.ha.candles.map((p) => ({ time: toET(p.t), open: p.o, high: p.h, low: p.l, close: p.c })));
     const hc = plan.ha.colors || {};
-    const up = hc.bull || hc.up || "#3ddc6e";
-    const dn = hc.bear || hc.down || "#ff3b3b";
-    const sha = chart.addSeries(LW.LineSeries, { ...quiet, lineWidth: 2, lineType: LW.LineType.WithSteps, color: up });
-    sha.setData(cleanPoints(plan.ha.candles.map((p) => ({ time: toET(p.t), value: p.c, color: p.c >= p.o ? up : dn }))));
-    legendSeries.push([plan.ha.name, sha, "#c9d1d9"]);
-    const set = settingsText(plan.ha);
-    keys.push(`<span><i style="background:linear-gradient(90deg,${up} 50%,${dn} 50%)"></i>${esc(plan.ha.name)} line${set ? ` (${esc(set)})` : ""}${plan.ha.reading ? ` · ${esc(plan.ha.reading)}` : ""}</span>`);
+    const up = hc.bull || hc.up || SHA_UP, dn = hc.bear || hc.down || SHA_DN;
+    shaData = pts.map((p) => {
+      const color = p.close >= p.open ? up : dn;
+      return { ...p, color, wickColor: color, borderColor: color };
+    });
+    shaSeries = chart.addSeries(LW.CandlestickSeries, { ...quiet, borderVisible: false, priceFormat: pricePrecision });
+    shaSeries.setData(shaData);
+    keys.push(`<span><i style="background:linear-gradient(90deg,${up} 50%,${dn} 50%)"></i>Smoothed HA (12, Exponential)${plan.ha.reading ? ` · ${esc(plan.ha.reading)}` : ""}</span>`);
   }
 
   let colorIdx = 0;
@@ -704,6 +702,7 @@ function renderChart(st, el, legend, bars, a, LW) {
   // Header: always the latest bar; follows the crosshair on hover.
   const tfLabel = (st.tfs.find((t) => t.key === st.tf) || {}).label || st.tf;
   const realByTime = new Map(real.map((p) => [p.time, p]));
+  const shaByTime = new Map(shaData.map((p) => [p.time, p]));
   const header = (c, prev, vals) => {
     if (!c) return "";
     const r = realByTime.get(c.time) || c;
@@ -711,7 +710,9 @@ function renderChart(st, el, legend, bars, a, LW) {
     const ch = rPrev ? r.close - rPrev.close : null;
     const chs = ch == null ? "" : `<span class="${ch >= 0 ? "up" : "dn"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)} (${pct(r.close, rPrev.close)})</span>`;
     let h = `<span class="ttl">${esc(st.symbol)} · ${esc(tfLabel)}</span><span>O ${fmt(r.open)}</span><span>H ${fmt(r.high)}</span><span>L ${fmt(r.low)}</span><span>C ${fmt(r.close)}</span>${chs}`;
-    if (useHA) h += `<span style="color:${c.color || "#8b949e"}">${barsMode === "sha" ? "Smoothed HA" : "HA"} ${fmt(c.open)} → ${fmt(c.close)}</span>`;
+    if (useHA) h += `<span style="color:${c.color || "#8b949e"}">HA ${fmt(c.open)} → ${fmt(c.close)}</span>`;
+    const sh = shaByTime.get(c.time);
+    if (sh) h += `<span style="color:${sh.color}">Smoothed HA ${fmt(sh.open)} → ${fmt(sh.close)}</span>`;
     h += "<br>";
     for (const [name, , color, v] of vals) if (v != null) h += `<span style="color:${color}">${esc(name)} ${fmt(v)}</span>`;
     return h;
