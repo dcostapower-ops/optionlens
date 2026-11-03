@@ -155,20 +155,22 @@ The **Best Option Chains** menu scans every listed contract expiring more than N
    the probability of touch, using the stock's 30-day realized volatility and the time left.
    Each row shows that chance, plus the chance of finishing beyond breakeven at expiry.
 2. **Score 0–100:**
-   - delta, best near 0.55: 20%
-   - cheap IV, measured against the stock's 30-day realized volatility and against the rest of
-     the chain: 20%
-   - cheap premium: 20%. This compares the premium with its **fair value**, the
-     Black-Scholes price at the stock's realized volatility over a **matching horizon** (below 1×
-     is cheap), and with the rest of the chain. Near expiries use the 30-day realized volatility,
-     shifting to the 1-year figure as expiry approaches a year out, so a spike in recent movement
-     doesn't make far-dated options look artificially cheap. The probability-of-touch rule uses
-     the same matched volatility. Time value grows with the square root of time, so this is neutral
-     between short and long expiries. A per-day cost would always favor far-dated (LEAPS)
-     options.
-   - open interest: 15%
-   - volume: 12.5%
-   - tight spread: 12.5%
+
+   | Factor | Weight |
+   |---|---|
+   | delta, best near 0.55 | 15% |
+   | cheap IV (vs realized volatility over a matching horizon, and vs the chain) | 15% |
+   | cheap premium (vs fair value at that realized volatility) | 15% |
+   | chance of profit at expiry (finishing beyond breakeven) | 15% |
+   | agreement with Stocky's latest 1-day and 1-week call (BUY for calls, SELL for puts) | 15% |
+   | liquidity: open interest + volume + spread | 15% |
+   | low time decay (what a flat stock costs over 30 days) | 10% |
+
+   Liquidity gets full marks once a contract is comfortably tradable (open interest 1,000+,
+   volume 200+), so sheer size doesn't outrank otherwise better contracts. The Stocky factor
+   is used only if Stocky analyzed the stock in the last 7 days; otherwise its weight is shared
+   across the rest. Fair value uses realized volatility matched to the time to expiry: 30-day
+   for near dates, blending to 1-year by a year out.
 3. **Top 5 by score, at most 2 from the same expiry date, ordered most profitable first.**
    An optional "at most N days" limit excludes far-dated expiries. "Estimated return" assumes a typical
    favorable 30-day move (one standard deviation of realized volatility). The option is

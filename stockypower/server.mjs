@@ -144,10 +144,28 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, refresh })
       }
     }),
   );
-  const picked = pickBest(contracts, { hv, minDays, maxDays, minTouchProb });
+  const stocky = latestStockyViews(symbols);
+  const picked = pickBest(contracts, { hv, stocky, minDays, maxDays, minTouchProb });
+  for (const sym of Object.keys(underlying)) underlying[sym].stocky = stocky[sym] ?? null;
   const result = { ...picked, underlying, errors, symbols, minDays, at: Date.now() };
   optionsCache.set(key, { at: Date.now(), result });
   return result;
+}
+
+// Stocky's latest daily and weekly call per symbol, from saved runs in the last 7 days.
+function latestStockyViews(symbols) {
+  const cutoff = Date.now() - 7 * 864e5;
+  const out = {};
+  for (const r of trackStore(DATA_DIR).loadAll()) {
+    if (!symbols.includes(r.symbol) || !["1D", "1W"].includes(r.tf)) continue;
+    const t = Date.parse(r.created);
+    if (!(t >= cutoff)) continue;
+    const v = (out[r.symbol] ??= { d1: null, w1: null, d1At: 0, w1At: 0 });
+    const k = r.tf === "1D" ? "d1" : "w1";
+    if (t > v[`${k}At`]) Object.assign(v, { [k]: r.signal, [`${k}At`]: t });
+  }
+  for (const v of Object.values(out)) v.at = Math.max(v.d1At, v.w1At);
+  return out;
 }
 
 // ── History: grade every saved call against the bars that came after it ──────

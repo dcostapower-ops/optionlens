@@ -1276,7 +1276,8 @@ function renderOptions(d, days) {
     (d.errors?.length ? `<div class="error">${esc(d.errors.join(" · "))}</div>` : "");
   $("#optAgain").onclick = () => runOptions(true);
   $(".ounder").innerHTML = Object.entries(d.underlying || {})
-    .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}</div><div class="v">${fmt(u.price)}</div><div class="d">realized volatility: 30-day ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · 1-year ${u.hvLong != null ? (u.hvLong * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div></div>`)
+    .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}</div><div class="v">${fmt(u.price)}</div><div class="d">realized volatility: 30-day ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · 1-year ${u.hvLong != null ? (u.hvLong * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div>
+      <div class="d">${u.stocky ? `Stocky (${esc(new Date(u.stocky.at).toLocaleDateString([], { month: "short", day: "numeric" }))}): 1 day <b>${esc(u.stocky.d1 || "—")}</b> · 1 week <b>${esc(u.stocky.w1 || "—")}</b>` : `No Stocky analysis in the last 7 days, so "agrees with Stocky" isn't scored. Run it on the Analyze page to include it.`}</div></div>`)
     .join("");
 
   const multi = (d.symbols || []).length > 1;
@@ -1313,13 +1314,13 @@ function renderOptions(d, days) {
     if (!list?.length) return "";
     const pct0 = (v) => Math.round(v * 100);
     return `<h3 class="hsec">${title}</h3><div class="tablewrap"><table class="otable"><thead><tr>
-      <th>Expiry</th><th>Best contract</th><th>Score</th><th>Delta</th><th>Cheap IV</th><th>Cheap premium</th><th>Open int.</th><th>Volume</th><th>Spread</th>
+      <th>Expiry</th><th>Best contract</th><th>Score</th><th>Delta</th><th>Cheap IV</th><th>Cheap premium</th><th>Chance of profit</th><th>Agrees with Stocky</th><th>Liquidity</th><th>Low time decay</th>
       <th>Premium vs fair</th><th>Est. return*</th><th>In top 5?</th></tr></thead><tbody>${list.map((c) => {
         const exp = new Date(c.expiration + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
         return `<tr${c.picked ? ' class="sel"' : ""}><td><b>${esc(exp)}</b><br><small>${c.dte} days</small></td>
           <td>${(d.symbols || []).length > 1 ? esc(c.underlying) + " " : ""}${fmt(c.strike)} <small>${c.moneyness}</small><br><small>$${fmt(c.ask)} · OI ${c.openInterest.toLocaleString()}</small></td>
           <td><b>${pct0(c.score)}</b></td><td>${pct0(c.scores.delta)}</td><td>${pct0(c.scores.iv)}</td><td>${pct0(c.scores.premium)}</td>
-          <td>${pct0(c.scores.openInterest)}</td><td>${pct0(c.scores.volume)}</td><td>${pct0(c.scores.spread)}</td>
+          <td>${pct0(c.scores.profit)}</td><td>${c.scores.stocky == null ? "—" : pct0(c.scores.stocky)}</td><td>${pct0(c.scores.liquidity)}</td><td>${pct0(c.scores.decay)}</td>
           <td>${c.premiumVsFair != null ? c.premiumVsFair.toFixed(2) + "×" : "—"}</td><td>${retStr(c.projectedReturnPct)}</td><td>${c.picked ? "✓" : ""}</td></tr>`;
       }).join("")}</tbody></table></div>`;
   };
@@ -1341,7 +1342,7 @@ function renderOptions(d, days) {
     const bar = (label, v) => `<span>${label}</span><span class="b"><i style="width:${Math.round(v * 100)}%"></i></span><span>${Math.round(v * 100)}</span>`;
     tr.insertAdjacentHTML("afterend", `<tr class="odetail"><td colspan="14">
       <div style="display:flex;flex-wrap:wrap;gap:24px">
-        <div class="bars">${bar("Delta", c.scores.delta)}${bar("Cheap IV", c.scores.iv)}${bar("Cheap premium", c.scores.premium)}${bar("Open interest", c.scores.openInterest)}${bar("Volume", c.scores.volume)}${bar("Tight spread", c.scores.spread)}</div>
+        <div class="bars">${bar("Delta", c.scores.delta)}${bar("Cheap IV", c.scores.iv)}${bar("Cheap premium", c.scores.premium)}${bar("Chance of profit", c.scores.profit)}${c.scores.stocky != null ? bar("Agrees with Stocky", c.scores.stocky) : ""}${bar("Liquidity", c.scores.liquidity)}${bar("Low time decay", c.scores.decay)}</div>
         <div style="max-width:560px;font-size:13px;line-height:1.6">
           <b>${esc(c.ticker || "")}</b><br>
           Premium $${fmt(c.ask)} per share ($${c.costPerContract.toFixed(0)} per contract): $${c.intrinsic.toFixed(2)} intrinsic value + $${c.timeValue.toFixed(2)} time value,
@@ -1367,9 +1368,11 @@ function renderOptions(d, days) {
     `That delta range spans moderately out-of-the-money to moderately in-the-money contracts (each row is labelled ITM / ATM / OTM; ATM = strike within 2% of the price); deep in-the-money and far out-of-the-money contracts are left out. ` +
     `Out-of-the-money contracts are only kept if the stock has at least a ${Math.round(d.settings.minTouchProb * 100)}% chance of reaching the strike at some point before expiry ` +
     `(probability of touch, from the stock's 30-day realized volatility and the time left). The breakeven column also shows the chance of finishing beyond breakeven at expiry. ` +
-    `The rest are scored 0–100: delta (most attractive near ${d.settings.deltaSweet}) 20%, cheap IV (vs the stock's 30-day realized volatility and vs the rest of the chain) 20%, ` +
-    `cheap premium 20% (the premium compared with its fair value at the stock's realized volatility over a matching horizon: recent 30-day movement for near expiries, increasingly the 1-year movement for far ones; below 1× is cheap), ` +
-    `open interest 15%, volume 12.5%, tight spread 12.5%. The 5 best calls and 5 best puts by that score are shown, at most ${d.settings.maxPerExpiry} from the same expiry date, ordered by <b>estimated return*</b>: ` +
+    `The rest are scored 0–100: delta (most attractive near ${d.settings.deltaSweet}) 15%, cheap IV (vs the stock's realized volatility over a matching horizon and vs the rest of the chain) 15%, ` +
+    `cheap premium 15% (premium vs its fair value at that realized volatility; below 1× is cheap), chance of profit at expiry 15% (finishing beyond breakeven), ` +
+    `agreement with Stocky 15% (its latest 1-day and 1-week call points the same way; left out if Stocky hasn't analysed the stock in 7 days), ` +
+    `liquidity 15% (open interest, volume and spread, with full marks once comfortably tradable, ${d.settings.oiGood.toLocaleString()}+ open interest and ${d.settings.volGood}+ volume, so size alone doesn't win), ` +
+    `and low time decay 10% (what a flat stock costs over 30 days). The 5 best calls and 5 best puts by that score are shown, at most ${d.settings.maxPerExpiry} from the same expiry date, ordered by <b>estimated return*</b>: ` +
     `the option is repriced (Black-Scholes, IV unchanged) after a typical favourable 30-day move in the stock (one standard deviation of its realized volatility), bought at the ask. ` +
     `It's an estimate for comparing contracts, not a prediction. Real results depend on the move you actually get, IV changes and fills. ` +
     `Option quotes, greeks, IV, open interest and volume come from your Massive Options Advanced real-time feed and refresh every ${OPT.seconds || "—"} seconds while this page is open.`;

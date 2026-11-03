@@ -2,8 +2,9 @@
 // requested symbols (Massive options chain snapshot), keeps liquid ones, scores
 // them on delta, IV cheapness, open interest, volume and spread, takes the best 5
 // calls and 5 puts, and orders those by an estimated return on premium.
-// Factors: delta 20%, IV cheapness 20%, premium vs fair value 20%,
-// open interest 15%, volume 12.5%, spread 12.5%.
+// Factors: delta 15%, IV cheapness 15%, premium vs fair value 15%, chance of profit
+// at expiry 15%, agreement with Stocky 15% (when available), liquidity 15% (open
+// interest + volume + spread, full marks once comfortably tradable), time decay 10%.
 //
 // Profit can't be known in advance, so "most profitable" uses one comparable
 // scenario for every contract: the stock makes a typical favourable move (one
@@ -14,6 +15,9 @@ export const DEFAULTS = {
   minDays: 61, // "more than 60 days"
   maxDays: null, // optional upper limit
   maxPerExpiry: 2, // spread the picks across expiry dates
+  oiGood: 1000, // open interest at/above this counts as fully tradable
+  volGood: 200, // volume at/above this counts as fully tradable
+  weights: { delta: 0.15, iv: 0.15, premium: 0.15, profit: 0.15, stocky: 0.15, liquidity: 0.15, decay: 0.1 },
   minTouchProb: 0.7, // out-of-the-money: required chance of reaching the strike before expiry
   holdDays: 30,
   minOpenInterest: 100,
@@ -156,7 +160,8 @@ export function hvFor(hvEntry, days) {
   return short * (1 - w) + long * w;
 }
 
-export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {}) {
+// stocky: { SYMBOL: { d1: "BUY"|"SELL"|..., w1: ..., at } } from Stocky's latest saved run (optional).
+export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ...opts } = {}) {
   const o = { ...DEFAULTS, ...opts };
   const stats = { scanned: contracts.length, rejected: {} };
   const reject = (why) => (stats.rejected[why] = (stats.rejected[why] || 0) + 1);
@@ -210,31 +215,14 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
     const list = usable.filter((c) => c.type === type);
     if (!list.length) return [];
     const ivs = list.map((c) => c.iv).sort((a, b) => a - b);
-    const ois = list.map((c) => Math.log10(1 + c.openInterest)).sort((a, b) => a - b);
-    const vols = list.map((c) => Math.log10(1 + c.volume)).sort((a, b) => a - b);
     // Fallback when realised volatility is missing: time value per sqrt(day), also expiry-neutral.
     const tvRoot = (c) => c.timeValue / Math.sqrt(c.dte) / c.underlyingPrice;
     const ratios = list.map((c) => c.premiumVsFair ?? tvRoot(c)).sort((a, b) => a - b);
+    const want = type === "call" ? "BUY" : "SELL";
     for (const c of list) {
-      const deltaScore = clamp01(1 - Math.abs(c.absDelta - o.deltaSweet) / 0.3);
-      // IV cheapness: vs the stock's realised volatility, and vs the rest of the chain.
-      const ivVsHv = c.hv ? c.iv / c.hv : null;
-      const hvScore = ivVsHv == null ? 0.5 : clamp01((1.6 - ivVsHv) / 1.0); // 0.6x HV -> 1, 1.6x HV -> 0
-      const ivScore = 0.5 * hvScore + 0.5 * (1 - pctRank(ivs, c.iv));
-      const oiScore = pctRank(ois, Math.log10(1 + c.openInterest));
-      const volScore = pctRank(vols, Math.log10(1 + c.volume));
-      const spreadScore = clamp01(1 - c.spreadPct / o.maxSpreadPct);
-      // Cheap premium: below fair value is good (0.6x fair -> 1, 1.4x fair -> 0), blended
-      // with how it ranks against the rest of the chain.
-      const ratio = c.premiumVsFair ?? tvRoot(c);
-      const fairScore = c.premiumVsFair == null ? 0.5 : clamp01((1.4 - c.premiumVsFair) / 0.8);
-      const premiumScore = 0.5 * fairScore + 0.5 * (1 - pctRank(ratios, ratio));
-      c.scores = { delta: deltaScore, iv: ivScore, premium: premiumScore, openInterest: oiScore, volume: volScore, spread: spreadScore };
-      c.ivVsHv = ivVsHv;
-      c.score = 0.2 * deltaScore + 0.2 * ivScore + 0.2 * premiumScore + 0.15 * oiScore + 0.125 * volScore + 0.125 * spreadScore;
+      const S = c.underlyingPrice;
 
       // Profit estimate: favourable 1-sigma move over holdDays, IV unchanged, buy at ask, value at mid.
-      const S = c.underlyingPrice;
       const sigmaMove = (c.hvMove ?? c.hv ?? c.iv) * Math.sqrt(o.holdDays / 365); // typical move over the holding period
       const S1 = S * Math.exp(type === "call" ? sigmaMove : -sigmaMove);
       const Tleft = Math.max(0, (c.dte - o.holdDays) / 365);
@@ -250,6 +238,46 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
       const inMoney = type === "call" ? S - c.strike : c.strike - S;
       c.moneynessPct = (Math.abs(S - c.strike) / S) * 100;
       c.moneyness = c.moneynessPct <= 2 ? "ATM" : inMoney > 0 ? "ITM" : "OTM";
+
+      // ── Factor scores, each 0..1 ──
+      const deltaScore = clamp01(1 - Math.abs(c.absDelta - o.deltaSweet) / 0.3);
+      // IV cheapness: vs the stock's realised volatility (matched horizon), and vs the rest of the chain.
+      const ivVsHv = c.hv ? c.iv / c.hv : null;
+      const hvScore = ivVsHv == null ? 0.5 : clamp01((1.6 - ivVsHv) / 1.0); // 0.6x -> 1, 1.6x -> 0
+      const ivScore = 0.5 * hvScore + 0.5 * (1 - pctRank(ivs, c.iv));
+      // Cheap premium: below fair value is good (0.6x fair -> 1, 1.4x fair -> 0), blended with chain rank.
+      const ratio = c.premiumVsFair ?? tvRoot(c);
+      const fairScore = c.premiumVsFair == null ? 0.5 : clamp01((1.4 - c.premiumVsFair) / 0.8);
+      const premiumScore = 0.5 * fairScore + 0.5 * (1 - pctRank(ratios, ratio));
+      // Chance of profit at expiry (finishing beyond breakeven): 15% -> 0, 50%+ -> 1.
+      const profitScore = c.beProb == null ? 0.5 : clamp01((c.beProb - 0.15) / 0.35);
+      // Liquidity, "good enough" scoring: full marks once comfortably tradable, so a
+      // giant contract doesn't beat an easily tradable one on size alone.
+      const oiS = clamp01(Math.log10(Math.max(1, c.openInterest) / o.minOpenInterest) / Math.log10(o.oiGood / o.minOpenInterest));
+      const volS = clamp01(Math.log10(Math.max(1, c.volume) / o.minVolume) / Math.log10(o.volGood / o.minVolume));
+      const spreadS = clamp01(1 - c.spreadPct / o.maxSpreadPct);
+      const liquidityScore = (oiS + volS + spreadS) / 3;
+      // Time-decay cost: premium lost if the stock is flat for holdDays (0% -> 1, -30% or worse -> 0).
+      const decayScore = clamp01(1 + c.flatReturnPct / 30);
+      // Agreement with Stocky's latest daily / weekly call (if it analysed this stock recently).
+      const sv = stocky[c.underlying];
+      let stockyScore = null;
+      if (sv && (sv.d1 || sv.w1)) {
+        const pts = [sv.d1, sv.w1].filter(Boolean).map((sig) => (sig === want ? 1 : sig === "HOLD" ? 0.4 : 0));
+        stockyScore = pts.reduce((x, y) => x + y, 0) / pts.length;
+      }
+
+      c.scores = { delta: deltaScore, iv: ivScore, premium: premiumScore, profit: profitScore, stocky: stockyScore, liquidity: liquidityScore, decay: decayScore };
+      c.liquidityParts = { openInterest: oiS, volume: volS, spread: spreadS };
+      c.ivVsHv = ivVsHv;
+      // Weighted sum; without a Stocky view its weight is shared out over the other factors.
+      let wSum = 0, total = 0;
+      for (const [k, w] of Object.entries(o.weights)) {
+        if (c.scores[k] == null) continue;
+        wSum += w;
+        total += w * c.scores[k];
+      }
+      c.score = wSum ? total / wSum : 0;
     }
     // Best contract on each expiry date, so the page can show why dates won or lost.
     const bestByExpiry = new Map();
