@@ -27,6 +27,7 @@ import {
 } from "./lib/market.mjs";
 import { computeIndicators, SETTINGS as IND_SETTINGS } from "./lib/indicators.mjs";
 import { evaluateCall, summarize, breakdown, RESOLVE_BARS } from "./lib/history.mjs";
+import { fetchChain, fetchDaily, normalizeContract, pickBest, realizedVol, DEFAULTS as OPTION_DEFAULTS } from "./lib/options.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -105,6 +106,44 @@ async function fetchAllCandles(symbol, send) {
   if (errors.length) send("status", { message: `Some Massive data couldn't be loaded (${errors.join("; ")}).` });
   liveData.set(symbol, { raw, at: Date.now() });
   return candles;
+}
+
+// ── Best Option Chains ──────────────────────────────────────────────────────
+
+const optionsCache = new Map(); // key -> { at, result }, kept 5 minutes
+
+async function bestOptions(symbols, { minDays, refresh }) {
+  const key = `${symbols.join(",")}|${minDays}`;
+  const hit = optionsCache.get(key);
+  if (!refresh && hit && Date.now() - hit.at < 5 * 60_000) return { ...hit.result, cached: true };
+
+  const contracts = [];
+  const hv = {};
+  const underlying = {};
+  const errors = [];
+  await Promise.all(
+    symbols.map(async (symbol) => {
+      try {
+        const [chain, daily] = await Promise.all([
+          fetchChain({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, minDays }),
+          fetchDaily({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol }),
+        ]);
+        hv[symbol] = realizedVol(daily, 30);
+        const lastClose = daily.at(-1)?.c ?? null;
+        for (const x of chain) {
+          const c = normalizeContract(x, lastClose);
+          if (c) contracts.push({ ...c, underlying: c.underlying || symbol });
+        }
+        underlying[symbol] = { price: contracts.find((c) => c.underlying === symbol)?.underlyingPrice ?? lastClose, hv: hv[symbol], contracts: chain.length };
+      } catch (err) {
+        errors.push(`${symbol}: ${err.message}`);
+      }
+    }),
+  );
+  const picked = pickBest(contracts, { hv, minDays });
+  const result = { ...picked, underlying, errors, symbols, minDays, at: Date.now() };
+  optionsCache.set(key, { at: Date.now(), result });
+  return result;
 }
 
 // ── History: grade every saved call against the bars that came after it ──────
@@ -788,6 +827,22 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     } catch (e) {
       return json(res, 400, { error: e.message });
+    }
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/options") {
+    try {
+      const body = await readJson(req);
+      const symbols = [...new Set(String(body.symbols || "").toUpperCase().split(/[\s,;]+/).filter(Boolean))];
+      if (!symbols.length) return json(res, 400, { error: "Enter at least one symbol." });
+      if (symbols.length > 10) return json(res, 400, { error: "Up to 10 symbols at a time." });
+      const bad = symbols.find((s) => !SYMBOL_RE.test(s));
+      if (bad) return json(res, 400, { error: `"${bad}" isn't a valid symbol.` });
+      if (!MASSIVE_API_KEY) return json(res, 400, { error: "MASSIVE_API_KEY isn't set." });
+      return json(res, 200, await bestOptions(symbols, { minDays: Math.max(1, Number(body.minDays) || OPTION_DEFAULTS.minDays), refresh: Boolean(body.refresh) }));
+    } catch (err) {
+      console.error("[options]", err);
+      return json(res, 502, { error: err?.message || String(err) });
     }
   }
 

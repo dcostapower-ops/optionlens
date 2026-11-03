@@ -1,0 +1,200 @@
+// "Best Option Chains": scans every listed contract more than N days out for the
+// requested symbols (Massive options chain snapshot), keeps liquid ones, scores
+// them on delta, IV cheapness, open interest, volume and spread, takes the best 5
+// calls and 5 puts, and orders those by an estimated return on premium.
+//
+// Profit can't be known in advance, so "most profitable" uses one comparable
+// scenario for every contract: the stock makes a typical favourable move (one
+// standard deviation of its recent realised volatility) over HOLD_DAYS, the
+// option is repriced with Black-Scholes at its current IV, bought at the ask.
+
+export const DEFAULTS = {
+  minDays: 61, // "more than 60 days"
+  holdDays: 30,
+  minOpenInterest: 100,
+  minVolume: 10,
+  maxSpreadPct: 15,
+  deltaMin: 0.25,
+  deltaMax: 0.75,
+  deltaSweet: 0.55,
+  riskFree: 0.04,
+  top: 5,
+};
+
+const ymd = (d) => d.toISOString().slice(0, 10);
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+
+// ── Black-Scholes ────────────────────────────────────────────────────────────
+
+function normCdf(x) {
+  // Abramowitz-Stegun 26.2.17, |error| < 7.5e-8
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const d = 0.3989422804014327 * Math.exp((-x * x) / 2);
+  const p = d * t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  return x >= 0 ? 1 - p : p;
+}
+
+export function bsPrice(type, S, K, T, r, sigma) {
+  if (T <= 0 || sigma <= 0) return Math.max(0, type === "call" ? S - K : K - S);
+  const sq = sigma * Math.sqrt(T);
+  const d1 = (Math.log(S / K) + (r + (sigma * sigma) / 2) * T) / sq;
+  const d2 = d1 - sq;
+  return type === "call"
+    ? S * normCdf(d1) - K * Math.exp(-r * T) * normCdf(d2)
+    : K * Math.exp(-r * T) * normCdf(-d2) - S * normCdf(-d1);
+}
+
+// Annualised realised volatility from daily closes (last `days` returns).
+export function realizedVol(dailyBars, days = 30) {
+  const closes = (dailyBars || []).map((b) => b.c).filter((c) => c > 0);
+  if (closes.length < days + 1) return null;
+  const rets = [];
+  for (let i = closes.length - days; i < closes.length; i++) rets.push(Math.log(closes[i] / closes[i - 1]));
+  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+  const v = rets.reduce((a, b) => a + (b - mean) ** 2, 0) / (rets.length - 1);
+  return Math.sqrt(v * 252);
+}
+
+// ── Massive options chain snapshot ───────────────────────────────────────────
+
+// Every contract for `symbol` expiring on/after minDays from today, following pages.
+export async function fetchChain({ base, apiKey, symbol, minDays }) {
+  const from = ymd(new Date(Date.now() + minDays * 864e5));
+  let url = `${base}/v3/snapshot/options/${encodeURIComponent(symbol)}?expiration_date.gte=${from}&limit=250`;
+  const out = [];
+  for (let page = 0; page < 80 && url; page++) {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(30_000) });
+    if (r.status === 401 || r.status === 403)
+      throw new Error(`Massive refused the options chain for ${symbol} (HTTP ${r.status}). Check that this API key includes your options plan.`);
+    if (r.status === 404) throw new Error(`No options found for ${symbol}.`);
+    if (!r.ok) throw new Error(`Massive HTTP ${r.status} for ${symbol} options`);
+    const body = await r.json();
+    out.push(...(body.results ?? []));
+    url = body.next_url ? body.next_url.replace(/([?&])apiKey=[^&]*&?/, "$1").replace(/[?&]$/, "") : null;
+    if (url && base && !url.startsWith(base)) url = base + new URL(url).pathname + new URL(url).search;
+  }
+  return out;
+}
+
+// Flattens one snapshot result into what we score. Returns null if unusable.
+export function normalizeContract(x, underlyingFallback) {
+  const d = x?.details ?? {};
+  const type = String(d.contract_type || "").toLowerCase();
+  if (type !== "call" && type !== "put") return null;
+  const q = x.last_quote ?? {};
+  const bid = Number(q.bid), ask = Number(q.ask);
+  const mid = Number.isFinite(q.midpoint) ? q.midpoint : bid > 0 && ask > 0 ? (bid + ask) / 2 : null;
+  return {
+    ticker: d.ticker,
+    underlying: x.underlying_asset?.ticker,
+    type,
+    strike: Number(d.strike_price),
+    expiration: d.expiration_date,
+    sharesPerContract: Number(d.shares_per_contract) || 100,
+    delta: Number(x.greeks?.delta),
+    gamma: Number(x.greeks?.gamma),
+    theta: Number(x.greeks?.theta),
+    vega: Number(x.greeks?.vega),
+    iv: Number(x.implied_volatility),
+    openInterest: Number(x.open_interest) || 0,
+    volume: Number(x.day?.volume) || 0,
+    bid,
+    ask,
+    mid,
+    last: Number(x.last_trade?.price) || Number(x.day?.close) || null,
+    underlyingPrice: Number(x.underlying_asset?.price) || underlyingFallback || null,
+  };
+}
+
+// ── Selection ────────────────────────────────────────────────────────────────
+
+// Percentile rank of v within sorted values (0..1).
+function pctRank(sorted, v) {
+  if (!sorted.length) return 0.5;
+  let lo = 0, hi = sorted.length;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (sorted[m] < v) lo = m + 1;
+    else hi = m;
+  }
+  return sorted.length === 1 ? 0.5 : lo / (sorted.length - 1);
+}
+
+// contracts: normalized; hv: realised vol by underlying; returns { calls, puts, stats }.
+export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const stats = { scanned: contracts.length, rejected: {} };
+  const reject = (why) => (stats.rejected[why] = (stats.rejected[why] || 0) + 1);
+
+  const usable = [];
+  for (const c of contracts) {
+    if (!c) { reject("unreadable"); continue; }
+    const dte = Math.round((Date.parse(c.expiration + "T21:00:00Z") - now) / 864e5);
+    if (!(dte >= o.minDays)) { reject(`expires within ${o.minDays - 1} days`); continue; }
+    if (!(c.bid > 0 && c.ask > 0 && c.ask >= c.bid)) { reject("no two-sided quote"); continue; }
+    if (!Number.isFinite(c.delta) || !Number.isFinite(c.iv) || c.iv <= 0) { reject("no delta/IV"); continue; }
+    if (!(c.underlyingPrice > 0)) { reject("no underlying price"); continue; }
+    const absDelta = Math.abs(c.delta);
+    if (absDelta < o.deltaMin || absDelta > o.deltaMax) { reject(`delta outside ${o.deltaMin}-${o.deltaMax}`); continue; }
+    if (c.openInterest < o.minOpenInterest) { reject(`open interest under ${o.minOpenInterest}`); continue; }
+    if (c.volume < o.minVolume) { reject(`volume under ${o.minVolume}`); continue; }
+    const spreadPct = ((c.ask - c.bid) / ((c.ask + c.bid) / 2)) * 100;
+    if (spreadPct > o.maxSpreadPct) { reject(`spread over ${o.maxSpreadPct}%`); continue; }
+    usable.push({ ...c, dte, absDelta, spreadPct, hv: hv[c.underlying] ?? null });
+  }
+  stats.passed = usable.length;
+
+  const pick = (type) => {
+    const list = usable.filter((c) => c.type === type);
+    if (!list.length) return [];
+    const ivs = list.map((c) => c.iv).sort((a, b) => a - b);
+    const ois = list.map((c) => Math.log10(1 + c.openInterest)).sort((a, b) => a - b);
+    const vols = list.map((c) => Math.log10(1 + c.volume)).sort((a, b) => a - b);
+    for (const c of list) {
+      const deltaScore = clamp01(1 - Math.abs(c.absDelta - o.deltaSweet) / 0.3);
+      // IV cheapness: vs the stock's realised volatility, and vs the rest of the chain.
+      const ivVsHv = c.hv ? c.iv / c.hv : null;
+      const hvScore = ivVsHv == null ? 0.5 : clamp01((1.6 - ivVsHv) / 1.0); // 0.6x HV -> 1, 1.6x HV -> 0
+      const ivScore = 0.5 * hvScore + 0.5 * (1 - pctRank(ivs, c.iv));
+      const oiScore = pctRank(ois, Math.log10(1 + c.openInterest));
+      const volScore = pctRank(vols, Math.log10(1 + c.volume));
+      const spreadScore = clamp01(1 - c.spreadPct / o.maxSpreadPct);
+      c.scores = { delta: deltaScore, iv: ivScore, openInterest: oiScore, volume: volScore, spread: spreadScore };
+      c.ivVsHv = ivVsHv;
+      c.score = 0.25 * deltaScore + 0.25 * ivScore + 0.2 * oiScore + 0.15 * volScore + 0.15 * spreadScore;
+
+      // Profit estimate: favourable 1-sigma move over holdDays, IV unchanged, buy at ask, value at mid.
+      const S = c.underlyingPrice;
+      const sigmaMove = (c.hv ?? c.iv) * Math.sqrt(o.holdDays / 365);
+      const S1 = S * Math.exp(type === "call" ? sigmaMove : -sigmaMove);
+      const Tleft = Math.max(0, (c.dte - o.holdDays) / 365);
+      const vMove = bsPrice(type, S1, c.strike, Tleft, o.riskFree, c.iv);
+      const vFlat = bsPrice(type, S, c.strike, Tleft, o.riskFree, c.iv);
+      c.scenario = { holdDays: o.holdDays, movePct: (S1 / S - 1) * 100, targetPrice: S1 };
+      c.projectedReturnPct = ((vMove - c.ask) / c.ask) * 100;
+      c.flatReturnPct = ((vFlat - c.ask) / c.ask) * 100;
+      c.costPerContract = c.ask * c.sharesPerContract;
+      c.breakeven = type === "call" ? c.strike + c.ask : c.strike - c.ask;
+      c.breakevenMovePct = (c.breakeven / S - 1) * 100;
+    }
+    // Best 5 by the combined score, then shown most profitable first.
+    return list
+      .sort((a, b) => b.score - a.score)
+      .slice(0, o.top)
+      .sort((a, b) => b.projectedReturnPct - a.projectedReturnPct);
+  };
+  return { calls: pick("call"), puts: pick("put"), stats, settings: o };
+}
+
+// Recent daily bars for realised volatility and a fallback underlying price.
+export async function fetchDaily({ base, apiKey, symbol, days = 120 }) {
+  const to = ymd(new Date(Date.now() + 864e5));
+  const from = ymd(new Date(Date.now() - days * 864e5));
+  const r = await fetch(`${base}/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/day/${from}/${to}?adjusted=true&sort=asc&limit=5000`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!r.ok) return [];
+  const body = await r.json();
+  return (body.results ?? []).map((b) => ({ t: Math.floor(b.t / 1000), c: b.c }));
+}

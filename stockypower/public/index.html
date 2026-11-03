@@ -108,6 +108,21 @@
   .confirm button { padding: 6px 16px; margin-right: 8px; }
   .allow { background: var(--buy); color: #fff; } .deny { background: var(--sell); color: #fff; }
   footer a { color: var(--muted); }
+  .optform { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 16px 0; }
+  .optform input[type=text] { flex: 1 1 280px; padding: 12px 14px; font-size: 17px; text-transform: uppercase; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px; }
+  .optform label { font-size: 13px; color: var(--muted); }
+  .optform input[type=number] { width: 64px; padding: 6px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
+  .optform .primary { padding: 12px 20px; }
+  .ostatus { font-size: 13px; color: var(--muted); }
+  .ounder { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .ounder .hcard { min-width: 180px; }
+  .otable td, .otable th { font-size: 13px; }
+  .otable tr.sel td { background: #1f2a3a; }
+  .otable .rank { font-weight: 700; color: var(--muted); }
+  .ret { font-weight: 700; }
+  .bars { display: grid; grid-template-columns: 110px 1fr 40px; gap: 4px 8px; align-items: center; font-size: 12px; max-width: 460px; }
+  .bars .b { display: block; height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; } .bars .b i { display: block; height: 100%; background: var(--accent); }
+  .odetail td { background: #11161d !important; white-space: normal !important; text-align: left !important; }
   .nav { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
   .navbtn { padding: 6px 16px; background: var(--panel); color: var(--muted); border: 1px solid var(--border); font-size: 14px; }
   .navbtn.on { color: #fff; background: var(--accent); border-color: var(--accent); }
@@ -146,6 +161,7 @@
 <nav class="nav">
   <button class="navbtn on" data-view="analyze">Analyze</button>
   <button class="navbtn" data-view="history">History &amp; accuracy</button>
+  <button class="navbtn" data-view="options">Best Option Chains</button>
 </nav>
 
 <main>
@@ -167,6 +183,18 @@
     <h3 class="hsec">All calls <span class="hcount"></span></h3>
     <div class="tablewrap hcalls"></div>
     <p class="hhow"></p>
+  </section>
+
+  <section id="optionsView" hidden>
+    <form id="optForm" class="optform" autocomplete="off">
+      <input id="optSymbols" type="text" placeholder="NVDA  (or several: NVDA, AAPL, SPY)" />
+      <label>Expiring more than <input id="optDays" type="number" min="1" max="1000" value="60" /> days out</label>
+      <button class="primary" type="submit">Find best options</button>
+    </form>
+    <div class="ostatus"></div>
+    <div class="ounder"></div>
+    <div class="oresults"></div>
+    <p class="hhow ohow"></p>
   </section>
 
   <div id="analyzeView">
@@ -969,7 +997,13 @@ function showView(view) {
   document.querySelectorAll(".navbtn").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
   $("#historyView").hidden = view !== "history";
   $("#analyzeView").hidden = view !== "analyze";
+  $("#optionsView").hidden = view !== "options";
   if (view === "history") loadHistoryView();
+  if (view === "options" && !$("#optSymbols").value) {
+    const last = $("#results .card")?._state?.symbol;
+    if (last) $("#optSymbols").value = last;
+    $("#optSymbols").focus();
+  }
 }
 document.querySelectorAll(".navbtn").forEach((b) => (b.onclick = () => showView(b.dataset.view)));
 document.addEventListener("click", (ev) => {
@@ -1158,6 +1192,101 @@ function drawCallChart(el, d) {
   }
   if (markers.length && LW.createSeriesMarkers) LW.createSeriesMarkers(candles, markers.sort((a, b) => a.time - b.time));
   chart.timeScale().fitContent();
+}
+
+// ── Best Option Chains ─────────────────────────────────────────────────────
+$("#optForm").addEventListener("submit", (ev) => { ev.preventDefault(); runOptions(false); });
+
+async function runOptions(refresh) {
+  const symbols = $("#optSymbols").value.trim();
+  if (!symbols) return;
+  const days = Number($("#optDays").value) || 60;
+  $(".ostatus").textContent = "Scanning every option contract and scoring them… (large chains can take 10–30 seconds)";
+  $(".oresults").innerHTML = "";
+  $(".ounder").innerHTML = "";
+  try {
+    const r = await fetch("/api/options", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols, minDays: days + 1, refresh }), // "more than N days"
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    renderOptions(d, days);
+  } catch (err) {
+    $(".ostatus").innerHTML = `<span class="error">${esc(err.message)}</span>`;
+  }
+}
+
+function renderOptions(d, days) {
+  const at = new Date(d.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const rej = Object.entries(d.stats.rejected || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v.toLocaleString()} ${k}`).join(", ");
+  $(".ostatus").innerHTML =
+    `${d.cached ? "Showing results from " : "Scanned at "}${at}: ${d.stats.scanned.toLocaleString()} contracts expiring more than ${days} days out, ` +
+    `${d.stats.passed.toLocaleString()} passed the liquidity and delta filters${rej ? ` (left out: ${esc(rej)})` : ""}. ` +
+    `<button class="mini" id="optAgain">Scan again</button>` +
+    (d.errors?.length ? `<div class="error">${esc(d.errors.join(" · "))}</div>` : "");
+  $("#optAgain").onclick = () => runOptions(true);
+  $(".ounder").innerHTML = Object.entries(d.underlying || {})
+    .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}</div><div class="v">${fmt(u.price)}</div><div class="d">30-day realized volatility ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div></div>`)
+    .join("");
+
+  const multi = (d.symbols || []).length > 1;
+  const table = (title, list, type) => {
+    if (!list.length) return `<div class="hbox" style="margin-bottom:14px"><h3>${title}</h3><p class="hstatus">No ${type}s passed the filters.</p></div>`;
+    const rows = list.map((c, i) => {
+      const exp = new Date(c.expiration + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+      return `<tr data-i="${i}" data-type="${type}">
+        <td class="rank">${i + 1}</td>
+        <td><b>${multi ? esc(c.underlying) + " " : ""}${fmt(c.strike)} ${type === "call" ? "Call" : "Put"}</b><br><small>${esc(exp)} · ${c.dte} days</small></td>
+        <td class="ret">${retStr(c.projectedReturnPct)}</td>
+        <td>${retStr(c.flatReturnPct)}</td>
+        <td>$${c.costPerContract.toFixed(0)}<br><small>${fmt(c.bid)} / ${fmt(c.ask)}</small></td>
+        <td>${c.delta.toFixed(2)}</td>
+        <td>${(c.iv * 100).toFixed(1)}%<br><small>${c.ivVsHv != null ? c.ivVsHv.toFixed(2) + "× realized" : ""}</small></td>
+        <td>${c.openInterest.toLocaleString()}</td>
+        <td>${c.volume.toLocaleString()}</td>
+        <td>${c.spreadPct.toFixed(1)}%</td>
+        <td>${fmt(c.breakeven)}<br><small>${c.breakevenMovePct >= 0 ? "+" : ""}${c.breakevenMovePct.toFixed(1)}% by expiry</small></td>
+        <td>${Math.round(c.score * 100)}</td></tr>`;
+    }).join("");
+    return `<div class="hbox" style="margin-bottom:14px"><h3>${title}</h3><div class="tablewrap"><table class="otable"><thead><tr>
+      <th>#</th><th>Contract</th><th title="Estimated return on the premium if the stock makes a typical favourable move (1 standard deviation) in 30 days">Est. return*</th>
+      <th title="Return if the stock is unchanged after 30 days (time decay)">If flat 30d</th><th>Cost / contract<br><small>bid / ask</small></th><th>Delta</th><th>IV</th>
+      <th>Open interest</th><th>Volume</th><th>Spread</th><th>Breakeven</th><th title="Combined attractiveness score, 0-100">Score</th>
+      </tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  };
+  $(".oresults").innerHTML =
+    table("Best 5 calls to buy · most profitable first", d.calls, "call") + table("Best 5 puts to buy · most profitable first", d.puts, "put");
+  $(".oresults").onclick = (ev) => {
+    const tr = ev.target.closest("tr[data-i]");
+    if (!tr) return;
+    const c = (tr.dataset.type === "call" ? d.calls : d.puts)[+tr.dataset.i];
+    const open = tr.nextElementSibling?.classList.contains("odetail");
+    tr.parentElement.querySelectorAll(".odetail").forEach((x) => x.remove());
+    tr.parentElement.querySelectorAll("tr.sel").forEach((x) => x.classList.remove("sel"));
+    if (open) return;
+    tr.classList.add("sel");
+    const bar = (label, v) => `<span>${label}</span><span class="b"><i style="width:${Math.round(v * 100)}%"></i></span><span>${Math.round(v * 100)}</span>`;
+    tr.insertAdjacentHTML("afterend", `<tr class="odetail"><td colspan="12">
+      <div style="display:flex;flex-wrap:wrap;gap:24px">
+        <div class="bars">${bar("Delta", c.scores.delta)}${bar("Cheap IV", c.scores.iv)}${bar("Open interest", c.scores.openInterest)}${bar("Volume", c.scores.volume)}${bar("Tight spread", c.scores.spread)}</div>
+        <div style="max-width:560px;font-size:13px;line-height:1.6">
+          <b>${esc(c.ticker || "")}</b><br>
+          If ${esc(c.underlying)} moves ${c.scenario.movePct >= 0 ? "up" : "down"} ${Math.abs(c.scenario.movePct).toFixed(1)}% to about ${fmt(c.scenario.targetPrice)} within ${c.scenario.holdDays} days
+          (a typical move for this stock), this option would be worth about ${retStr(c.projectedReturnPct)} on what you paid. If the stock doesn't move, it loses about
+          ${Math.abs(c.flatReturnPct).toFixed(1)}% to time decay over those ${c.scenario.holdDays} days. Gamma ${Number.isFinite(c.gamma) ? c.gamma.toFixed(4) : "—"} ·
+          theta ${Number.isFinite(c.theta) ? c.theta.toFixed(3) : "—"}/day · vega ${Number.isFinite(c.vega) ? c.vega.toFixed(3) : "—"}.
+          The most you can lose buying this option is the premium: $${c.costPerContract.toFixed(0)} per contract.
+        </div></div></td></tr>`);
+  };
+  $(".ohow").innerHTML =
+    `How these are chosen: every contract expiring more than ${days} days out must have a two-sided quote, delta between ${d.settings.deltaMin} and ${d.settings.deltaMax} ` +
+    `(−${d.settings.deltaMax} to −${d.settings.deltaMin} for puts), open interest of at least ${d.settings.minOpenInterest}, volume of at least ${d.settings.minVolume}, and a bid/ask spread under ${d.settings.maxSpreadPct}%. ` +
+    `The rest are scored 0–100: delta (most attractive near ${d.settings.deltaSweet}) 25%, cheap IV (vs the stock's 30-day realized volatility and vs the rest of the chain) 25%, ` +
+    `open interest 20%, volume 15%, tight spread 15%. The 5 best calls and 5 best puts by that score are shown, ordered by <b>estimated return*</b>: ` +
+    `the option is repriced (Black-Scholes, IV unchanged) after a typical favourable 30-day move in the stock (one standard deviation of its realized volatility), bought at the ask. ` +
+    `It's an estimate for comparing contracts, not a prediction. Real results depend on the move you actually get, IV changes and fills. Prices are 15 minutes delayed if your plan is.`;
 }
 
 // ── Confirmations ──────────────────────────────────────────────────────────

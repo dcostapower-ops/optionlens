@@ -142,6 +142,31 @@ Alerts, for the timeframe you're viewing, appear in the card (and as desktop not
 you switch them on): price crossing Target 1/2 or Stop loss 1/2, Smoothed HA turning bullish
 or bearish, and Ultra RSI crossing 50, 75 or 25.
 
+## Best Option Chains
+
+The **Best Option Chains** menu scans every listed contract expiring more than N days out
+(default: more than 60) for one or more symbols, using Massive's options chain snapshot
+(`/v3/snapshot/options/{symbol}`; the API key must include the options plan). It picks the
+5 best calls and 5 best puts to buy (`lib/options.mjs`):
+
+1. **Filters:** two-sided quote, |delta| 0.25–0.75, open interest ≥ 100, volume ≥ 10,
+   bid/ask spread under 15%.
+2. **Score 0–100:**
+   - delta, best near 0.55: 25%
+   - cheap IV, measured against the stock's 30-day realized volatility and against the rest of
+     the chain: 25%
+   - open interest: 20%
+   - volume: 15%
+   - tight spread: 15%
+3. **Top 5 by score, ordered most profitable first.** "Estimated return" assumes a typical
+   favorable 30-day move (one standard deviation of realized volatility). The option is
+   repriced with Black-Scholes at its current IV and assumed bought at the ask. It's a common
+   yardstick for comparing contracts, not a prediction. The page also shows the return if the
+   stock stays flat for 30 days (time decay), the breakeven at expiry, and the cost per contract.
+
+Click a row for its score breakdown and greeks. Results are kept for 5 minutes, and
+**Scan again** forces a fresh scan.
+
 ## History & accuracy
 
 The **History & accuracy** tab grades every saved call (`data/predictions.jsonl`, one row per
