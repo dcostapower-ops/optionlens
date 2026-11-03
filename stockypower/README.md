@@ -150,7 +150,10 @@ The **Best Option Chains** menu scans every listed contract expiring more than N
 5 best calls and 5 best puts to buy (`lib/options.mjs`):
 
 1. **Filters:** two-sided quote, |delta| 0.25–0.75, open interest ≥ 100, volume ≥ 10,
-   bid/ask spread under 15%.
+   bid/ask spread under 15%. **Out-of-the-money** contracts must also have at least a 70%
+   (adjustable) chance of the stock reaching the strike at some point before expiry. This is
+   the probability of touch, using the stock's 30-day realized volatility and the time left.
+   Each row shows that chance, plus the chance of finishing beyond breakeven at expiry.
 2. **Score 0–100:**
    - delta, best near 0.55: 20%
    - cheap IV, measured against the stock's 30-day realized volatility and against the rest of

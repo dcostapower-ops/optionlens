@@ -14,6 +14,7 @@ export const DEFAULTS = {
   minDays: 61, // "more than 60 days"
   maxDays: null, // optional upper limit
   maxPerExpiry: 2, // spread the picks across expiry dates
+  minTouchProb: 0.7, // out-of-the-money: required chance of reaching the strike before expiry
   holdDays: 30,
   minOpenInterest: 100,
   minVolume: 10,
@@ -46,6 +47,23 @@ export function bsPrice(type, S, K, T, r, sigma) {
   return type === "call"
     ? S * normCdf(d1) - K * Math.exp(-r * T) * normCdf(d2)
     : K * Math.exp(-r * T) * normCdf(-d2) - S * normCdf(-d1);
+}
+
+// Chance the price touches `level` at any time within T years (driftless log price,
+// reflection principle): 2 * N(-|ln(level/S)| / (sigma * sqrt(T))).
+export function probTouch(S, level, sigma, T) {
+  if (!(S > 0 && level > 0 && sigma > 0 && T > 0)) return null;
+  const d = Math.abs(Math.log(level / S)) / (sigma * Math.sqrt(T));
+  return Math.min(1, 2 * normCdf(-d));
+}
+
+// Chance the price finishes above (call) / below (put) `level` at T, with no expected
+// gain or loss (log price drift -sigma^2/2).
+export function probBeyond(type, S, level, sigma, T) {
+  if (!(S > 0 && level > 0 && sigma > 0 && T > 0)) return null;
+  const sq = sigma * Math.sqrt(T);
+  const z = (Math.log(S / level) - (sigma * sigma * T) / 2) / sq;
+  return type === "call" ? normCdf(z) : normCdf(-z);
 }
 
 // Annualised realised volatility from daily closes (last `days` returns).
@@ -157,7 +175,20 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
     const hvU = hv[c.underlying] ?? null;
     const fair = hvU ? bsPrice(c.type, c.underlyingPrice, c.strike, dte / 365, o.riskFree, hvU) : null;
     const premiumVsFair = fair > 0 ? c.ask / fair : null;
-    usable.push({ ...c, dte, absDelta, spreadPct, hv: hvU, intrinsic, timeValue, timeValuePerDayPct, fairValue: fair, premiumVsFair });
+    // Chances, using how much the stock actually moves (realised vol; IV if missing):
+    //  - reaching the strike at any time before expiry ("probability of touch")
+    //  - finishing beyond breakeven at expiry (i.e. the option pays off if held)
+    const sigma = hvU || c.iv;
+    const T = dte / 365;
+    const otm = c.type === "call" ? c.strike > c.underlyingPrice : c.strike < c.underlyingPrice;
+    const touchProb = otm ? probTouch(c.underlyingPrice, c.strike, sigma, T) : 1;
+    const be = c.type === "call" ? c.strike + c.ask : c.strike - c.ask;
+    const beProb = probBeyond(c.type, c.underlyingPrice, be, sigma, T);
+    if (otm && touchProb < o.minTouchProb) {
+      reject(`out of the money with under ${Math.round(o.minTouchProb * 100)}% chance to reach the strike before expiry`);
+      continue;
+    }
+    usable.push({ ...c, dte, absDelta, spreadPct, hv: hvU, intrinsic, timeValue, timeValuePerDayPct, fairValue: fair, premiumVsFair, otm, touchProb, beProb });
   }
   stats.passed = usable.length;
 

@@ -190,6 +190,7 @@
       <input id="optSymbols" type="text" placeholder="NVDA  (or several: NVDA, AAPL, SPY)" />
       <label>Expiring more than <input id="optDays" type="number" min="1" max="2000" value="60" /> days out</label>
       <label>and at most <input id="optMaxDays" type="number" min="1" max="2000" placeholder="any" /> days (optional)</label>
+      <label title="Out-of-the-money contracts are only considered if the stock has at least this chance of reaching the strike before expiry">Out of the money: at least <input id="optTouch" type="number" min="0" max="100" value="70" />% chance to reach the strike</label>
       <button class="primary" type="submit">Find best options</button>
     </form>
     <div class="ostatus"></div>
@@ -1228,8 +1229,10 @@ async function runOptions(refresh, silent = false) {
   if (!symbols) return;
   const days = silent ? OPT.query.days : Number($("#optDays").value) || 60;
   const maxDays = silent ? OPT.query.maxDays : Number($("#optMaxDays").value) || null;
+  const touchRaw = $("#optTouch").value;
+  const minTouchPct = silent ? OPT.query.minTouchPct : touchRaw === "" ? 70 : Math.max(0, Math.min(100, Number(touchRaw)));
   if (!silent) {
-    OPT.query = { symbols, days, maxDays };
+    OPT.query = { symbols, days, maxDays, minTouchPct };
     OPT.openTicker = null;
     $(".ostatus").textContent = "Scanning every option contract and scoring them… (large chains can take 10–30 seconds)";
     $(".oresults").innerHTML = "";
@@ -1240,7 +1243,7 @@ async function runOptions(refresh, silent = false) {
     const r = await fetch("/api/options", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols, minDays: days + 1, maxDays, refresh }), // "more than N days"
+      body: JSON.stringify({ symbols, minDays: days + 1, maxDays, minTouchPct, refresh }), // "more than N days"
     });
     if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
     const d = await r.json();
@@ -1289,7 +1292,8 @@ function renderOptions(d, days) {
         <td>${c.openInterest.toLocaleString()}</td>
         <td>${c.volume.toLocaleString()}</td>
         <td>${c.spreadPct.toFixed(1)}%</td>
-        <td>${fmt(c.breakeven)}<br><small>${c.breakevenMovePct >= 0 ? "+" : ""}${c.breakevenMovePct.toFixed(1)}% by expiry</small></td>
+        <td>${c.otm ? `<b>${Math.round(c.touchProb * 100)}%</b>` : `<small>already ${c.moneyness === "ATM" ? "at" : "in"} the money</small>`}</td>
+        <td>${fmt(c.breakeven)}<br><small>${c.breakevenMovePct >= 0 ? "+" : ""}${c.breakevenMovePct.toFixed(1)}% by expiry</small><br><small>${c.beProb != null ? `${Math.round(c.beProb * 100)}% chance to finish beyond` : ""}</small></td>
         <td>${Math.round(c.score * 100)}</td></tr>`;
     }).join("");
     return `<div class="hbox" style="margin-bottom:14px"><h3>${title}</h3><div class="tablewrap"><table class="otable"><thead><tr>
@@ -1297,7 +1301,7 @@ function renderOptions(d, days) {
       <th title="Ask price per share; x100 per contract. Time value per day = (premium minus intrinsic value) / days to expiry, as % of the stock price">Premium</th>
       <th title="Estimated return on the premium if the stock makes a typical favourable move (1 standard deviation) in 30 days">Est. return*</th>
       <th title="Return if the stock is unchanged after 30 days (time decay)">If flat 30d</th><th>Delta</th><th>IV</th>
-      <th>Open interest</th><th>Volume</th><th>Spread</th><th>Breakeven</th><th title="Combined attractiveness score, 0-100">Score</th>
+      <th>Open interest</th><th>Volume</th><th>Spread</th><th title="Chance the stock reaches the strike at any time before expiry (out-of-the-money contracts), based on its realized volatility">Chance to reach strike before expiry</th><th title="Breakeven at expiry, and the chance the stock finishes beyond it (the option pays off if held to expiry)">Breakeven</th><th title="Combined attractiveness score, 0-100">Score</th>
       </tr></thead><tbody>${rows}</tbody></table></div></div>`;
   };
   $(".oresults").innerHTML =
@@ -1313,7 +1317,7 @@ function renderOptions(d, days) {
     OPT.openTicker = c.ticker;
     tr.classList.add("sel");
     const bar = (label, v) => `<span>${label}</span><span class="b"><i style="width:${Math.round(v * 100)}%"></i></span><span>${Math.round(v * 100)}</span>`;
-    tr.insertAdjacentHTML("afterend", `<tr class="odetail"><td colspan="13">
+    tr.insertAdjacentHTML("afterend", `<tr class="odetail"><td colspan="14">
       <div style="display:flex;flex-wrap:wrap;gap:24px">
         <div class="bars">${bar("Delta", c.scores.delta)}${bar("Cheap IV", c.scores.iv)}${bar("Cheap premium", c.scores.premium)}${bar("Open interest", c.scores.openInterest)}${bar("Volume", c.scores.volume)}${bar("Tight spread", c.scores.spread)}</div>
         <div style="max-width:560px;font-size:13px;line-height:1.6">
@@ -1339,6 +1343,8 @@ function renderOptions(d, days) {
     `How these are chosen: every contract expiring more than ${days} days out${d.settings.maxDays ? ` (and within ${d.settings.maxDays} days)` : ""} must have a two-sided quote, delta between ${d.settings.deltaMin} and ${d.settings.deltaMax} ` +
     `(−${d.settings.deltaMax} to −${d.settings.deltaMin} for puts), open interest of at least ${d.settings.minOpenInterest}, volume of at least ${d.settings.minVolume}, and a bid/ask spread under ${d.settings.maxSpreadPct}%. ` +
     `That delta range spans moderately out-of-the-money to moderately in-the-money contracts (each row is labelled ITM / ATM / OTM; ATM = strike within 2% of the price); deep in-the-money and far out-of-the-money contracts are left out. ` +
+    `Out-of-the-money contracts are only kept if the stock has at least a ${Math.round(d.settings.minTouchProb * 100)}% chance of reaching the strike at some point before expiry ` +
+    `(probability of touch, from the stock's 30-day realized volatility and the time left). The breakeven column also shows the chance of finishing beyond breakeven at expiry. ` +
     `The rest are scored 0–100: delta (most attractive near ${d.settings.deltaSweet}) 20%, cheap IV (vs the stock's 30-day realized volatility and vs the rest of the chain) 20%, ` +
     `cheap premium 20% (the premium compared with its fair value at the stock's realized volatility; below 1× is cheap; this compares short and long expiries fairly), ` +
     `open interest 15%, volume 12.5%, tight spread 12.5%. The 5 best calls and 5 best puts by that score are shown, at most ${d.settings.maxPerExpiry} from the same expiry date, ordered by <b>estimated return*</b>: ` +
