@@ -35,7 +35,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv();
 
 const PORT = Number(process.env.PORT || 8790);
-const APP_VERSION = 3; // bump when the page and server must match
+const APP_VERSION = 6; // bump when the page and server must match (page checks it)
 // Set APP_PASSWORD to require a password (needed before putting Stockypower on the web).
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const APP_USER = process.env.APP_USER || "stocky";
@@ -757,6 +757,17 @@ function authorized(req) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
+
+  // A newer Stockypower starting on this PC asks this (older) one to step aside.
+  if (req.method === "POST" && url.pathname === "/api/takeover") {
+    const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress);
+    const newer = Number(req.headers["x-stockypower-takeover"]);
+    if (!local || !Number.isFinite(newer) || newer < APP_VERSION) return json(res, 403, { error: "Not allowed" });
+    json(res, 200, { ok: true, version: APP_VERSION });
+    console.log(`\nA newer Stockypower (version ${newer}) is starting, so this window is closing.`);
+    setTimeout(() => process.exit(0), 300);
+    return;
+  }
   if (!authorized(req)) {
     res.writeHead(401, { "WWW-Authenticate": 'Basic realm="Stockypower", charset="UTF-8"', "Content-Type": "text/plain" });
     return res.end("Password required.");
@@ -895,15 +906,34 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  server.on("error", (err) => {
-    if (err.code === "EADDRINUSE") {
-      console.error(
-        `\nStockypower is already running (port ${PORT} is in use).\n` +
-          `Close every other Stockypower window, then start it again, so the newest version runs.`,
-      );
-    } else {
+  let attempts = 0;
+  server.on("error", async (err) => {
+    if (err.code !== "EADDRINUSE") {
       console.error(err);
+      process.exitCode = 1;
+      return;
     }
+    // Another Stockypower holds the port. Ask it to step aside (works with version 6+).
+    if (attempts++ === 0) {
+      try {
+        const r = await fetch(`http://127.0.0.1:${PORT}/api/takeover`, {
+          method: "POST",
+          headers: { "x-stockypower-takeover": String(APP_VERSION) },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (r.ok) console.log("An older Stockypower was running; it has been asked to close. Starting this one…");
+      } catch {
+        /* not a Stockypower, or no answer */
+      }
+    }
+    if (attempts <= 8) {
+      setTimeout(() => server.listen(PORT), 750);
+      return;
+    }
+    console.error(
+      `\nAnother program, or an older Stockypower that can't be closed automatically, is using port ${PORT}.\n` +
+        `Close every other Stockypower window (or restart your PC), then start it again.`,
+    );
     process.exitCode = 1;
   });
   server.listen(PORT, () => {

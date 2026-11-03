@@ -1027,6 +1027,7 @@ async function loadHistoryView() {
   $(".hstatus").textContent = "Grading Stocky's past calls against Massive prices…";
   try {
     const r = await fetch(`/api/history?symbol=${encodeURIComponent(symbol || "")}&tf=${encodeURIComponent(tf || "")}`);
+    if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || r.statusText);
     H.data = d;
@@ -1219,6 +1220,8 @@ function renderOptLive() {
 }
 document.addEventListener("visibilitychange", () => { if (optLiveOn() && !OPT.busy) runOptions(true, true); else renderOptLive(); });
 
+const OLD_SERVER = "An older version of Stockypower is still running, so this feature isn't available yet. Close every Stockypower window (the black windows), then double-click start.bat.";
+
 async function runOptions(refresh, silent = false) {
   const symbols = silent ? OPT.query.symbols : $("#optSymbols").value.trim();
   if (!symbols) return;
@@ -1237,6 +1240,7 @@ async function runOptions(refresh, silent = false) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbols, minDays: days + 1, refresh }), // "more than N days"
     });
+    if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || r.statusText);
     OPT.updated = d.at;
@@ -1500,7 +1504,7 @@ fetch("/api/config").then((r) => r.json()).then((c) => {
   if (Number.isFinite(c.liveSeconds)) LIVE.seconds = c.liveSeconds;
   if (Number.isFinite(c.delayMinutes)) LIVE.delay = c.delayMinutes;
   if (Number.isFinite(c.optionsSeconds)) OPT.seconds = c.optionsSeconds;
-  if ((c.version || 0) < 3) {
+  if ((c.version || 0) < 6) {
     serverOutdated = true;
     const w = document.createElement("div");
     w.className = "checks bad";
