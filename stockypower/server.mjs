@@ -36,7 +36,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv();
 
 const PORT = Number(process.env.PORT || 8790);
-const APP_VERSION = 7; // bump when the page and server must match (page checks it)
+const APP_VERSION = 8; // bump when the page and server must match (page checks it)
 // Set APP_PASSWORD to require a password (needed before putting Stockypower on the web).
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const APP_USER = process.env.APP_USER || "stocky";
@@ -86,6 +86,10 @@ const LIVE_SECONDS = Math.max(0, Number(process.env.STOCKY_LIVE_SECONDS ?? 60));
 const DATA_DELAY_MINUTES = Math.max(0, Number(process.env.MASSIVE_DELAY_MINUTES ?? 15));
 // Best Option Chains: refresh interval (seconds) against the real-time options feed; 0 = off.
 const OPTIONS_REFRESH_SECONDS = Math.max(0, Number(process.env.OPTIONS_REFRESH_SECONDS ?? 60));
+// Best Option Chains starts a Stocky run itself when Stocky's analysis is missing or old
+// (OPTIONS_AUTO_STOCKY=0 turns this off). At most this many run at once.
+const OPTIONS_AUTO_STOCKY = !/^(0|false|no|off)$/i.test(process.env.OPTIONS_AUTO_STOCKY || "");
+const AUTO_STOCKY_PARALLEL = Math.max(1, Number(process.env.OPTIONS_AUTO_STOCKY_PARALLEL ?? 2));
 
 // The two indicators the user configured Stocky with, exactly as set in their
 // TradingView layout (inputs listed in TradingView's order).
@@ -125,13 +129,14 @@ function optionParams(body) {
   const minOpenInterest = Number.isFinite(oi) && oi >= 0 ? Math.round(oi) : OPTION_DEFAULTS.minOpenInterest;
   const strikePref = ["balanced", "otm", "itm"].includes(body.strikePref) ? body.strikePref : "balanced";
   const horizon = body.horizon === "short" ? "short" : "30d";
-  return { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon };
+  const autoStocky = body.autoStocky !== false;
+  return { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, autoStocky };
 }
 
-async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, refresh }) {
+async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, autoStocky = true, refresh }) {
   const key = `${symbols.join(",")}|${minDays}|${maxDays ?? ""}|${minTouchProb}|${minOpenInterest}|${strikePref}|${horizon}`;
   const hit = optionsCache.get(key);
-  if (!refresh && hit && Date.now() - hit.at < 5 * 60_000) return { ...hit.result, cached: true };
+  if (!refresh && hit && Date.now() - hit.at < 5 * 60_000) return { ...hit.result, stockyRuns: stockyRunStatus(symbols), cached: true };
 
   const contracts = [];
   const hv = {};
@@ -170,6 +175,7 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
           hv: hv[symbol].short,
           hvLong: hv[symbol].long,
           contracts: chain.length,
+          lastSession: daily.length ? nyDate(daily.at(-1).t) : null,
         };
       } catch (err) {
         errors.push(`${symbol}: ${err.message}`);
@@ -177,11 +183,87 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
     }),
   );
   const stocky = latestStockyViews(symbols);
+  // Stocky's analysis missing or old? Start a run in the background; the next refresh uses it.
+  // Fresh = for the 5-session horizon, a 1-day run on the latest trading day's data;
+  // for 30 days, any run in the last 7 days.
+  for (const sym of Object.keys(underlying)) {
+    const v = stocky[sym];
+    const fresh = horizon === "short"
+      ? Boolean(v?.d1 && v.d1AsOfT && underlying[sym].lastSession && nyDate(v.d1AsOfT) >= underlying[sym].lastSession)
+      : Boolean(v?.at);
+    underlying[sym].stockyFresh = fresh;
+    if (!fresh && autoStocky) requestStockyRun(sym);
+  }
   const picked = pickBest(contracts, { hv, stocky, minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon });
   for (const sym of Object.keys(underlying)) underlying[sym].stocky = stocky[sym] ?? null;
-  const result = { ...picked, underlying, errors, symbols, minDays, at: Date.now() };
+  const result = { ...picked, underlying, errors, symbols, minDays, at: Date.now(), stockyRuns: stockyRunStatus(symbols), autoStocky: autoStocky && OPTIONS_AUTO_STOCKY };
   optionsCache.set(key, { at: Date.now(), result });
   return result;
+}
+
+// ── Stocky runs started by Best Option Chains ───────────────────────────────
+
+const autoRuns = new Map(); // symbol -> { state: queued|running|done|failed, ... }
+const autoQueue = [];
+let autoActive = 0;
+
+function requestStockyRun(symbol) {
+  if (!OPTIONS_AUTO_STOCKY) return;
+  const r = autoRuns.get(symbol);
+  if (r && (r.state === "queued" || r.state === "running")) return;
+  // Don't hammer Stocky: wait 30 minutes after a failure, 2 hours after a run that
+  // finished but still didn't give a usable 1-day call.
+  if (r?.state === "failed" && Date.now() - r.finishedAt < 30 * 60_000) return;
+  if (r?.state === "done" && Date.now() - r.finishedAt < 2 * 60 * 60_000) return;
+  autoRuns.set(symbol, { state: "queued", queuedAt: Date.now() });
+  autoQueue.push(symbol);
+  pumpStockyRuns();
+}
+
+function pumpStockyRuns() {
+  while (autoActive < AUTO_STOCKY_PARALLEL && autoQueue.length) {
+    const symbol = autoQueue.shift();
+    const entry = autoRuns.get(symbol);
+    Object.assign(entry, { state: "running", startedAt: Date.now() });
+    autoActive++;
+    console.log(`[auto ${symbol}] Best Option Chains started a Stocky run (no current analysis)`);
+    const recorded = [];
+    const deadline = Date.now() + 20 * 60_000;
+    const send = (event, data) => {
+      if (["candles", "session", "verdict"].includes(event)) recorded.push([event, data]);
+      if (event === "status") entry.message = data.message;
+    };
+    analyze(symbol, send, () => Date.now() > deadline, { background: true })
+      .then(() => {
+        const verdict = recorded.find(([e]) => e === "verdict")?.[1];
+        if (verdict && Object.keys(verdict.analysis?.timeframes ?? {}).length) {
+          entry.state = "done";
+          // The Analyze page can show this run instantly too.
+          if (CACHE_MS > 0) cache.set(symbol, { at: Date.now(), events: recorded });
+        } else Object.assign(entry, { state: "failed", error: Date.now() > deadline ? "Stocky took longer than 20 minutes" : "Stocky's results didn't come through" });
+      })
+      .catch((err) => {
+        console.error(`[auto ${symbol}]`, err);
+        Object.assign(entry, { state: "failed", error: describeError(err) });
+      })
+      .finally(() => {
+        entry.finishedAt = Date.now();
+        autoActive--;
+        // Rescan with the new analysis on the next request.
+        for (const k of optionsCache.keys()) if (k.split("|")[0].split(",").includes(symbol)) optionsCache.delete(k);
+        console.log(`[auto ${symbol}] Stocky run ${entry.state}${entry.error ? `: ${entry.error}` : ""}`);
+        pumpStockyRuns();
+      });
+  }
+}
+
+function stockyRunStatus(symbols) {
+  const out = {};
+  for (const sym of symbols) {
+    const r = autoRuns.get(sym);
+    if (r) out[sym] = { state: r.state, queuedAt: r.queuedAt, startedAt: r.startedAt ?? null, finishedAt: r.finishedAt ?? null, message: r.message ?? null, error: r.error ?? null };
+  }
+  return out;
 }
 
 // Stocky's latest daily and weekly call per symbol, from saved runs in the last 7 days.
@@ -194,7 +276,7 @@ function latestStockyViews(symbols) {
     if (!(t >= cutoff)) continue;
     const v = (out[r.symbol] ??= { d1: null, w1: null, d1At: 0, w1At: 0 });
     const k = r.tf === "1D" ? "d1" : "w1";
-    if (t > v[`${k}At`]) Object.assign(v, { [k]: r.signal, [`${k}At`]: t, ...(k === "d1" ? { d1Target1: r.target1, d1Target2: r.target2, d1Entry: r.entry, d1Forecast: Array.isArray(r.forecast) ? r.forecast : null } : {}) });
+    if (t > v[`${k}At`]) Object.assign(v, { [k]: r.signal, [`${k}At`]: t, ...(k === "d1" ? { d1Target1: r.target1, d1Target2: r.target2, d1Entry: r.entry, d1AsOfT: r.asOfT, d1Forecast: Array.isArray(r.forecast) ? r.forecast : null } : {}) });
   }
   for (const v of Object.values(out)) v.at = Math.max(v.d1At, v.w1At);
   return out;
@@ -416,7 +498,7 @@ export function parseVerdict(text, symbol) {
 
 // ── Stocky session ─────────────────────────────────────────────────────────
 
-async function analyze(symbol, send, isClosed) {
+async function analyze(symbol, send, isClosed, { background = false } = {}) {
   let candles = {};
   if (MASSIVE_API_KEY) {
     send("status", { message: `Loading ${symbol} candles from Massive (15 min to 1 month)…` });
@@ -501,14 +583,16 @@ async function analyze(symbol, send, isClosed) {
         case "agent.mcp_tool_use": {
           send("tool", { name: event.name, server: event.mcp_server_name ?? null });
           if (event.evaluated_permission === "ask") {
-            // Stocky paused for approval. Ask the person at the keyboard.
-            send("confirm", {
-              sessionId: session.id,
-              toolUseId: event.id,
-              name: event.name,
-              input: event.input ?? null,
-            });
-            const result = await waitForConfirmation(`${session.id}:${event.id}`, isClosed);
+            // Stocky paused for approval. Ask the person at the keyboard; a background run
+            // (started by Best Option Chains) has nobody to ask, so it declines.
+            if (!background)
+              send("confirm", {
+                sessionId: session.id,
+                toolUseId: event.id,
+                name: event.name,
+                input: event.input ?? null,
+              });
+            const result = background ? "deny" : await waitForConfirmation(`${session.id}:${event.id}`, isClosed);
             await client.beta.sessions.events.send(session.id, {
               events: [
                 {

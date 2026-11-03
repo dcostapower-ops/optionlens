@@ -199,6 +199,8 @@
         <option value="otm">At / out of the money (cheaper, more leverage)</option>
         <option value="itm">In the money (pricier, higher odds)</option>
       </select></label>
+      <label title="When Stocky's analysis of a symbol is missing or older than the latest trading day, start a Stocky run in the background. Each run is a Stocky session (uses Anthropic credits); at most one per symbol per trading day.">
+        <input id="optAutoStocky" type="checkbox" checked /> Run Stocky automatically</label>
       <label>Minimum open interest <input id="optOI" type="number" min="0" max="100000" value="500" style="width:80px" /></label>
       <label title="How 'most profitable' is judged">Profit horizon <select id="optHorizon">
         <option value="30d">Next 30 days (typical move)</option>
@@ -1263,7 +1265,7 @@ async function runOptions(refresh, silent = false) {
   const touchRaw = $("#optTouch").value;
   const minTouchPct = silent ? OPT.query.minTouchPct : touchRaw === "" ? 70 : Math.max(0, Math.min(100, Number(touchRaw)));
   if (!silent) {
-    OPT.query = { symbols, days, maxDays, minTouchPct, horizon: $("#optHorizon").value, strikePref: $("#optPref").value, minOpenInterest: $("#optOI").value === "" ? 500 : Number($("#optOI").value) };
+    OPT.query = { symbols, days, maxDays, minTouchPct, autoStocky: $("#optAutoStocky").checked, horizon: $("#optHorizon").value, strikePref: $("#optPref").value, minOpenInterest: $("#optOI").value === "" ? 500 : Number($("#optOI").value) };
     OPT.openTicker = null;
     $(".ostatus").textContent = "Scanning every option contract and scoring them… (large chains can take 10–30 seconds)";
     $(".oresults").innerHTML = "";
@@ -1274,7 +1276,7 @@ async function runOptions(refresh, silent = false) {
     const r = await fetch("/api/options", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols, minDays: days + 1, maxDays, minTouchPct, strikePref: OPT.query.strikePref, minOpenInterest: OPT.query.minOpenInterest, horizon: OPT.query.horizon, refresh }), // "more than N days"
+      body: JSON.stringify({ symbols, minDays: days + 1, maxDays, minTouchPct, strikePref: OPT.query.strikePref, minOpenInterest: OPT.query.minOpenInterest, horizon: OPT.query.horizon, autoStocky: OPT.query.autoStocky, refresh }), // "more than N days"
     });
     if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
     const d = await r.json();
@@ -1292,6 +1294,18 @@ async function runOptions(refresh, silent = false) {
   }
 }
 
+// What the background Stocky run for a symbol is doing.
+function stockyRunLine(sym, u, d) {
+  const r = (d.stockyRuns || {})[sym];
+  const ago = (t) => { const m = Math.max(0, Math.round((Date.now() - t) / 60000)); return m < 1 ? "just now" : `${m} min ago`; };
+  if (r?.state === "running") return `<div class="d" style="color:var(--accent,#58a6ff)">⟳ Stocky is analysing ${esc(sym)} now (started ${ago(r.startedAt)}, usually a few minutes)${r.message ? ` · ${esc(r.message)}` : ""}. The picks update by themselves when it's done.</div>`;
+  if (r?.state === "queued") return `<div class="d" style="color:var(--accent,#58a6ff)">⟳ Stocky run for ${esc(sym)} queued; it starts when another symbol's run finishes.</div>`;
+  if (r?.state === "failed" && !u.stockyFresh) return `<div class="d" style="color:#ff7b72">Automatic Stocky run failed ${ago(r.finishedAt)} (${esc(r.error || "unknown error")}); it will retry in 30 minutes, or run it on the Analyze page.</div>`;
+  if (r?.state === "done") return `<div class="d">Stocky's analysis was run automatically ${ago(r.finishedAt)}.</div>`;
+  if (!u.stockyFresh && d.autoStocky === false) return `<div class="d">Stocky's analysis isn't from the latest trading day. Tick "Run Stocky automatically" or run it on the Analyze page.</div>`;
+  return "";
+}
+
 function renderOptions(d, days) {
   const at = new Date(d.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const rej = Object.entries(d.stats.rejected || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v.toLocaleString()} ${k}`).join(", ");
@@ -1306,7 +1320,8 @@ function renderOptions(d, days) {
   $(".ounder").innerHTML = Object.entries(d.underlying || {})
     .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}${u.marketOpen === false ? ` · market closed, using the ${esc(u.closeDate || "")} close` : ""}</div><div class="v">${fmt(u.price)}</div>
       ${u.extendedPrice ? `<div class="d">After-hours / pre-market: <b>${fmt(u.extendedPrice)}</b> (${u.extendedPrice >= u.price ? "+" : ""}${(((u.extendedPrice - u.price) / u.price) * 100).toFixed(2)}%). Options don't trade then, so their prices are from the close and everything here is calculated on the ${fmt(u.price)} close.</div>` : ""}<div class="d">realized volatility: 30-day ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · 1-year ${u.hvLong != null ? (u.hvLong * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div>
-      <div class="d">${u.stocky ? `Stocky (${esc(new Date(u.stocky.at).toLocaleDateString([], { month: "short", day: "numeric" }))}): 1 day <b>${esc(u.stocky.d1 || "—")}</b> · 1 week <b>${esc(u.stocky.w1 || "—")}</b>` : `No Stocky analysis in the last 7 days, so "agrees with Stocky" isn't scored. Run it on the Analyze page to include it.`}</div></div>`)
+      <div class="d">${u.stocky ? `Stocky (${esc(new Date(u.stocky.at).toLocaleDateString([], { month: "short", day: "numeric" }))}): 1 day <b>${esc(u.stocky.d1 || "—")}</b> · 1 week <b>${esc(u.stocky.w1 || "—")}</b>` : `No Stocky analysis in the last 7 days, so "agrees with Stocky" isn't scored yet.`}</div>
+      ${stockyRunLine(sym, u, d)}</div>`)
     .join("");
 
   const multi = (d.symbols || []).length > 1;
@@ -1434,7 +1449,7 @@ async function runSelfCheck() {
     const r = await fetch("/api/options/selfcheck", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols: OPT.query.symbols, minDays: OPT.query.days + 1, maxDays: OPT.query.maxDays, minTouchPct: OPT.query.minTouchPct, strikePref: OPT.query.strikePref, minOpenInterest: OPT.query.minOpenInterest, horizon: OPT.query.horizon }),
+      body: JSON.stringify({ symbols: OPT.query.symbols, minDays: OPT.query.days + 1, maxDays: OPT.query.maxDays, minTouchPct: OPT.query.minTouchPct, strikePref: OPT.query.strikePref, minOpenInterest: OPT.query.minOpenInterest, horizon: OPT.query.horizon, autoStocky: OPT.query.autoStocky }),
     });
     if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
     const d = await r.json();

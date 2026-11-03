@@ -273,7 +273,7 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
     // Why a symbol has no 5-session trade on this side (for the page).
     const noShortReason = (sym) => {
       const sv = stocky[sym];
-      if (!sv || !sv.d1) return `Stocky hasn't analysed ${sym} on the 1-day timeframe in the last 7 days (run it on Analyze first)`;
+      if (!sv || !sv.d1) return `Stocky hasn't analysed ${sym} on the 1-day timeframe in the last 7 days (see the status under the stock price above)`;
       if (sv.d1 !== wantSig) return `Stocky's latest 1-day call for ${sym} is ${sv.d1}, so there's no ${type === "call" ? "upside" : "downside"} target to trade${sv.d1 === (type === "call" ? "SELL" : "BUY") ? `; see the ${type === "call" ? "puts" : "calls"}` : ""}`;
       return `Stocky's 1-day target for ${sym} isn't ${type === "call" ? "above" : "below"} the current price`;
     };

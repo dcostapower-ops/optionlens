@@ -223,6 +223,16 @@ contract is still in the top 5. Refreshing pauses when you switch menus or hide 
   puts"). There's no fallback to the 30-day method, because that would recommend long-dated
   options for a short-term trade.
 
+  **Stocky runs by itself.** You don't need to run Analyze first. When Stocky's analysis of a
+  symbol is missing or not from the latest trading day (5-session horizon), or there's none in
+  the last 7 days (30-day horizon), Best Option Chains starts a Stocky run in the background
+  and the picks update on the next refresh once it's done (usually a few minutes). At most one
+  run per symbol per trading day, two at a time; a failed run retries after 30 minutes.
+  Background runs decline any tool call Stocky asks permission for, since nobody is there to
+  approve it. Each run is a Stocky session and uses Anthropic credits: untick **Run Stocky
+  automatically**, or set `OPTIONS_AUTO_STOCKY=0`, to turn it off. The result also appears
+  instantly on the Analyze page.
+
   **Stocky's forecast drives the ranking.** Stocky's latest 1-day run includes a forecast path
   with a low-high range for each session ahead. The app takes the point 5 sessions ahead,
   treats it as a lognormal spread of prices (median = forecast price, low-high range ≈ one
