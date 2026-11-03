@@ -1,0 +1,215 @@
+// Self-check for Best Option Chains: re-verifies a live scan against Massive and
+// recomputes every number with formulas written separately from lib/options.mjs
+// (different normal-CDF approximation, own Black-Scholes, own probability maths).
+// Produces a list of checks: { area, item, status: "pass"|"warn"|"fail", detail }.
+
+const DAY = 864e5;
+
+// ── Independent maths ────────────────────────────────────────────────────────
+
+// erf via Abramowitz-Stegun 7.1.26 (options.mjs uses 26.2.17 for the CDF directly).
+function erf(x) {
+  const s = Math.sign(x);
+  x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+const Phi = (x) => 0.5 * (1 + erf(x / Math.SQRT2));
+
+function bs(type, S, K, T, r, v) {
+  if (T <= 0 || v <= 0) return Math.max(0, type === "call" ? S - K : K - S);
+  const d1 = (Math.log(S / K) + (r + 0.5 * v * v) * T) / (v * Math.sqrt(T));
+  const d2 = d1 - v * Math.sqrt(T);
+  return type === "call" ? S * Phi(d1) - K * Math.exp(-r * T) * Phi(d2) : K * Math.exp(-r * T) * Phi(-d2) - S * Phi(-d1);
+}
+const touch = (S, K, v, T) => Math.min(1, 2 * (1 - Phi(Math.abs(Math.log(K / S)) / (v * Math.sqrt(T)))));
+const beyond = (type, S, L, v, T) => {
+  const z = (Math.log(S / L) - 0.5 * v * v * T) / (v * Math.sqrt(T));
+  return type === "call" ? Phi(z) : 1 - Phi(z);
+};
+function hvMix(short, long, days) {
+  if (!short) return long ?? null;
+  if (!long) return short;
+  const w = Math.min(1, Math.max(0, (days - 30) / 335));
+  return short + (long - short) * w;
+}
+function realized(closes, n) {
+  if (closes.length < n + 1) return null;
+  const r = [];
+  for (let i = closes.length - n; i < closes.length; i++) r.push(Math.log(closes[i] / closes[i - 1]));
+  const m = r.reduce((a, b) => a + b, 0) / r.length;
+  return Math.sqrt((r.reduce((a, b) => a + (b - m) ** 2, 0) / (r.length - 1)) * 252);
+}
+
+// ── Massive ──────────────────────────────────────────────────────────────────
+
+async function get(base, apiKey, path) {
+  const r = await fetch(base + path, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(20_000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function chainSummary(base, apiKey, symbol, fromDate) {
+  let url = `/v3/snapshot/options/${encodeURIComponent(symbol)}?expiration_date.gte=${fromDate}&limit=250`;
+  let count = 0, pages = 0, minExp = null;
+  for (; url && pages < 80; pages++) {
+    const body = await get(base, apiKey, url);
+    for (const x of body.results ?? []) {
+      count++;
+      const e = x?.details?.expiration_date;
+      if (e && (!minExp || e < minExp)) minExp = e;
+    }
+    if (body.next_url) {
+      const n = new URL(body.next_url);
+      n.searchParams.delete("apiKey"); // the key goes in the header, never the URL
+      url = n.pathname + n.search;
+    } else url = null;
+  }
+  return { count, pages, minExp };
+}
+
+// ── The check ────────────────────────────────────────────────────────────────
+
+const close = (a, b, absTol, relTol = 0) => Math.abs(a - b) <= Math.max(absTol, Math.abs(b) * relTol);
+const f2 = (v, d = 2) => (v == null || !Number.isFinite(v) ? "n/a" : Number(v).toFixed(d));
+
+export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
+  const checks = [];
+  const add = (area, item, status, detail) => checks.push({ area, item, status, detail });
+  const o = result.settings;
+  const picks = [...result.calls.map((c) => ({ ...c, side: "call" })), ...result.puts.map((c) => ({ ...c, side: "put" }))];
+
+  // 1. Completeness of the scan.
+  const fromDate = new Date(now + o.minDays * DAY).toISOString().slice(0, 10);
+  for (const sym of result.symbols) {
+    try {
+      const s = await chainSummary(base, apiKey, sym, fromDate);
+      const scanned = result.underlying?.[sym]?.contracts;
+      const diff = scanned != null ? Math.abs(s.count - scanned) : null;
+      add("Coverage", `${sym} option chain`, diff == null ? "warn" : diff === 0 ? "pass" : diff <= Math.max(5, s.count * 0.01) ? "warn" : "fail",
+        `Massive lists ${s.count.toLocaleString()} contracts expiring ${fromDate} or later across ${s.pages} page(s); the scan read ${scanned?.toLocaleString() ?? "?"}` +
+          (diff ? ` (difference ${diff}; listings change during the day)` : ""));
+      add("Coverage", `${sym} nothing inside ${o.minDays - 1} days`, !s.minExp || s.minExp >= fromDate ? "pass" : "fail", `earliest expiry returned: ${s.minExp ?? "none"}`);
+    } catch (err) {
+      add("Coverage", `${sym} option chain`, "warn", `couldn't re-read the chain (${err.message})`);
+    }
+  }
+
+  // 2. Realised volatility from fresh daily prices.
+  for (const sym of result.symbols) {
+    try {
+      const to = new Date(now + DAY).toISOString().slice(0, 10);
+      const from = new Date(now - 400 * DAY).toISOString().slice(0, 10);
+      const body = await get(base, apiKey, `/v2/aggs/ticker/${encodeURIComponent(sym)}/range/1/day/${from}/${to}?adjusted=true&sort=asc&limit=5000`);
+      const closes = (body.results ?? []).map((b) => b.c).filter((c) => c > 0);
+      const s30 = realized(closes, 30), s1y = realized(closes, Math.min(252, closes.length - 1));
+      const u = result.underlying?.[sym] ?? {};
+      const ok = close(s30 ?? 0, u.hv ?? 0, 0.002) && close(s1y ?? 0, u.hvLong ?? 0, 0.002);
+      add("Inputs", `${sym} realized volatility`, ok ? "pass" : "fail", `recomputed 30-day ${f2(s30 * 100, 1)}% / 1-year ${f2(s1y * 100, 1)}%; app used ${f2(u.hv * 100, 1)}% / ${f2(u.hvLong * 100, 1)}%`);
+    } catch (err) {
+      add("Inputs", `${sym} realized volatility`, "warn", `couldn't re-read daily prices (${err.message})`);
+    }
+  }
+
+  // 3. Per pick: live data, filters, maths.
+  for (const c of picks) {
+    const name = `${c.underlying} ${c.strike} ${c.side} ${c.expiration}`;
+    // Live data
+    try {
+      const body = await get(base, apiKey, `/v3/snapshot/options/${encodeURIComponent(c.underlying)}/${encodeURIComponent(c.ticker)}`);
+      const x = body.results ?? {};
+      const d = x.details ?? {};
+      const same = Number(d.strike_price) === c.strike && d.expiration_date === c.expiration && String(d.contract_type).toLowerCase() === c.side;
+      add("Live data", `${name}: contract`, same ? "pass" : "fail", same ? `${c.ticker} confirmed` : `Massive says ${d.contract_type} ${d.strike_price} ${d.expiration_date}`);
+      const q = x.last_quote ?? {};
+      const tol = Math.max(0.05, c.ask * 0.03);
+      const qOk = close(Number(q.bid), c.bid, tol) && close(Number(q.ask), c.ask, tol);
+      add("Live data", `${name}: bid/ask`, qOk ? "pass" : "warn", `now ${f2(q.bid)} / ${f2(q.ask)}; shown ${f2(c.bid)} / ${f2(c.ask)}${qOk ? "" : " (moved since the scan, live market)"}`);
+      const dOk = close(Number(x.greeks?.delta), c.delta, 0.05);
+      const ivOk = close(Number(x.implied_volatility), c.iv, 0.03);
+      add("Live data", `${name}: delta / IV`, dOk && ivOk ? "pass" : "warn", `now delta ${f2(x.greeks?.delta)}, IV ${f2(x.implied_volatility * 100, 1)}%; shown ${f2(c.delta)}, ${f2(c.iv * 100, 1)}%`);
+      const oi = Number(x.open_interest), vol = Number(x.day?.volume);
+      add("Live data", `${name}: open interest / volume`, oi === c.openInterest && vol >= c.volume ? "pass" : "warn",
+        `now OI ${oi.toLocaleString()}, volume ${vol.toLocaleString()}; shown ${c.openInterest.toLocaleString()}, ${c.volume.toLocaleString()}`);
+    } catch (err) {
+      add("Live data", `${name}`, "warn", `couldn't fetch this contract from Massive (${err.message})`);
+    }
+
+    // Filters
+    const dte = Math.round((Date.parse(c.expiration + "T21:00:00Z") - now) / DAY);
+    const spread = ((c.ask - c.bid) / ((c.ask + c.bid) / 2)) * 100;
+    const filters = [
+      [`more than ${o.minDays - 1} days`, dte >= o.minDays, `${dte} days`],
+      ...(o.maxDays ? [[`at most ${o.maxDays} days`, dte <= o.maxDays, `${dte} days`]] : []),
+      ["two-sided quote", c.bid > 0 && c.ask >= c.bid, `${f2(c.bid)} / ${f2(c.ask)}`],
+      [`|delta| ${o.deltaMin}-${o.deltaMax}`, Math.abs(c.delta) >= o.deltaMin && Math.abs(c.delta) <= o.deltaMax, f2(c.delta)],
+      [`open interest >= ${o.minOpenInterest}`, c.openInterest >= o.minOpenInterest, c.openInterest.toLocaleString()],
+      [`volume >= ${o.minVolume}`, c.volume >= o.minVolume, c.volume.toLocaleString()],
+      [`spread < ${o.maxSpreadPct}%`, spread <= o.maxSpreadPct, `${f2(spread)}%`],
+    ];
+    const S = c.underlyingPrice, T = c.dte / 365;
+    const otm = c.side === "call" ? c.strike > S : c.strike < S;
+    const v = hvMix(result.underlying?.[c.underlying]?.hv, result.underlying?.[c.underlying]?.hvLong, c.dte) ?? c.iv;
+    const tch = otm ? touch(S, c.strike, v, T) : 1;
+    if (otm) filters.push([`OTM: >= ${Math.round(o.minTouchProb * 100)}% chance to reach strike`, tch >= o.minTouchProb - 1e-6, `${f2(tch * 100, 1)}%`]);
+    const failed = filters.filter(([, ok]) => !ok);
+    add("Filters", name, failed.length ? "fail" : "pass", failed.length ? failed.map(([n, , d]) => `${n}: ${d}`).join("; ") : `all ${filters.length} filters met`);
+
+    // Maths, recomputed independently
+    const be = c.side === "call" ? c.strike + c.ask : c.strike - c.ask;
+    const fair = bs(c.side, S, c.strike, T, o.riskFree, v);
+    const vMove = hvMix(result.underlying?.[c.underlying]?.hv, result.underlying?.[c.underlying]?.hvLong, o.holdDays) ?? c.iv;
+    const mv = vMove * Math.sqrt(o.holdDays / 365);
+    const S1 = S * Math.exp(c.side === "call" ? mv : -mv);
+    const Tl = Math.max(0, (c.dte - o.holdDays) / 365);
+    const proj = ((bs(c.side, S1, c.strike, Tl, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
+    const flat = ((bs(c.side, S, c.strike, Tl, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
+    const be2 = beyond(c.side, S, be, v, T);
+    let wSum = 0, tot = 0;
+    for (const [k, w] of Object.entries(o.weights)) {
+      if (c.scores?.[k] == null) continue;
+      wSum += w;
+      tot += w * c.scores[k];
+    }
+    const score = wSum ? tot / wSum : 0;
+    const hasHv = result.underlying?.[c.underlying]?.hv != null;
+    const maths = [
+      ["spread %", spread, c.spreadPct, 0.01],
+      ["cost per contract", c.ask * c.sharesPerContract, c.costPerContract, 0.01],
+      ["breakeven", be, c.breakeven, 0.005],
+      ...(hasHv ? [["fair value", fair, c.fairValue, 0.02, 0.002], ["premium vs fair", c.ask / fair, c.premiumVsFair, 0.005]] : []),
+      ...(otm ? [["chance to reach strike", tch, c.touchProb, 0.002]] : []),
+      ["chance of profit at expiry", be2, c.beProb, 0.002],
+      ["estimated return %", proj, c.projectedReturnPct, 0.1, 0.002],
+      ["if flat 30 days %", flat, c.flatReturnPct, 0.1, 0.002],
+      ["score from factor weights", score, c.score, 0.0005],
+    ];
+    const bad = maths.filter(([, mine, app, abs, rel]) => !(Number.isFinite(app) && close(mine, app, abs, rel || 0)));
+    add("Maths", name, bad.length ? "fail" : "pass",
+      bad.length ? bad.map(([n, mine, app]) => `${n}: recomputed ${f2(mine, 4)} vs app ${f2(app, 4)}`).join("; ") : `${maths.length} numbers recomputed independently and match`);
+  }
+
+  // 4. Selection and ordering.
+  for (const [label, list, byExp] of [["calls", result.calls, result.callsByExpiry], ["puts", result.puts, result.putsByExpiry]]) {
+    if (!list.length) {
+      add("Selection", label, "warn", "no contracts passed the filters");
+      continue;
+    }
+    const sorted = list.every((c, i) => i === 0 || list[i - 1].projectedReturnPct >= c.projectedReturnPct);
+    add("Selection", `${label}: most profitable first`, sorted ? "pass" : "fail", list.map((c) => `${f2(c.projectedReturnPct, 1)}%`).join(" > "));
+    const per = {};
+    for (const c of list) per[c.expiration] = (per[c.expiration] || 0) + 1;
+    const maxPer = Math.max(...Object.values(per));
+    add("Selection", `${label}: at most ${o.maxPerExpiry} per expiry date`, maxPer <= o.maxPerExpiry ? "pass" : "fail", Object.entries(per).map(([e, n]) => `${e}: ${n}`).join(", "));
+    // No better-scoring contract was skipped, except where its expiry date was already full.
+    const minPicked = Math.min(...list.map((c) => c.score));
+    const skipped = (byExp || []).filter((c) => !c.picked && c.score > minPicked + 1e-9 && (per[c.expiration] || 0) < o.maxPerExpiry);
+    add("Selection", `${label}: no better contract skipped`, skipped.length ? "fail" : "pass",
+      skipped.length ? skipped.map((c) => `${c.strike} ${c.expiration} scored ${Math.round(c.score * 100)} but wasn't picked`).join("; ") : `lowest picked score ${Math.round(minPicked * 100)}; every higher-scoring expiry was picked or already had ${o.maxPerExpiry}`);
+  }
+
+  const counts = { pass: 0, warn: 0, fail: 0 };
+  for (const c of checks) counts[c.status]++;
+  return { at: now, counts, checks };
+}

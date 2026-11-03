@@ -190,6 +190,22 @@ real-time feed. While results are on screen, the scan reruns every `OPTIONS_REFR
 contract is still in the top 5. Refreshing pauses when you switch menus or hide the tab.
 **Refresh now** rescans immediately.
 
+### Self-check
+
+**Run self-check** (next to Refresh now) runs a fresh scan, then verifies it (`lib/selfcheck.mjs`):
+
+- **Live data:** each pick is re-fetched on its own from Massive (contract, bid/ask, delta, IV,
+  open interest, volume).
+- **Filters:** each filter is re-tested.
+- **Maths:** spread, cost, breakeven, fair value, premium vs fair, both probabilities, both
+  returns and the weighted score are recomputed with separately written formulas.
+- **Selection:** most profitable first, at most 2 per expiry, no better-scoring contract skipped.
+- **Coverage:** the full chain is counted again across all pages, with no expiries inside the
+  minimum.
+- **Inputs:** realized volatility is recomputed from fresh daily prices.
+
+The page shows pass / warning / fail, and **Copy report** gives a plain-text report with no keys.
+
 ## History & accuracy
 
 The **History & accuracy** tab grades every saved call (`data/predictions.jsonl`, one row per

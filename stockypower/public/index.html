@@ -198,6 +198,7 @@
     </form>
     <div class="ostatus"></div>
     <div class="ounder"></div>
+    <div class="ocheck"></div>
     <div class="oresults"></div>
     <p class="hhow ohow"></p>
   </section>
@@ -1272,9 +1273,10 @@ function renderOptions(d, days) {
     `<div class="livebar olive"></div>` +
     `${d.cached ? "Showing results from " : "Scanned at "}${at}: ${d.stats.scanned.toLocaleString()} contracts expiring more than ${days} days out, ` +
     `${d.stats.passed.toLocaleString()} passed the liquidity and delta filters${rej ? ` (left out: ${esc(rej)})` : ""}. ` +
-    `<button class="mini" id="optAgain">Refresh now</button>` +
+    `<button class="mini" id="optAgain">Refresh now</button> <button class="mini" id="optCheck" title="Re-verify these results against Massive and recompute every number independently">Run self-check</button>` +
     (d.errors?.length ? `<div class="error">${esc(d.errors.join(" · "))}</div>` : "");
   $("#optAgain").onclick = () => runOptions(true);
+  $("#optCheck").onclick = () => runSelfCheck();
   $(".ounder").innerHTML = Object.entries(d.underlying || {})
     .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}</div><div class="v">${fmt(u.price)}</div><div class="d">realized volatility: 30-day ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · 1-year ${u.hvLong != null ? (u.hvLong * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div>
       <div class="d">${u.stocky ? `Stocky (${esc(new Date(u.stocky.at).toLocaleDateString([], { month: "short", day: "numeric" }))}): 1 day <b>${esc(u.stocky.d1 || "—")}</b> · 1 week <b>${esc(u.stocky.w1 || "—")}</b>` : `No Stocky analysis in the last 7 days, so "agrees with Stocky" isn't scored. Run it on the Analyze page to include it.`}</div></div>`)
@@ -1376,6 +1378,74 @@ function renderOptions(d, days) {
     `the option is repriced (Black-Scholes, IV unchanged) after a typical favourable 30-day move in the stock (one standard deviation of its realized volatility), bought at the ask. ` +
     `It's an estimate for comparing contracts, not a prediction. Real results depend on the move you actually get, IV changes and fills. ` +
     `Option quotes, greeks, IV, open interest and volume come from your Massive Options Advanced real-time feed and refresh every ${OPT.seconds || "—"} seconds while this page is open.`;
+}
+
+// ── Self-check ─────────────────────────────────────────────────────────────
+async function runSelfCheck() {
+  if (!OPT.query) return;
+  const box = $(".ocheck");
+  box.innerHTML = `<div class="hbox" style="margin:10px 0"><b>Self-check running…</b> <span class="hstatus">fresh scan, then every pick re-fetched from Massive and every number recomputed independently (about 10–40 seconds)</span></div>`;
+  try {
+    const r = await fetch("/api/options/selfcheck", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols: OPT.query.symbols, minDays: OPT.query.days + 1, maxDays: OPT.query.maxDays, minTouchPct: OPT.query.minTouchPct }),
+    });
+    if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    renderSelfCheck(d);
+    renderOptions({ ...d.result, at: d.report.at }, OPT.query.days); // show the exact scan that was checked
+  } catch (err) {
+    box.innerHTML = `<div class="hbox error" style="margin:10px 0">Self-check couldn't run: ${esc(err.message)}</div>`;
+  }
+}
+
+function selfCheckText(d) {
+  const r = d.report, when = new Date(r.at).toLocaleString();
+  const lines = [
+    `Stockypower self-check (Best Option Chains), app version ${d.version}, ${when}`,
+    `Symbols: ${d.symbols.join(", ")} · more than ${d.settings.minDays - 1} days${d.settings.maxDays ? `, at most ${d.settings.maxDays}` : ""} · OTM min ${d.settings.minTouchPct}% to reach strike`,
+    `Result: ${r.counts.pass} passed, ${r.counts.warn} warnings, ${r.counts.fail} failed`,
+    "",
+  ];
+  let area = "";
+  for (const c of r.checks) {
+    if (c.area !== area) { area = c.area; lines.push(`[${area}]`); }
+    lines.push(`  ${c.status.toUpperCase().padEnd(4)}  ${c.item}: ${c.detail}`);
+  }
+  lines.push("", "Picks checked:");
+  for (const c of [...d.result.calls, ...d.result.puts])
+    lines.push(`  ${c.type.toUpperCase()} ${c.underlying} ${c.strike} ${c.expiration} · premium ${c.ask} · delta ${c.delta.toFixed(2)} · IV ${(c.iv * 100).toFixed(1)}% · OI ${c.openInterest} · vol ${c.volume} · score ${Math.round(c.score * 100)} · est ${c.projectedReturnPct.toFixed(1)}%`);
+  return lines.join("\n");
+}
+
+function renderSelfCheck(d) {
+  const r = d.report;
+  const icon = { pass: "✓", warn: "⚠", fail: "✗" };
+  const color = { pass: "#3fb950", warn: "#d29922", fail: "#f85149" };
+  const overall = r.counts.fail ? ["fail", "Problems found"] : r.counts.warn ? ["warn", "Passed, with warnings"] : ["pass", "All checks passed"];
+  const rows = r.checks.map((c) => `<tr><td style="color:${color[c.status]};font-weight:700">${icon[c.status]}</td><td>${esc(c.area)}</td><td>${esc(c.item)}</td><td style="white-space:normal;text-align:left">${esc(c.detail)}</td></tr>`).join("");
+  $(".ocheck").innerHTML = `<div class="hbox" style="margin:10px 0">
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <b style="color:${color[overall[0]]};font-size:16px">${icon[overall[0]]} Self-check: ${overall[1]}</b>
+      <span class="hstatus">${r.counts.pass} passed · ${r.counts.warn} warnings · ${r.counts.fail} failed · ${esc(new Date(r.at).toLocaleTimeString())}</span>
+      <button class="mini" id="ckCopy">Copy report</button><button class="mini" id="ckHide">Hide</button>
+    </div>
+    <p class="hhow">Warnings under "Live data" usually mean the market moved between the scan and the re-check, which is normal with a live feed. Failures under Filters, Maths, Selection or Coverage mean something is wrong: copy the report and send it to Claude.</p>
+    <details${r.counts.fail || r.counts.warn ? " open" : ""}><summary>All ${r.checks.length} checks</summary>
+      <div class="tablewrap"><table class="otable"><thead><tr><th></th><th>Area</th><th>Check</th><th>Details</th></tr></thead><tbody>${rows}</tbody></table></div></details></div>`;
+  $("#ckHide").onclick = () => ($(".ocheck").innerHTML = "");
+  $("#ckCopy").onclick = async () => {
+    const text = selfCheckText(d);
+    try { await navigator.clipboard.writeText(text); $("#ckCopy").textContent = "Copied ✓"; }
+    catch {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.width = "100%"; ta.rows = 12;
+      $(".ocheck .hbox").append(ta); ta.select();
+      $("#ckCopy").textContent = "Select the text below and copy it";
+    }
+  };
 }
 
 // ── Confirmations ──────────────────────────────────────────────────────────

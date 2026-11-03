@@ -28,6 +28,7 @@ import {
 import { computeIndicators, SETTINGS as IND_SETTINGS } from "./lib/indicators.mjs";
 import { evaluateCall, summarize, breakdown, RESOLVE_BARS } from "./lib/history.mjs";
 import { fetchChain, fetchDaily, normalizeContract, pickBest, realizedVol, DEFAULTS as OPTION_DEFAULTS } from "./lib/options.mjs";
+import { selfCheck } from "./lib/selfcheck.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -860,6 +861,26 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     } catch (e) {
       return json(res, 400, { error: e.message });
+    }
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/options/selfcheck") {
+    try {
+      const body = await readJson(req);
+      const symbols = [...new Set(String(body.symbols || "").toUpperCase().split(/[\s,;]+/).filter(Boolean))];
+      if (!symbols.length || symbols.length > 10 || symbols.some((s) => !SYMBOL_RE.test(s))) return json(res, 400, { error: "Enter 1-10 valid symbols." });
+      if (!MASSIVE_API_KEY) return json(res, 400, { error: "MASSIVE_API_KEY isn't set." });
+      const minDays = Math.max(1, Number(body.minDays) || OPTION_DEFAULTS.minDays);
+      const maxDays = Number(body.maxDays) > 0 ? Math.max(minDays, Number(body.maxDays)) : null;
+      const touch = Number(body.minTouchPct);
+      const minTouchProb = Number.isFinite(touch) && touch >= 0 && touch <= 100 ? touch / 100 : OPTION_DEFAULTS.minTouchProb;
+      // A fresh scan, then check it against Massive and independent recomputation.
+      const result = await bestOptions(symbols, { minDays, maxDays, minTouchProb, refresh: true });
+      const report = await selfCheck({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, result });
+      return json(res, 200, { version: APP_VERSION, symbols, settings: { minDays, maxDays, minTouchPct: Math.round(minTouchProb * 100) }, result, report });
+    } catch (err) {
+      console.error("[selfcheck]", err);
+      return json(res, 502, { error: err?.message || String(err) });
     }
   }
 
