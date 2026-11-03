@@ -205,7 +205,8 @@ window between two expiries is as precise as it gets.
 **Outside regular hours** (before 9:30 or after 16:00 New York, or weekends), option quotes
 are frozen at the close, while the stock keeps trading after hours. So the scan uses the
 official regular-session close (`/v1/open-close`) as the stock price for every calculation.
-The after-hours / pre-market price is shown separately.
+The after-hours / pre-market price is shown separately. Results are marked **indicative** while the market is closed: option
+quotes reprice at the open, so re-check the picks once the market has been open 15-30 minutes.
 
 Click a row for its score breakdown and greeks. **Compare expiry dates** lists the best call
 and put on every expiry date with each factor's score, so you can see why some dates were
@@ -256,6 +257,12 @@ contract is still in the top 5. Refreshing pauses when you switch menus or hide 
     through its stop. Outside regular hours this uses the after-hours / pre-market price. A
     fresh Stocky run is then started once Stocky can see the move: during regular hours, or any
     time with `STOCKY_EXTENDED_HOURS=1` (intraday bars then include extended hours).
+
+  **Or the 1-hour view.** "5-session forecast → 1-hour (most recent)" trades Stocky's 1-hour
+  call, Target 1 and forecast instead. Its path covers only ~1.5 sessions, so from its last
+  point to the 5th session the price is held flat and the stock's normal (realised) volatility
+  for the remaining days is added to the spread. A 4-hour call the other way is then a warning,
+  not a block. The price-against check still applies.
 
   **Only a current Stocky run is used for 5 sessions.** The 1-day run must be on the latest
   trading day's data. An older run isn't used for the 5-session ranking (a fresh one is started

@@ -37,7 +37,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv();
 
 const PORT = Number(process.env.PORT || 8790);
-const APP_VERSION = 10; // bump when the page and server must match (page checks it)
+const APP_VERSION = 11; // bump when the page and server must match (page checks it)
 // Set APP_PASSWORD to require a password (needed before putting Stockypower on the web).
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const APP_USER = process.env.APP_USER || "stocky";
@@ -131,11 +131,12 @@ function optionParams(body) {
   const strikePref = ["balanced", "otm", "itm"].includes(body.strikePref) ? body.strikePref : "balanced";
   const horizon = body.horizon === "short" ? "short" : "30d";
   const autoStocky = body.autoStocky !== false;
-  return { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, autoStocky };
+  const shortSource = body.shortSource === "1h" ? "1h" : "4h";
+  return { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, autoStocky, shortSource };
 }
 
-async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, autoStocky = true, refresh }) {
-  const key = `${symbols.join(",")}|${minDays}|${maxDays ?? ""}|${minTouchProb}|${minOpenInterest}|${strikePref}|${horizon}`;
+async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, autoStocky = true, shortSource = "4h", refresh }) {
+  const key = `${symbols.join(",")}|${minDays}|${maxDays ?? ""}|${minTouchProb}|${minOpenInterest}|${strikePref}|${horizon}|${shortSource}`;
   const hit = optionsCache.get(key);
   if (!refresh && hit && Date.now() - hit.at < 5 * 60_000) return { ...hit.result, stockyRuns: stockyRunStatus(symbols), cached: true };
 
@@ -196,7 +197,8 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
   for (const sym of Object.keys(underlying)) {
     const v = stocky[sym];
     const u = underlying[sym];
-    const src = v?.tfs?.["4h"] ?? v?.tfs?.["1D"] ?? null;
+    // The user picks the 4-hour view (covers 5 sessions) or the 1-hour one (most recent).
+    const src = (shortSource === "1h" ? v?.tfs?.["1h"] : null) ?? v?.tfs?.["4h"] ?? v?.tfs?.["1D"] ?? null;
     const latest = u.lastSession;
     // Stocky's analysis missing or old? Start a run in the background; the next refresh uses it.
     // Fresh = for the 5-session horizon, a run on the latest trading day's data;
@@ -207,10 +209,14 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
     if (horizon !== "short") { stockyPick[sym] = v; continue; }
     let block = null;
     if (src && !fresh) block = `Stocky's latest ${TF_LABEL[src.tf]} run for ${sym} uses data up to ${src.asOfT ? nyDate(src.asOfT) : "an earlier day"}, not the latest trading day (${latest}), so it isn't used for a 5-session trade (see the status under the stock price above)`;
-    // The 1-hour call from the same run must not point the other way.
+    // Using the 4-hour view: the 1-hour call from the same run must not point the other way.
+    // Using the 1-hour view (the user's choice): a 4-hour call the other way is only a warning.
     const h1 = v?.tfs?.["1h"];
-    if (!block && src && h1 && Math.abs(h1.at - src.at) < 5 * 60_000 && ["BUY", "SELL"].includes(h1.signal) && ["BUY", "SELL"].includes(src.signal) && h1.signal !== src.signal)
-      block = `Conflicting: Stocky's ${TF_LABEL[src.tf]} call for ${sym} is ${src.signal} but its 1-hour call is ${h1.signal} (a short-term move against the trend), so no 5-session trade until they agree`;
+    const h4 = v?.tfs?.["4h"];
+    const opposite = (a, b) => a && b && Math.abs(a.at - b.at) < 5 * 60_000 && ["BUY", "SELL"].includes(a.signal) && ["BUY", "SELL"].includes(b.signal) && a.signal !== b.signal;
+    if (!block && src?.tf !== "1h" && opposite(src, h1))
+      block = `Conflicting: Stocky's ${TF_LABEL[src.tf]} call for ${sym} is ${src.signal} but its 1-hour call is ${h1.signal} (a short-term move against the trend), so no 5-session trade until they agree. Choose "1-hour" as the 5-session forecast to trade the 1-hour view instead`;
+    u.trendWarning = src?.tf === "1h" && opposite(src, h4) ? `Trading Stocky's 1-hour ${src.signal} against its 4-hour ${h4.signal}: a short-term move against the bigger trend` : null;
     // Price already moving against the call (live, or after-hours / pre-market when closed).
     const px = u.extendedPrice ?? u.price;
     if (!block && src && px > 0 && src.entry > 0 && ["BUY", "SELL"].includes(src.signal)) {
@@ -223,11 +229,14 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
         if (autoStocky && (u.marketOpen || EXTENDED_HOURS) && Date.now() - src.at > 30 * 60_000) requestStockyRun(sym, { force: true });
       }
     }
-    u.shortSource = src ? { tf: src.tf, signal: src.signal, h1: h1?.signal ?? null, blocked: Boolean(block) } : null;
+    u.shortSource = src ? { tf: src.tf, signal: src.signal, h1: h1?.signal ?? null, h4: h4?.signal ?? null, chosen: shortSource, blocked: Boolean(block) } : null;
+    // Without usable timestamps, ten 1-hour bars ≈ 1.5 sessions ≈ 2.2 calendar days.
+    const pt = src ? forecastPointAt(src.forecast, src.asOfT, OPTION_DEFAULTS.shortDays, src.tf === "4h" || src.tf === "1h" ? 10 : OPTION_DEFAULTS.shortSessions) : null;
+    if (pt && pt.daysAhead == null && src.tf === "1h") pt.daysAhead = (Math.min(10, src.forecast.length) / 6.5) * 1.4;
     stockyPick[sym] = {
       ...(v || {}),
       short: src && !block
-        ? { tf: src.tf, signal: src.signal, target1: src.target1, stop1: src.stop1, entry: src.entry, at: src.at, asOfT: src.asOfT, point: forecastPointAt(src.forecast, src.asOfT, OPTION_DEFAULTS.shortDays, src.tf === "4h" ? 10 : OPTION_DEFAULTS.shortSessions) }
+        ? { tf: src.tf, signal: src.signal, target1: src.target1, stop1: src.stop1, entry: src.entry, at: src.at, asOfT: src.asOfT, point: pt }
         : null,
       shortBlock: block,
     };

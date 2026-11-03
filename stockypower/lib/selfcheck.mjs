@@ -227,7 +227,8 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
           if (v > c.ask) pp += wi;
         }
         const sg0 = st.forecastLow > 0 && st.forecastHigh > st.forecastLow ? Math.log(st.forecastHigh / st.forecastLow) / 2 : st.forecastSigmaStocky;
-        const sgExpected = Math.sqrt(sg0 * sg0 + evS);
+        const ext = st.forecastDaysAhead != null && st.forecastDaysAhead < st.days - 0.5 ? (vS * vS * (st.days - st.forecastDaysAhead)) / 365 : 0;
+        const sgExpected = Math.sqrt(sg0 * sg0 + ext + evS);
         maths.push(
           ["forecast spread (log sd)", sgExpected, sg, 1e-9],
           ["return at Stocky's forecast price %", ((bs(c.side, F, c.strike, Ta, o.riskFree, ivS) - c.ask) / c.ask) * 100, st.retAtForecastPct, 0.1, 0.002],

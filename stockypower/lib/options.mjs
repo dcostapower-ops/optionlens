@@ -425,7 +425,10 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
         const fp = sh0.point;
         if (fp) {
           const sig0 = fp.low > 0 && fp.high > fp.low ? Math.log(fp.high / fp.low) / 2 : vol * Math.sqrt(days / 365);
-          const sig = Math.sqrt(sig0 * sig0 + evVarShort); // plus the event-day jump, if any
+          // A forecast that ends before the 5th session (the 1-hour path covers ~1.5 sessions)
+          // is held flat from its last point, with normal volatility for the days it doesn't cover.
+          const extVar = fp.daysAhead != null && fp.daysAhead < days - 0.5 ? (vol * vol * (days - fp.daysAhead)) / 365 : 0;
+          const sig = Math.sqrt(sig0 * sig0 + extVar + evVarShort); // plus the event-day jump, if any
           const { ev, pProfit } = expectedValue((x) => bsPrice(type, x, c.strike, Tafter, o.riskFree, ivExitShort), fp.price, sig, c.ask);
           Object.assign(c.shortTerm, {
             method: "forecast",
@@ -435,6 +438,7 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
             forecastDaysAhead: fp.daysAhead,
             forecastSigma: sig,
             forecastSigmaStocky: sig0,
+            forecastExtendVar: extVar,
             retAtForecastPct: ((bsPrice(type, fp.price, c.strike, Tafter, o.riskFree, ivExitShort) - c.ask) / c.ask) * 100,
             pProfit,
             expectedPct: ((ev - c.ask) / c.ask) * 100,
@@ -512,7 +516,7 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
         target: list[0].shortTerm.target,
         source: list[0].shortTerm.source,
         days: o.shortDays,
-        forecast: withF ? { price: withF.shortTerm.forecastPrice, low: withF.shortTerm.forecastLow, high: withF.shortTerm.forecastHigh } : null,
+        forecast: withF ? { price: withF.shortTerm.forecastPrice, low: withF.shortTerm.forecastLow, high: withF.shortTerm.forecastHigh, daysAhead: withF.shortTerm.forecastDaysAhead, extended: withF.shortTerm.forecastExtendVar > 0 } : null,
         ...(without.length ? { skipped: without.map(noShortReason).join(". ") } : {}),
       };
     } else horizonInfo[type] = { mode: "30d" };
