@@ -189,6 +189,17 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
     if (!(c.bid > 0 && c.ask > 0 && c.ask >= c.bid)) { reject("no two-sided quote"); continue; }
     if (!Number.isFinite(c.delta) || !Number.isFinite(c.iv) || c.iv <= 0) { reject("no delta/IV"); continue; }
     if (!(c.underlyingPrice > 0)) { reject("no underlying price"); continue; }
+    // Next 5 sessions: a strike beyond Stocky's 1-day Target 1 would still be out of the money even if
+    // Stocky is exactly right, so it isn't considered for the side Stocky points to.
+    if (o.horizon === "short") {
+      const sv = stocky[c.underlying];
+      const tgt = sv?.d1Target1;
+      const sideWanted = c.type === "call" ? "BUY" : "SELL";
+      if (sv?.d1 === sideWanted && Number.isFinite(tgt)) {
+        const beyond = c.type === "call" ? c.strike > tgt : c.strike < tgt;
+        if (beyond) { reject(`strike beyond Stocky's target (${tgt})`); continue; }
+      }
+    }
     // Strike preference: leave out the side of the chain the user doesn't want (ATM, within 2%, is always kept).
     const itmPct = ((c.type === "call" ? c.underlyingPrice - c.strike : c.strike - c.underlyingPrice) / c.underlyingPrice) * 100;
     if (o.excludeMoneyness === "itm" && itmPct > 2) { reject("in the money (preference: at / out of the money)"); continue; }

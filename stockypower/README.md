@@ -215,6 +215,11 @@ contract is still in the top 5. Refreshing pauses when you switch menus or hide 
   chance of profit fall to 10% each. If Stocky's daily call doesn't point that side's way, that
   side falls back to the 30-day method and the page says so.
 
+  Choosing this horizon sets **Strikes → At / out of the money** and **Expiring more than →
+  21 days**. Both stay editable, and switching back restores Balanced and 60 days. Strikes
+  beyond Stocky's target are excluded: such a call or put would still be out of the money even
+  if Stocky is exactly right.
+
 ### Self-check
 
 **Run self-check** (next to Refresh now) runs a fresh scan, then verifies it (`lib/selfcheck.mjs`):

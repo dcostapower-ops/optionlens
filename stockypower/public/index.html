@@ -206,6 +206,7 @@
       </select></label>
       <button class="primary" type="submit">Find best options</button>
     </form>
+    <div class="hstatus ohorizon-note"></div>
     <div class="ostatus"></div>
     <div class="ounder"></div>
     <div class="ocheck"></div>
@@ -1217,6 +1218,20 @@ function drawCallChart(el, d) {
 const OPT = { seconds: 60, timer: null, query: null, busy: false, openTicker: null, updated: null, error: null };
 $("#optForm").addEventListener("submit", (ev) => { ev.preventDefault(); runOptions(false); });
 
+// Choosing the profit horizon sets sensible starting values (still editable):
+// Next 5 sessions -> at / out of the money, expiring more than 21 days;
+// Next 30 days -> balanced, more than 60 days. Values the user typed are left alone.
+const HORIZON_DEFAULTS = { short: { days: "21", pref: "otm" }, "30d": { days: "60", pref: "balanced" } };
+$("#optHorizon").addEventListener("change", () => {
+  const to = HORIZON_DEFAULTS[$("#optHorizon").value];
+  const from = HORIZON_DEFAULTS[$("#optHorizon").value === "short" ? "30d" : "short"];
+  if ($("#optDays").value === from.days) $("#optDays").value = to.days;
+  if ($("#optPref").value === from.pref) $("#optPref").value = to.pref;
+  $(".ohorizon-note").textContent = $("#optHorizon").value === "short"
+    ? "Next 5 sessions: strikes default to at / out of the money and expiries to more than 21 days (you can change both). Strikes beyond Stocky's target are left out."
+    : "";
+});
+
 function optLiveOn() {
   return OPT.query && !$("#optionsView").hidden && !document.hidden;
 }
@@ -1392,7 +1407,7 @@ function renderOptions(d, days) {
     `agreement with Stocky 15% (its latest 1-day and 1-week call points the same way; left out if Stocky hasn't analysed the stock in 7 days), ` +
     `liquidity 15% (open interest, volume and spread, with full marks once comfortably tradable, ${d.settings.oiGood.toLocaleString()}+ open interest and ${d.settings.volGood}+ volume, so size alone doesn't win), ` +
     `and low time decay 10% (what a flat stock costs over 30 days). ` +
-    `With the <b>Next 5 sessions</b> profit horizon, time to expiry matters less: a short-term payoff factor (expected return if Stocky's 1-day Target 1 is reached within 5 sessions) gets 20%, time decay drops to 5%, and IV, premium and chance of profit to 10% each. ` +
+    `With the <b>Next 5 sessions</b> profit horizon, strikes beyond Stocky's 1-day Target 1 are left out (they'd still be out of the money if Stocky is right), and time to expiry matters less: a short-term payoff factor (expected return if Stocky's 1-day Target 1 is reached within 5 sessions) gets 20%, time decay drops to 5%, and IV, premium and chance of profit to 10% each. ` +
     `The 5 best calls and 5 best puts by that score are shown, at most ${d.settings.maxPerExpiry} from the same expiry date, ordered by <b>estimated return*</b>: ` +
     `the option is repriced (Black-Scholes, IV unchanged) after a typical favourable 30-day move in the stock (one standard deviation of its realized volatility), bought at the ask. ` +
     `It's an estimate for comparing contracts, not a prediction. Real results depend on the move you actually get, IV changes and fills. ` +

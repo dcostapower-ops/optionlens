@@ -149,6 +149,10 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
       [`spread < ${o.maxSpreadPct}%`, spread <= o.maxSpreadPct, `${f2(spread)}%`],
     ];
     const itmPct = ((c.side === "call" ? c.underlyingPrice - c.strike : c.strike - c.underlyingPrice) / c.underlyingPrice) * 100;
+    if (c.shortTerm) {
+      const t = c.shortTerm.target;
+      filters.push([`5 sessions: strike not beyond Stocky's target ${t}`, c.side === "call" ? c.strike <= t : c.strike >= t, `strike ${c.strike}`]);
+    }
     if (o.excludeMoneyness === "itm") filters.push([`strike preference "${o.strikePrefLabel}": not in the money`, itmPct <= 2, `${f2(itmPct, 1)}% in the money`]);
     if (o.excludeMoneyness === "otm") filters.push([`strike preference "${o.strikePrefLabel}": not out of the money`, itmPct >= -2, `${f2(-itmPct, 1)}% out of the money`]);
     const S = c.underlyingPrice, T = c.dte / 365;
