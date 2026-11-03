@@ -198,6 +198,23 @@ real-time feed. While results are on screen, the scan reruns every `OPTIONS_REFR
 contract is still in the top 5. Refreshing pauses when you switch menus or hide the tab.
 **Refresh now** rescans immediately.
 
+### Profit horizon
+
+- **Next 30 days (typical move):** the default. "Est. return" assumes a 1-standard-deviation
+  favorable move over 30 days.
+- **Next 5 sessions (Stocky's 1-day target):** for when the move is expected soon, so time to
+  expiry matters less. It uses Stocky's latest 1-day Target 1: above the price when the
+  1-day call is BUY (calls), below it when SELL (puts). For each contract it computes:
+  - the chance of reaching the target within about 5 sessions (probability of touch, recent
+    volatility);
+  - the return if it does (repriced at the target);
+  - the return if the stock stays flat.
+
+  The **expected return** (chance × target return + (1 − chance) × flat return) ranks the
+  picks. A "short-term payoff" factor gets 20%, time decay drops to 5%, and IV, premium and
+  chance of profit fall to 10% each. If Stocky's daily call doesn't point that side's way, that
+  side falls back to the 30-day method and the page says so.
+
 ### Self-check
 
 **Run self-check** (next to Refresh now) runs a fresh scan, then verifies it (`lib/selfcheck.mjs`):

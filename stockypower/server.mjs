@@ -124,11 +124,12 @@ function optionParams(body) {
   const oi = Number(body.minOpenInterest);
   const minOpenInterest = Number.isFinite(oi) && oi >= 0 ? Math.round(oi) : OPTION_DEFAULTS.minOpenInterest;
   const strikePref = ["balanced", "otm", "itm"].includes(body.strikePref) ? body.strikePref : "balanced";
-  return { minDays, maxDays, minTouchProb, minOpenInterest, strikePref };
+  const horizon = body.horizon === "short" ? "short" : "30d";
+  return { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon };
 }
 
-async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, refresh }) {
-  const key = `${symbols.join(",")}|${minDays}|${maxDays ?? ""}|${minTouchProb}|${minOpenInterest}|${strikePref}`;
+async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, refresh }) {
+  const key = `${symbols.join(",")}|${minDays}|${maxDays ?? ""}|${minTouchProb}|${minOpenInterest}|${strikePref}|${horizon}`;
   const hit = optionsCache.get(key);
   if (!refresh && hit && Date.now() - hit.at < 5 * 60_000) return { ...hit.result, cached: true };
 
@@ -158,7 +159,7 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
     }),
   );
   const stocky = latestStockyViews(symbols);
-  const picked = pickBest(contracts, { hv, stocky, minDays, maxDays, minTouchProb, minOpenInterest, strikePref });
+  const picked = pickBest(contracts, { hv, stocky, minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon });
   for (const sym of Object.keys(underlying)) underlying[sym].stocky = stocky[sym] ?? null;
   const result = { ...picked, underlying, errors, symbols, minDays, at: Date.now() };
   optionsCache.set(key, { at: Date.now(), result });
@@ -175,7 +176,7 @@ function latestStockyViews(symbols) {
     if (!(t >= cutoff)) continue;
     const v = (out[r.symbol] ??= { d1: null, w1: null, d1At: 0, w1At: 0 });
     const k = r.tf === "1D" ? "d1" : "w1";
-    if (t > v[`${k}At`]) Object.assign(v, { [k]: r.signal, [`${k}At`]: t });
+    if (t > v[`${k}At`]) Object.assign(v, { [k]: r.signal, [`${k}At`]: t, ...(k === "d1" ? { d1Target1: r.target1, d1Target2: r.target2, d1Entry: r.entry } : {}) });
   }
   for (const v of Object.values(out)) v.at = Math.max(v.d1At, v.w1At);
   return out;
@@ -889,7 +890,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         version: APP_VERSION,
         symbols,
-        settings: { minDays: params.minDays, maxDays: params.maxDays, minTouchPct: Math.round(params.minTouchProb * 100), minOpenInterest: params.minOpenInterest, strikePref: result.settings.strikePrefLabel },
+        settings: { minDays: params.minDays, maxDays: params.maxDays, minTouchPct: Math.round(params.minTouchProb * 100), minOpenInterest: params.minOpenInterest, strikePref: result.settings.strikePrefLabel, horizon: params.horizon === "short" ? "next 5 sessions (Stocky's target)" : "next 30 days (typical move)" },
         result,
         report,
       });

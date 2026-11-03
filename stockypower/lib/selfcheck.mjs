@@ -170,7 +170,7 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
     const flat = ((bs(c.side, S, c.strike, Tl, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
     const be2 = beyond(c.side, S, be, v, T);
     let wSum = 0, tot = 0;
-    for (const [k, w] of Object.entries(o.weights)) {
+    for (const [k, w] of Object.entries(c.weightSet === "short" ? o.weightsShort : o.weights)) {
       if (c.scores?.[k] == null) continue;
       wSum += w;
       tot += w * c.scores[k];
@@ -188,6 +188,20 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
       ["if flat 30 days %", flat, c.flatReturnPct, 0.1, 0.002],
       ["score from factor weights", score, c.score, 0.0005],
     ];
+    if (c.shortTerm) {
+      const st = c.shortTerm;
+      const vS = hvMix(result.underlying?.[c.underlying]?.hv, result.underlying?.[c.underlying]?.hvLong, st.days) ?? c.iv;
+      const Ta = Math.max(0, (c.dte - st.days) / 365);
+      const p = touch(S, st.target, vS, st.days / 365);
+      const rT = ((bs(c.side, st.target, c.strike, Ta, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
+      const rF = ((bs(c.side, S, c.strike, Ta, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
+      maths.push(
+        ["chance to reach Stocky's target in 5 sessions", p, st.pReach, 0.002],
+        ["return if target reached %", rT, st.retTargetPct, 0.1, 0.002],
+        ["return if flat 5 sessions %", rF, st.retFlatPct, 0.1, 0.002],
+        ["expected 5-session return %", p * rT + (1 - p) * rF, st.expectedPct, 0.1, 0.002],
+      );
+    }
     const bad = maths.filter(([, mine, app, abs, rel]) => !(Number.isFinite(app) && close(mine, app, abs, rel || 0)));
     add("Maths", name, bad.length ? "fail" : "pass",
       bad.length ? bad.map(([n, mine, app]) => `${n}: recomputed ${f2(mine, 4)} vs app ${f2(app, 4)}`).join("; ") : `${maths.length} numbers recomputed independently and match`);
@@ -199,8 +213,8 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
       add("Selection", label, "warn", "no contracts passed the filters");
       continue;
     }
-    const sorted = list.every((c, i) => i === 0 || list[i - 1].projectedReturnPct >= c.projectedReturnPct);
-    add("Selection", `${label}: most profitable first`, sorted ? "pass" : "fail", list.map((c) => `${f2(c.projectedReturnPct, 1)}%`).join(" > "));
+    const sorted = list.every((c, i) => i === 0 || list[i - 1].rankReturnPct >= c.rankReturnPct);
+    add("Selection", `${label}: most profitable first (${list[0].weightSet === "short" ? "expected 5-session return" : "estimated 30-day return"})`, sorted ? "pass" : "fail", list.map((c) => `${f2(c.rankReturnPct, 1)}%`).join(" > "));
     const per = {};
     for (const c of list) per[c.expiration] = (per[c.expiration] || 0) + 1;
     const maxPer = Math.max(...Object.values(per));

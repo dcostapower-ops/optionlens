@@ -18,6 +18,11 @@ export const DEFAULTS = {
   oiGood: 1000, // open interest at/above this counts as fully tradable
   volGood: 200, // volume at/above this counts as fully tradable
   weights: { delta: 0.15, iv: 0.15, premium: 0.15, profit: 0.15, stocky: 0.15, liquidity: 0.15, decay: 0.1 },
+  // "Next 5 sessions" profit horizon: judged on reaching Stocky's 1-day Target 1 soon,
+  // so time to expiry matters less (decay 5%) and the short-term payoff counts most.
+  horizon: "30d", // "30d" (typical move) or "short" (Stocky's target within shortDays)
+  shortDays: 7, // calendar days, about 5 trading sessions
+  weightsShort: { delta: 0.15, iv: 0.1, premium: 0.1, profit: 0.1, stocky: 0.15, liquidity: 0.15, decay: 0.05, short: 0.2 },
   minTouchProb: 0.7, // out-of-the-money: required chance of reaching the strike before expiry
   holdDays: 30,
   minOpenInterest: 500,
@@ -224,6 +229,7 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
   stats.passed = usable.length;
 
   const byExpiry = { call: [], put: [] };
+  const horizonInfo = { call: { mode: "30d" }, put: { mode: "30d" } };
   const pick = (type) => {
     const list = usable.filter((c) => c.type === type);
     if (!list.length) return [];
@@ -232,8 +238,24 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
     const tvRoot = (c) => c.timeValue / Math.sqrt(c.dte) / c.underlyingPrice;
     const ratios = list.map((c) => c.premiumVsFair ?? tvRoot(c)).sort((a, b) => a - b);
     const want = type === "call" ? "BUY" : "SELL";
+    const shortMode = o.horizon === "short";
     for (const c of list) {
       const S = c.underlyingPrice;
+
+      // Short-term scenario: Stocky's 1-day Target 1 reached within shortDays (if Stocky's
+      // latest daily call points this option's way and its target is on the right side).
+      c.shortTerm = null;
+      const sv0 = stocky[c.underlying];
+      const tgt = sv0?.d1Target1;
+      if (shortMode && sv0?.d1 === want && Number.isFinite(tgt) && (type === "call" ? tgt > S : tgt < S)) {
+        const days = o.shortDays;
+        const vol = hvFor(hv[c.underlying], days) ?? c.iv;
+        const Tafter = Math.max(0, (c.dte - days) / 365);
+        const pReach = probTouch(S, tgt, vol, days / 365);
+        const retTarget = ((bsPrice(type, tgt, c.strike, Tafter, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
+        const retFlat = ((bsPrice(type, S, c.strike, Tafter, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
+        c.shortTerm = { target: tgt, days, pReach, retTargetPct: retTarget, retFlatPct: retFlat, expectedPct: pReach * retTarget + (1 - pReach) * retFlat, targetAt: sv0.d1At };
+      }
 
       // Profit estimate: favourable 1-sigma move over holdDays, IV unchanged, buy at ask, value at mid.
       const sigmaMove = (c.hvMove ?? c.hv ?? c.iv) * Math.sqrt(o.holdDays / 365); // typical move over the holding period
@@ -280,17 +302,32 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
         stockyScore = pts.reduce((x, y) => x + y, 0) / pts.length;
       }
 
-      c.scores = { delta: deltaScore, iv: ivScore, premium: premiumScore, profit: profitScore, stocky: stockyScore, liquidity: liquidityScore, decay: decayScore };
+      c.scores = { delta: deltaScore, iv: ivScore, premium: premiumScore, profit: profitScore, stocky: stockyScore, liquidity: liquidityScore, decay: decayScore, short: null };
       c.liquidityParts = { openInterest: oiS, volume: volS, spread: spreadS };
       c.ivVsHv = ivVsHv;
-      // Weighted sum; without a Stocky view its weight is shared out over the other factors.
+    }
+    // Short-term payoff score: expected 5-session return, ranked within this side.
+    const useShort = shortMode && list.some((c) => c.shortTerm);
+    horizonInfo[type] = !shortMode
+      ? { mode: "30d" }
+      : useShort
+        ? { mode: "short", target: list.find((c) => c.shortTerm).shortTerm.target, days: o.shortDays }
+        : { mode: "30d", fallback: `Stocky's latest 1-day call isn't ${want} with a target ${type === "call" ? "above" : "below"} the price, so these are ranked on the 30-day move instead` };
+    const exps = list.filter((c) => c.shortTerm).map((c) => c.shortTerm.expectedPct).sort((a, b) => a - b);
+    const weights = useShort ? o.weightsShort : o.weights;
+    for (const c of list) {
+      if (useShort && c.shortTerm) c.scores.short = pctRank(exps, c.shortTerm.expectedPct);
+      // Weighted sum; a factor without data (e.g. no Stocky view) has its weight shared out.
       let wSum = 0, total = 0;
-      for (const [k, w] of Object.entries(o.weights)) {
+      for (const [k, w] of Object.entries(weights)) {
         if (c.scores[k] == null) continue;
         wSum += w;
         total += w * c.scores[k];
       }
       c.score = wSum ? total / wSum : 0;
+      c.weightSet = useShort ? "short" : "normal";
+      // What "most profitable" means for this side.
+      c.rankReturnPct = useShort && c.shortTerm ? c.shortTerm.expectedPct : c.projectedReturnPct;
     }
     // Best contract on each expiry date, so the page can show why dates won or lost.
     const bestByExpiry = new Map();
@@ -311,12 +348,12 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
       chosen.push(c);
       if (chosen.length >= o.top) break;
     }
-    return chosen.sort((a, b) => b.projectedReturnPct - a.projectedReturnPct);
+    return chosen.sort((a, b) => b.rankReturnPct - a.rankReturnPct);
   };
   const calls = pick("call");
   const puts = pick("put");
   const mark = (arr, chosenList) => arr.map((c) => ({ ...c, picked: chosenList.includes(c) }));
-  return { calls, puts, callsByExpiry: mark(byExpiry.call, calls), putsByExpiry: mark(byExpiry.put, puts), stats, settings: o };
+  return { calls, puts, callsByExpiry: mark(byExpiry.call, calls), putsByExpiry: mark(byExpiry.put, puts), horizon: horizonInfo, stats, settings: o };
 }
 
 // Recent daily bars for realised volatility and a fallback underlying price.
