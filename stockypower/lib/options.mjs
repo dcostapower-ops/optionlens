@@ -2,7 +2,7 @@
 // requested symbols (Massive options chain snapshot), keeps liquid ones, scores
 // them on delta, IV cheapness, open interest, volume and spread, takes the best 5
 // calls and 5 puts, and orders those by an estimated return on premium.
-// Factors: delta 20%, IV cheapness 20%, premium (time value per day) 20%,
+// Factors: delta 20%, IV cheapness 20%, premium vs fair value 20%,
 // open interest 15%, volume 12.5%, spread 12.5%.
 //
 // Profit can't be known in advance, so "most profitable" uses one comparable
@@ -12,6 +12,8 @@
 
 export const DEFAULTS = {
   minDays: 61, // "more than 60 days"
+  maxDays: null, // optional upper limit
+  maxPerExpiry: 2, // spread the picks across expiry dates
   holdDays: 30,
   minOpenInterest: 100,
   minVolume: 10,
@@ -133,6 +135,7 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
     if (!c) { reject("unreadable"); continue; }
     const dte = Math.round((Date.parse(c.expiration + "T21:00:00Z") - now) / 864e5);
     if (!(dte >= o.minDays)) { reject(`expires within ${o.minDays - 1} days`); continue; }
+    if (o.maxDays && dte > o.maxDays) { reject(`expires after ${o.maxDays} days`); continue; }
     if (!(c.bid > 0 && c.ask > 0 && c.ask >= c.bid)) { reject("no two-sided quote"); continue; }
     if (!Number.isFinite(c.delta) || !Number.isFinite(c.iv) || c.iv <= 0) { reject("no delta/IV"); continue; }
     if (!(c.underlyingPrice > 0)) { reject("no underlying price"); continue; }
@@ -147,7 +150,14 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
     const intrinsic = Math.max(0, c.type === "call" ? c.underlyingPrice - c.strike : c.strike - c.underlyingPrice);
     const timeValue = Math.max(0, c.ask - intrinsic);
     const timeValuePerDayPct = (timeValue / dte / c.underlyingPrice) * 100;
-    usable.push({ ...c, dte, absDelta, spreadPct, hv: hv[c.underlying] ?? null, intrinsic, timeValue, timeValuePerDayPct });
+    // Premium vs fair value: the price this option would have if priced at the stock's
+    // actual recent (realised) volatility. Time value grows with the square root of
+    // time, so this compares short and long expiries fairly; per-day cost does not
+    // (it always makes long-dated options look cheaper).
+    const hvU = hv[c.underlying] ?? null;
+    const fair = hvU ? bsPrice(c.type, c.underlyingPrice, c.strike, dte / 365, o.riskFree, hvU) : null;
+    const premiumVsFair = fair > 0 ? c.ask / fair : null;
+    usable.push({ ...c, dte, absDelta, spreadPct, hv: hvU, intrinsic, timeValue, timeValuePerDayPct, fairValue: fair, premiumVsFair });
   }
   stats.passed = usable.length;
 
@@ -157,7 +167,9 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
     const ivs = list.map((c) => c.iv).sort((a, b) => a - b);
     const ois = list.map((c) => Math.log10(1 + c.openInterest)).sort((a, b) => a - b);
     const vols = list.map((c) => Math.log10(1 + c.volume)).sort((a, b) => a - b);
-    const tvpd = list.map((c) => c.timeValuePerDayPct).sort((a, b) => a - b);
+    // Fallback when realised volatility is missing: time value per sqrt(day), also expiry-neutral.
+    const tvRoot = (c) => c.timeValue / Math.sqrt(c.dte) / c.underlyingPrice;
+    const ratios = list.map((c) => c.premiumVsFair ?? tvRoot(c)).sort((a, b) => a - b);
     for (const c of list) {
       const deltaScore = clamp01(1 - Math.abs(c.absDelta - o.deltaSweet) / 0.3);
       // IV cheapness: vs the stock's realised volatility, and vs the rest of the chain.
@@ -167,7 +179,11 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
       const oiScore = pctRank(ois, Math.log10(1 + c.openInterest));
       const volScore = pctRank(vols, Math.log10(1 + c.volume));
       const spreadScore = clamp01(1 - c.spreadPct / o.maxSpreadPct);
-      const premiumScore = 1 - pctRank(tvpd, c.timeValuePerDayPct); // cheaper per day = better
+      // Cheap premium: below fair value is good (0.6x fair -> 1, 1.4x fair -> 0), blended
+      // with how it ranks against the rest of the chain.
+      const ratio = c.premiumVsFair ?? tvRoot(c);
+      const fairScore = c.premiumVsFair == null ? 0.5 : clamp01((1.4 - c.premiumVsFair) / 0.8);
+      const premiumScore = 0.5 * fairScore + 0.5 * (1 - pctRank(ratios, ratio));
       c.scores = { delta: deltaScore, iv: ivScore, premium: premiumScore, openInterest: oiScore, volume: volScore, spread: spreadScore };
       c.ivVsHv = ivVsHv;
       c.score = 0.2 * deltaScore + 0.2 * ivScore + 0.2 * premiumScore + 0.15 * oiScore + 0.125 * volScore + 0.125 * spreadScore;
@@ -186,11 +202,18 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
       c.breakeven = type === "call" ? c.strike + c.ask : c.strike - c.ask;
       c.breakevenMovePct = (c.breakeven / S - 1) * 100;
     }
-    // Best 5 by the combined score, then shown most profitable first.
-    return list
-      .sort((a, b) => b.score - a.score)
-      .slice(0, o.top)
-      .sort((a, b) => b.projectedReturnPct - a.projectedReturnPct);
+    // Best 5 by the combined score, at most maxPerExpiry from any one expiry date,
+    // then shown most profitable first.
+    const perExpiry = {};
+    const chosen = [];
+    for (const c of list.sort((a, b) => b.score - a.score)) {
+      const k = `${c.underlying}|${c.expiration}`;
+      if ((perExpiry[k] || 0) >= o.maxPerExpiry) continue;
+      perExpiry[k] = (perExpiry[k] || 0) + 1;
+      chosen.push(c);
+      if (chosen.length >= o.top) break;
+    }
+    return chosen.sort((a, b) => b.projectedReturnPct - a.projectedReturnPct);
   };
   return { calls: pick("call"), puts: pick("put"), stats, settings: o };
 }

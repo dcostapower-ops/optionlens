@@ -114,8 +114,8 @@ async function fetchAllCandles(symbol, send) {
 
 const optionsCache = new Map(); // key -> { at, result }, kept 5 minutes
 
-async function bestOptions(symbols, { minDays, refresh }) {
-  const key = `${symbols.join(",")}|${minDays}`;
+async function bestOptions(symbols, { minDays, maxDays, refresh }) {
+  const key = `${symbols.join(",")}|${minDays}|${maxDays ?? ""}`;
   const hit = optionsCache.get(key);
   if (!refresh && hit && Date.now() - hit.at < 5 * 60_000) return { ...hit.result, cached: true };
 
@@ -142,7 +142,7 @@ async function bestOptions(symbols, { minDays, refresh }) {
       }
     }),
   );
-  const picked = pickBest(contracts, { hv, minDays });
+  const picked = pickBest(contracts, { hv, minDays, maxDays });
   const result = { ...picked, underlying, errors, symbols, minDays, at: Date.now() };
   optionsCache.set(key, { at: Date.now(), result });
   return result;
@@ -852,7 +852,9 @@ const server = http.createServer(async (req, res) => {
       const bad = symbols.find((s) => !SYMBOL_RE.test(s));
       if (bad) return json(res, 400, { error: `"${bad}" isn't a valid symbol.` });
       if (!MASSIVE_API_KEY) return json(res, 400, { error: "MASSIVE_API_KEY isn't set." });
-      return json(res, 200, await bestOptions(symbols, { minDays: Math.max(1, Number(body.minDays) || OPTION_DEFAULTS.minDays), refresh: Boolean(body.refresh) }));
+      const minDays = Math.max(1, Number(body.minDays) || OPTION_DEFAULTS.minDays);
+      const maxDays = Number(body.maxDays) > 0 ? Math.max(minDays, Number(body.maxDays)) : null;
+      return json(res, 200, await bestOptions(symbols, { minDays, maxDays, refresh: Boolean(body.refresh) }));
     } catch (err) {
       console.error("[options]", err);
       return json(res, 502, { error: err?.message || String(err) });

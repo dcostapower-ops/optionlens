@@ -188,7 +188,8 @@
   <section id="optionsView" hidden>
     <form id="optForm" class="optform" autocomplete="off">
       <input id="optSymbols" type="text" placeholder="NVDA  (or several: NVDA, AAPL, SPY)" />
-      <label>Expiring more than <input id="optDays" type="number" min="1" max="1000" value="60" /> days out</label>
+      <label>Expiring more than <input id="optDays" type="number" min="1" max="2000" value="60" /> days out</label>
+      <label>and at most <input id="optMaxDays" type="number" min="1" max="2000" placeholder="any" /> days (optional)</label>
       <button class="primary" type="submit">Find best options</button>
     </form>
     <div class="ostatus"></div>
@@ -1226,8 +1227,9 @@ async function runOptions(refresh, silent = false) {
   const symbols = silent ? OPT.query.symbols : $("#optSymbols").value.trim();
   if (!symbols) return;
   const days = silent ? OPT.query.days : Number($("#optDays").value) || 60;
+  const maxDays = silent ? OPT.query.maxDays : Number($("#optMaxDays").value) || null;
   if (!silent) {
-    OPT.query = { symbols, days };
+    OPT.query = { symbols, days, maxDays };
     OPT.openTicker = null;
     $(".ostatus").textContent = "Scanning every option contract and scoring them… (large chains can take 10–30 seconds)";
     $(".oresults").innerHTML = "";
@@ -1238,7 +1240,7 @@ async function runOptions(refresh, silent = false) {
     const r = await fetch("/api/options", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols, minDays: days + 1, refresh }), // "more than N days"
+      body: JSON.stringify({ symbols, minDays: days + 1, maxDays, refresh }), // "more than N days"
     });
     if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
     const d = await r.json();
@@ -1279,7 +1281,7 @@ function renderOptions(d, days) {
         <td class="rank">${i + 1}</td>
         <td><b>${multi ? esc(c.underlying) + " " : ""}${fmt(c.strike)} ${type === "call" ? "Call" : "Put"}</b></td>
         <td><b>${esc(exp)}</b><br><small>${c.dte} days</small></td>
-        <td><b>$${fmt(c.ask)}</b> <small>/share</small><br><small>$${c.costPerContract.toFixed(0)} per contract · bid ${fmt(c.bid)}</small><br><small>time value ${c.timeValuePerDayPct.toFixed(3)}%/day</small></td>
+        <td><b>$${fmt(c.ask)}</b> <small>/share</small><br><small>$${c.costPerContract.toFixed(0)} per contract · bid ${fmt(c.bid)}</small><br><small>${c.premiumVsFair != null ? `${c.premiumVsFair.toFixed(2)}× fair value · ` : ""}time value ${c.timeValuePerDayPct.toFixed(3)}%/day</small></td>
         <td class="ret">${retStr(c.projectedReturnPct)}</td>
         <td>${retStr(c.flatReturnPct)}</td>
         <td>${c.delta.toFixed(2)}</td>
@@ -1334,11 +1336,11 @@ function renderOptions(d, days) {
   }
   renderOptLive();
   $(".ohow").innerHTML =
-    `How these are chosen: every contract expiring more than ${days} days out must have a two-sided quote, delta between ${d.settings.deltaMin} and ${d.settings.deltaMax} ` +
+    `How these are chosen: every contract expiring more than ${days} days out${d.settings.maxDays ? ` (and within ${d.settings.maxDays} days)` : ""} must have a two-sided quote, delta between ${d.settings.deltaMin} and ${d.settings.deltaMax} ` +
     `(−${d.settings.deltaMax} to −${d.settings.deltaMin} for puts), open interest of at least ${d.settings.minOpenInterest}, volume of at least ${d.settings.minVolume}, and a bid/ask spread under ${d.settings.maxSpreadPct}%. ` +
     `The rest are scored 0–100: delta (most attractive near ${d.settings.deltaSweet}) 20%, cheap IV (vs the stock's 30-day realized volatility and vs the rest of the chain) 20%, ` +
-    `cheap premium 20% (the time value you pay per day held, as % of the stock price, so different expiry dates compare fairly), ` +
-    `open interest 15%, volume 12.5%, tight spread 12.5%. The 5 best calls and 5 best puts by that score are shown, ordered by <b>estimated return*</b>: ` +
+    `cheap premium 20% (the premium compared with its fair value at the stock's realized volatility; below 1× is cheap; this compares short and long expiries fairly), ` +
+    `open interest 15%, volume 12.5%, tight spread 12.5%. The 5 best calls and 5 best puts by that score are shown, at most ${d.settings.maxPerExpiry} from the same expiry date, ordered by <b>estimated return*</b>: ` +
     `the option is repriced (Black-Scholes, IV unchanged) after a typical favourable 30-day move in the stock (one standard deviation of its realized volatility), bought at the ask. ` +
     `It's an estimate for comparing contracts, not a prediction. Real results depend on the move you actually get, IV changes and fills. ` +
     `Option quotes, greeks, IV, open interest and volume come from your Massive Options Advanced real-time feed and refresh every ${OPT.seconds || "—"} seconds while this page is open.`;

@@ -155,13 +155,16 @@ The **Best Option Chains** menu scans every listed contract expiring more than N
    - delta, best near 0.55: 20%
    - cheap IV, measured against the stock's 30-day realized volatility and against the rest of
      the chain: 20%
-   - cheap premium: 20%. This is the time value paid per day held,
-     (premium minus intrinsic) ÷ days to expiry, as % of the stock price, so different expiries
-     compare fairly.
+   - cheap premium: 20%. This compares the premium with its **fair value**, the
+     Black-Scholes price at the stock's 30-day realized volatility (below 1× is cheap), and with
+     the rest of the chain. Time value grows with the square root of time, so this is neutral
+     between short and long expiries. A per-day cost would always favor far-dated (LEAPS)
+     options.
    - open interest: 15%
    - volume: 12.5%
    - tight spread: 12.5%
-3. **Top 5 by score, ordered most profitable first.** "Estimated return" assumes a typical
+3. **Top 5 by score, at most 2 from the same expiry date, ordered most profitable first.**
+   An optional "at most N days" limit excludes far-dated expiries. "Estimated return" assumes a typical
    favorable 30-day move (one standard deviation of realized volatility). The option is
    repriced with Black-Scholes at its current IV and assumed bought at the ask. It's a common
    yardstick for comparing contracts, not a prediction. The page also shows the return if the
