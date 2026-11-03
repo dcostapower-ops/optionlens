@@ -27,7 +27,7 @@ import {
 } from "./lib/market.mjs";
 import { computeIndicators, SETTINGS as IND_SETTINGS } from "./lib/indicators.mjs";
 import { evaluateCall, summarize, breakdown, RESOLVE_BARS } from "./lib/history.mjs";
-import { fetchChain, fetchDaily, normalizeContract, pickBest, realizedVol, regularSessionOpen, nyDate, fetchOfficialClose, DEFAULTS as OPTION_DEFAULTS } from "./lib/options.mjs";
+import { fetchChain, fetchDaily, fetchAtmTerm, detectEvents, normalizeContract, pickBest, realizedVol, regularSessionOpen, nyDate, fetchOfficialClose, DEFAULTS as OPTION_DEFAULTS } from "./lib/options.mjs";
 import { selfCheck } from "./lib/selfcheck.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -36,7 +36,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv();
 
 const PORT = Number(process.env.PORT || 8790);
-const APP_VERSION = 8; // bump when the page and server must match (page checks it)
+const APP_VERSION = 9; // bump when the page and server must match (page checks it)
 // Set APP_PASSWORD to require a password (needed before putting Stockypower on the web).
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const APP_USER = process.env.APP_USER || "stocky";
@@ -142,12 +142,14 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
   const hv = {};
   const underlying = {};
   const errors = [];
+  const events = {};
   await Promise.all(
     symbols.map(async (symbol) => {
       try {
-        const [chain, daily] = await Promise.all([
+        const daily = await fetchDaily({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol });
+        const [chain, termRaw] = await Promise.all([
           fetchChain({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, minDays }),
-          fetchDaily({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol }),
+          fetchAtmTerm({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, price: daily.at(-1)?.c }),
         ]);
         // 30-day and 1-year realised volatility; each option is judged against the mix
         // that matches its time to expiry.
@@ -177,6 +179,10 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
           contracts: chain.length,
           lastSession: daily.length ? nyDate(daily.at(-1).t) : null,
         };
+        // Earnings and other events, read from the implied-volatility term structure.
+        const ev = detectEvents(termRaw.map((x) => normalizeContract(x, lastClose, closeUsed)), underlying[symbol].price);
+        events[symbol] = ev.events;
+        Object.assign(underlying[symbol], { events: ev.events, eventTerm: ev.term, eventBaseVol: ev.baseVol });
       } catch (err) {
         errors.push(`${symbol}: ${err.message}`);
       }
@@ -188,13 +194,21 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
   // for 30 days, any run in the last 7 days.
   for (const sym of Object.keys(underlying)) {
     const v = stocky[sym];
+    const latest = underlying[sym].lastSession;
     const fresh = horizon === "short"
-      ? Boolean(v?.d1 && v.d1AsOfT && underlying[sym].lastSession && nyDate(v.d1AsOfT) >= underlying[sym].lastSession)
+      ? Boolean(v?.d1 && (!latest || (v.d1AsOfT && nyDate(v.d1AsOfT) >= latest)))
       : Boolean(v?.at);
     underlying[sym].stockyFresh = fresh;
     if (!fresh && autoStocky) requestStockyRun(sym);
   }
-  const picked = pickBest(contracts, { hv, stocky, minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon });
+  // A 5-session trade only uses a 1-day run made on the latest trading day's data.
+  const stockyPick = {};
+  for (const [sym, v] of Object.entries(stocky)) {
+    stockyPick[sym] = horizon === "short" && v.d1 && underlying[sym] && !underlying[sym].stockyFresh
+      ? { ...v, d1: null, d1Target1: null, d1Forecast: null, d1Stale: { at: v.d1At, asOf: v.d1AsOfT ? nyDate(v.d1AsOfT) : null, latest: underlying[sym].lastSession } }
+      : v;
+  }
+  const picked = pickBest(contracts, { hv, stocky: stockyPick, events, minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon });
   for (const sym of Object.keys(underlying)) underlying[sym].stocky = stocky[sym] ?? null;
   const result = { ...picked, underlying, errors, symbols, minDays, at: Date.now(), stockyRuns: stockyRunStatus(symbols), autoStocky: autoStocky && OPTIONS_AUTO_STOCKY };
   optionsCache.set(key, { at: Date.now(), result });

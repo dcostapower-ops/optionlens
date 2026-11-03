@@ -1294,6 +1294,13 @@ async function runOptions(refresh, silent = false) {
   }
 }
 
+// Earnings / events the options market is pricing (from the IV term structure).
+const shortDate = (iso) => (iso ? new Date(iso + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric" }) : "today");
+function eventLine(u) {
+  if (!u.events?.length) return u.eventTerm?.length >= 4 ? `<div class="d">No earnings-type event priced in the next ${Math.round(u.eventTerm.at(-1).days)} days.</div>` : "";
+  return u.events.map((e) => `<div class="d" style="color:#e3b341">⚠ The options price an event (likely earnings) between ${esc(shortDate(e.after))} and ${esc(shortDate(e.by))}: about ±${e.movePct.toFixed(1)}% on the day. Returns include the jump and the IV drop after it.</div>`).join("");
+}
+
 // What the background Stocky run for a symbol is doing.
 function stockyRunLine(sym, u, d) {
   const r = (d.stockyRuns || {})[sym];
@@ -1321,6 +1328,7 @@ function renderOptions(d, days) {
     .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}${u.marketOpen === false ? ` · market closed, using the ${esc(u.closeDate || "")} close` : ""}</div><div class="v">${fmt(u.price)}</div>
       ${u.extendedPrice ? `<div class="d">After-hours / pre-market: <b>${fmt(u.extendedPrice)}</b> (${u.extendedPrice >= u.price ? "+" : ""}${(((u.extendedPrice - u.price) / u.price) * 100).toFixed(2)}%). Options don't trade then, so their prices are from the close and everything here is calculated on the ${fmt(u.price)} close.</div>` : ""}<div class="d">realized volatility: 30-day ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · 1-year ${u.hvLong != null ? (u.hvLong * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div>
       <div class="d">${u.stocky ? `Stocky (${esc(new Date(u.stocky.at).toLocaleDateString([], { month: "short", day: "numeric" }))}): 1 day <b>${esc(u.stocky.d1 || "—")}</b> · 1 week <b>${esc(u.stocky.w1 || "—")}</b>` : `No Stocky analysis in the last 7 days, so "agrees with Stocky" isn't scored yet.`}</div>
+      ${eventLine(u)}
       ${stockyRunLine(sym, u, d)}</div>`)
     .join("");
 
@@ -1344,7 +1352,7 @@ function renderOptions(d, days) {
       return `<tr data-i="${i}" data-type="${type}">
         <td class="rank">${i + 1}</td>
         <td><b>${multi ? esc(c.underlying) + " " : ""}${fmt(c.strike)} ${type === "call" ? "Call" : "Put"}</b><br><small title="Strike vs stock price. ATM = strike within 2% of the price">${c.moneyness}${c.moneyness === "ATM" ? "" : ` ${c.moneynessPct.toFixed(1)}%`}</small></td>
-        <td><b>${esc(exp)}</b><br><small>${c.dte} days</small></td>
+        <td><b>${esc(exp)}</b><br><small>${c.dte} days</small>${c.event ? `<br><small style="color:#e3b341" title="Event priced between ${esc(shortDate(c.event.after))} and ${esc(shortDate(c.event.by))}, about ±${c.event.movePct.toFixed(1)}%">${c.event.beforeExit === "yes" ? `⚠ event before your ${c.event.exitDays}-day exit` : c.event.beforeExit === "maybe" ? `⚠ event may fall before your ${c.event.exitDays}-day exit` : "event after your exit"} · IV then ${(c.event.ivExit * 100).toFixed(0)}% (now ${(c.iv * 100).toFixed(0)}%)</small>` : ""}</td>
         <td><b>$${fmt(c.ask)}</b> <small>/share</small><br><small>$${c.costPerContract.toFixed(0)} per contract · bid ${fmt(c.bid)}</small><br><small>${c.premiumVsFair != null ? `${c.premiumVsFair.toFixed(2)}× fair value · ` : ""}time value ${c.timeValuePerDayPct.toFixed(3)}%/day</small></td>
         <td class="ret">${retStr(c.rankReturnPct ?? c.projectedReturnPct)}${c.shortTerm && c.weightSet === "short"
           ? `<br><small style="font-weight:400">${c.shortTerm.method === "forecast"

@@ -188,6 +188,20 @@ The **Best Option Chains** menu scans every listed contract expiring more than N
    Each row has its own **Expiry** column (date and days left) and **Premium** column (ask per
    share, total per contract, and time value per day).
 
+**Earnings and other events, without an earnings calendar.** Before a known event, options
+that expire after it carry extra implied volatility for that day. The app reads the
+at-the-money IV of every expiry in the next 150 days, turns it into forward variance between
+consecutive expiries, and flags an interval whose forward variance is at least 1.3× the normal
+level with an extra move of at least 3%. The extra variance is the event's; its square root is
+the move the market expects on the day. For every option that expires after the event and
+whose exit (5 sessions, or 30 days) may come after it:
+- the price spread used for the return gets the event jump added;
+- the option is repriced at exit with the event's variance taken out of its IV (the "IV crush").
+
+The stock card and each affected row show the event window, the expected move and the IV after
+it. It's a market-implied estimate: it can't tell earnings from other scheduled news, and a
+window between two expiries is as precise as it gets.
+
 **Outside regular hours** (before 9:30 or after 16:00 New York, or weekends), option quotes
 are frozen at the close, while the stock keeps trading after hours. So the scan uses the
 official regular-session close (`/v1/open-close`) as the stock price for every calculation.
@@ -232,6 +246,10 @@ contract is still in the top 5. Refreshing pauses when you switch menus or hide 
   approve it. Each run is a Stocky session and uses Anthropic credits: untick **Run Stocky
   automatically**, or set `OPTIONS_AUTO_STOCKY=0`, to turn it off. The result also appears
   instantly on the Analyze page.
+
+  **Only a current Stocky run is used for 5 sessions.** The 1-day run must be on the latest
+  trading day's data. An older run isn't used for the 5-session ranking (a fresh one is started
+  automatically, see above); the page says which date it was from.
 
   **Stocky's forecast drives the ranking.** Stocky's latest 1-day run includes a forecast path
   with a low-high range for each session ahead. The app takes the point 5 sessions ahead,

@@ -166,12 +166,17 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
     // Maths, recomputed independently
     const be = c.side === "call" ? c.strike + c.ask : c.strike - c.ask;
     const fair = bs(c.side, S, c.strike, T, o.riskFree, v);
+    // Events before an exit: their variance is added to the move and removed from the IV.
+    const evs = result.underlying?.[c.underlying]?.events || [];
+    const evVar = (days) => evs.filter((e) => c.expiration >= e.by && e.afterDays < days).reduce((a, e) => a + e.eventVar, 0);
+    const ivAfter = (ev) => (ev > 0 ? Math.sqrt(Math.max(c.iv * c.iv * T - ev, 0.25 * c.iv * c.iv * T) / T) : c.iv);
+    const evH = evVar(o.holdDays), ivH = ivAfter(evH);
     const vMove = hvMix(result.underlying?.[c.underlying]?.hv, result.underlying?.[c.underlying]?.hvLong, o.holdDays) ?? c.iv;
-    const mv = vMove * Math.sqrt(o.holdDays / 365);
+    const mv = Math.sqrt(vMove * vMove * (o.holdDays / 365) + evH);
     const S1 = S * Math.exp(c.side === "call" ? mv : -mv);
     const Tl = Math.max(0, (c.dte - o.holdDays) / 365);
-    const proj = ((bs(c.side, S1, c.strike, Tl, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
-    const flat = ((bs(c.side, S, c.strike, Tl, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
+    const proj = ((bs(c.side, S1, c.strike, Tl, o.riskFree, ivH) - c.ask) / c.ask) * 100;
+    const flat = ((bs(c.side, S, c.strike, Tl, o.riskFree, ivH) - c.ask) / c.ask) * 100;
     const be2 = beyond(c.side, S, be, v, T);
     let wSum = 0, tot = 0;
     for (const [k, w] of Object.entries(c.weightSet === "short" ? o.weightsShort : o.weights)) {
@@ -188,6 +193,7 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
       ...(hasHv ? [["fair value", fair, c.fairValue, 0.02, 0.002], ["premium vs fair", c.ask / fair, c.premiumVsFair, 0.005]] : []),
       ...(otm ? [["chance to reach strike", tch, c.touchProb, 0.002]] : []),
       ["chance of profit at expiry", be2, c.beProb, 0.002],
+      ...(evH > 0 ? [["IV after events before a 30-day exit", ivH, c.ivExitHold, 1e-6]] : []),
       ["estimated return %", proj, c.projectedReturnPct, 0.1, 0.002],
       ["if flat 30 days %", flat, c.flatReturnPct, 0.1, 0.002],
       ["score from factor weights", score, c.score, 0.0005],
@@ -196,10 +202,12 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
       const st = c.shortTerm;
       const vS = hvMix(result.underlying?.[c.underlying]?.hv, result.underlying?.[c.underlying]?.hvLong, st.days) ?? c.iv;
       const Ta = Math.max(0, (c.dte - st.days) / 365);
+      const evS = evVar(st.days), ivS = ivAfter(evS);
       const p = touch(S, st.target, vS, st.days / 365);
-      const rT = ((bs(c.side, st.target, c.strike, Ta, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
-      const rF = ((bs(c.side, S, c.strike, Ta, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
+      const rT = ((bs(c.side, st.target, c.strike, Ta, o.riskFree, ivS) - c.ask) / c.ask) * 100;
+      const rF = ((bs(c.side, S, c.strike, Ta, o.riskFree, ivS) - c.ask) / c.ask) * 100;
       maths.push(
+        ...(evS > 0 ? [["IV after events before the 5-session exit", ivS, st.ivExit, 1e-6]] : []),
         ["chance to reach Stocky's target in 5 sessions", p, st.pReach, 0.002],
         ["return if target reached %", rT, st.retTargetPct, 0.1, 0.002],
         ["return if flat 5 sessions %", rF, st.retFlatPct, 0.1, 0.002],
@@ -213,15 +221,16 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
           const z = -6 + i * h;
           const coef = i === 0 || i === n ? 1 : i % 2 ? 4 : 2;
           const wi = coef * Math.exp(-0.5 * z * z);
-          const v = bs(c.side, F * Math.exp(sg * z), c.strike, Ta, o.riskFree, c.iv);
+          const v = bs(c.side, F * Math.exp(sg * z), c.strike, Ta, o.riskFree, ivS);
           ev += wi * v;
           wsum += wi;
           if (v > c.ask) pp += wi;
         }
-        const sgExpected = st.forecastLow > 0 && st.forecastHigh > st.forecastLow ? Math.log(st.forecastHigh / st.forecastLow) / 2 : sg;
+        const sg0 = st.forecastLow > 0 && st.forecastHigh > st.forecastLow ? Math.log(st.forecastHigh / st.forecastLow) / 2 : st.forecastSigmaStocky;
+        const sgExpected = Math.sqrt(sg0 * sg0 + evS);
         maths.push(
           ["forecast spread (log sd)", sgExpected, sg, 1e-9],
-          ["return at Stocky's forecast price %", ((bs(c.side, F, c.strike, Ta, o.riskFree, c.iv) - c.ask) / c.ask) * 100, st.retAtForecastPct, 0.1, 0.002],
+          ["return at Stocky's forecast price %", ((bs(c.side, F, c.strike, Ta, o.riskFree, ivS) - c.ask) / c.ask) * 100, st.retAtForecastPct, 0.1, 0.002],
           ["expected 5-session return from forecast %", ((ev / wsum - c.ask) / c.ask) * 100, st.expectedPct, 0.3, 0.005],
           ["chance in profit after 5 sessions", pp / wsum, st.pProfit, 0.03],
         );
@@ -230,6 +239,27 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
     const bad = maths.filter(([, mine, app, abs, rel]) => !(Number.isFinite(app) && close(mine, app, abs, rel || 0)));
     add("Maths", name, bad.length ? "fail" : "pass",
       bad.length ? bad.map(([n, mine, app]) => `${n}: recomputed ${f2(mine, 4)} vs app ${f2(app, 4)}`).join("; ") : `${maths.length} numbers recomputed independently and match`);
+  }
+
+  // 3b. Events from the IV term structure, recomputed independently.
+  for (const [sym, u] of Object.entries(result.underlying || {})) {
+    const term = u.eventTerm || [];
+    if (term.length < 4) {
+      add("Inputs", `${sym}: events (earnings) from IV term structure`, "warn", `only ${term.length} expiries near the money; can't look for events`);
+      continue;
+    }
+    let pw = 0, pt = 0;
+    const fv = term.map((p) => { const T = p.days / 365, w = p.iv * p.iv * T, f = (w - pw) / (T - pt); pw = w; pt = T; return f; });
+    const base = [...fv].sort((a, b) => a - b)[Math.floor((fv.length - 1) / 2)];
+    let pT = 0;
+    const flagged = term.map((p, i) => { const T = p.days / 365, dT = T - pT; pT = T; return fv[i] > base * 1.3 && (fv[i] - base) * dT >= 0.03 ** 2 ? (fv[i] - base) * dT : 0; });
+    const mineTotal = flagged.reduce((a, b) => a + b, 0);
+    const appTotal = (u.events || []).reduce((a, e) => a + e.eventVar, 0);
+    const ok = Math.abs(mineTotal - appTotal) < 1e-9 && (u.events || []).every((e) => Math.abs(e.movePct - Math.sqrt(e.eventVar) * 100) < 1e-9);
+    add("Inputs", `${sym}: events (earnings) from IV term structure`, ok ? "pass" : "fail",
+      `${term.length} expiries; normal IV ${(Math.sqrt(base) * 100).toFixed(1)}%; ` +
+        ((u.events || []).length ? u.events.map((e) => `event between ${e.after || "today"} and ${e.by}, about ±${e.movePct.toFixed(1)}%`).join("; ") : "no event found") +
+        (ok ? "" : ` (recomputed event variance ${mineTotal.toFixed(6)} vs app ${appTotal.toFixed(6)})`));
   }
 
   // 4. Selection and ordering.

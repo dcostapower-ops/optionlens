@@ -76,6 +76,73 @@ export function probBeyond(type, S, level, sigma, T) {
   return type === "call" ? normCdf(z) : normCdf(-z);
 }
 
+// ── Events (earnings and the like) from the implied-volatility term structure ──
+//
+// No earnings calendar is needed: before a known event, options expiring after it carry extra
+// implied volatility for the event day. Total implied variance (IV² × T) then jumps between the
+// last expiry before the event and the first one after it. Forward variance between consecutive
+// expiries shows the jump; the excess over the normal level is the event's variance, and its
+// square root is the one-day move the market is pricing.
+export const EVENT_RULES = { minDays: 2, minRatio: 1.3, minMove: 0.03 };
+
+export function detectEvents(contracts, S, now = Date.now(), rules = EVENT_RULES) {
+  const byExp = new Map();
+  for (const c of contracts) {
+    if (!c || !(c.iv > 0) || !c.expiration || !(c.strike > 0)) continue;
+    const days = (Date.parse(c.expiration + "T21:00:00Z") - now) / 864e5;
+    if (days < rules.minDays) continue; // the last couple of days are too noisy
+    if (!byExp.has(c.expiration)) byExp.set(c.expiration, { days, items: [] });
+    byExp.get(c.expiration).items.push(c);
+  }
+  const term = [];
+  for (const [expiration, { days, items }] of byExp) {
+    // At-the-money IV: the strike closest to the stock price, calls and puts averaged.
+    const dist = Math.min(...items.map((c) => Math.abs(c.strike - S)));
+    const atm = items.filter((c) => Math.abs(c.strike - S) <= dist + 1e-9);
+    term.push({ expiration, days, iv: atm.reduce((a, c) => a + c.iv, 0) / atm.length });
+  }
+  term.sort((a, b) => a.days - b.days);
+  return { term, ...eventsFromTerm(term, rules) };
+}
+
+export function eventsFromTerm(term, rules = EVENT_RULES) {
+  if (term.length < 4) return { baseVol: null, events: [] };
+  const fwd = [];
+  let pw = 0, pt = 0, pexp = null, pdays = 0;
+  for (const p of term) {
+    const T = p.days / 365, w = p.iv * p.iv * T;
+    fwd.push({ after: pexp, by: p.expiration, afterDays: pdays, byDays: p.days, dT: T - pt, fv: (w - pw) / (T - pt) });
+    pw = w; pt = T; pexp = p.expiration; pdays = p.days;
+  }
+  const sorted = fwd.map((f) => f.fv).sort((a, b) => a - b);
+  const base = sorted[Math.floor((sorted.length - 1) / 2)]; // normal (non-event) variance rate
+  if (!(base > 0)) return { baseVol: null, events: [] };
+  const events = [];
+  for (const f of fwd) {
+    const extra = (f.fv - base) * f.dT;
+    if (!(f.fv > base * rules.minRatio && extra >= rules.minMove ** 2)) continue;
+    const last = events.at(-1);
+    if (last && last.by === f.after) Object.assign(last, { by: f.by, byDays: f.byDays, eventVar: last.eventVar + extra }); // merge neighbours
+    else events.push({ after: f.after, by: f.by, afterDays: f.afterDays, byDays: f.byDays, eventVar: extra });
+  }
+  for (const e of events) e.movePct = Math.sqrt(e.eventVar) * 100;
+  return { baseVol: Math.sqrt(base), events };
+}
+
+// Events an option is exposed to before an exit `exitDays` from now: the option must expire
+// after the event window, and the window must start before the exit ("maybe" if it ends after).
+export function eventsBeforeExit(events, c, exitDays) {
+  return (events || []).filter((e) => c.expiration >= e.by && e.afterDays < exitDays).map((e) => ({ ...e, sure: e.byDays <= exitDays }));
+}
+
+// IV left after the events have passed: their variance comes out of the option's total.
+// Floored at half the current IV so a noisy reading can't produce nonsense.
+export function ivAfterEvents(iv, dte, eventVar) {
+  if (!(eventVar > 0)) return iv;
+  const T = dte / 365;
+  return Math.sqrt(Math.max(iv * iv * T - eventVar, 0.25 * iv * iv * T) / T);
+}
+
 // The point of Stocky's daily forecast path `sessions` bars ahead (or the last one if shorter).
 export function forecastPoint(path, sessions) {
   if (!Array.isArray(path) || !path.length) return null;
@@ -115,9 +182,21 @@ export function realizedVol(dailyBars, days = 30) {
 // Every contract for `symbol` expiring on/after minDays from today, following pages.
 export async function fetchChain({ base, apiKey, symbol, minDays }) {
   const from = ymd(new Date(Date.now() + minDays * 864e5));
-  let url = `${base}/v3/snapshot/options/${encodeURIComponent(symbol)}?expiration_date.gte=${from}&limit=250`;
+  return fetchSnapshotPages({ base, apiKey, symbol, url: `${base}/v3/snapshot/options/${encodeURIComponent(symbol)}?expiration_date.gte=${from}&limit=250`, maxPages: 80 });
+}
+
+// Near-the-money contracts of every expiry in the next `maxDays` days: enough to read the
+// implied-volatility term structure (used to spot earnings and other events).
+export async function fetchAtmTerm({ base, apiKey, symbol, price, maxDays = 150 }) {
+  if (!(price > 0)) return [];
+  const to = ymd(new Date(Date.now() + maxDays * 864e5));
+  const url = `${base}/v3/snapshot/options/${encodeURIComponent(symbol)}?strike_price.gte=${(price * 0.95).toFixed(2)}&strike_price.lte=${(price * 1.05).toFixed(2)}&expiration_date.lte=${to}&limit=250`;
+  return fetchSnapshotPages({ base, apiKey, symbol, url, maxPages: 20 }).catch(() => []);
+}
+
+async function fetchSnapshotPages({ base, apiKey, symbol, url, maxPages }) {
   const out = [];
-  for (let page = 0; page < 80 && url; page++) {
+  for (let page = 0; page < maxPages && url; page++) {
     const r = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(30_000) });
     if (r.status === 401 || r.status === 403)
       throw new Error(`Massive refused the options chain for ${symbol} (HTTP ${r.status}). Check that this API key includes your options plan.`);
@@ -199,7 +278,7 @@ export const STRIKE_PREFS = {
   itm: { label: "In the money", deltaMin: 0.45, deltaMax: 0.85, deltaSweet: 0.65, exclude: "otm" },
 };
 
-export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ...opts } = {}) {
+export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = Date.now(), ...opts } = {}) {
   const pref = STRIKE_PREFS[opts.strikePref] ? opts.strikePref : "balanced";
   const { label: _l, exclude: _e, ...prefDelta } = STRIKE_PREFS[pref];
   const o = { ...DEFAULTS, ...prefDelta, ...opts, strikePref: pref, strikePrefLabel: STRIKE_PREFS[pref].label, excludeMoneyness: STRIKE_PREFS[pref].exclude ?? null };
@@ -273,6 +352,7 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
     // Why a symbol has no 5-session trade on this side (for the page).
     const noShortReason = (sym) => {
       const sv = stocky[sym];
+      if (sv?.d1Stale) return `Stocky's latest 1-day run for ${sym} uses data up to ${sv.d1Stale.asOf || "an earlier day"}, not the latest trading day (${sv.d1Stale.latest}), so it isn't used for a 5-session trade (see the status under the stock price above)`;
       if (!sv || !sv.d1) return `Stocky hasn't analysed ${sym} on the 1-day timeframe in the last 7 days (see the status under the stock price above)`;
       if (sv.d1 !== wantSig) return `Stocky's latest 1-day call for ${sym} is ${sv.d1}, so there's no ${type === "call" ? "upside" : "downside"} target to trade${sv.d1 === (type === "call" ? "SELL" : "BUY") ? `; see the ${type === "call" ? "puts" : "calls"}` : ""}`;
       return `Stocky's 1-day target for ${sym} isn't ${type === "call" ? "above" : "below"} the current price`;
@@ -293,6 +373,22 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
       // Short-term scenario: Stocky's 1-day Target 1 reached within shortDays (if Stocky's
       // latest daily call points this option's way and its target is on the right side).
       c.shortTerm = null;
+      // Events (e.g. earnings) between now and the exit: the price can jump on the day, and the
+      // option's IV drops afterwards. Both are priced in.
+      const evShort = eventsBeforeExit(events[c.underlying], c, o.shortDays);
+      const evHold = eventsBeforeExit(events[c.underlying], c, o.holdDays);
+      const evVarShort = evShort.reduce((a, e) => a + e.eventVar, 0);
+      const evVarHold = evHold.reduce((a, e) => a + e.eventVar, 0);
+      const ivExitShort = ivAfterEvents(c.iv, c.dte, evVarShort);
+      const ivExitHold = ivAfterEvents(c.iv, c.dte, evVarHold);
+      const evAll = (events[c.underlying] || []).filter((e) => c.expiration >= e.by);
+      const exitDays = shortMode ? o.shortDays : o.holdDays;
+      const evExit = shortMode ? evShort : evHold;
+      c.event = evAll.length
+        ? { by: evAll[0].by, after: evAll[0].after, movePct: evAll[0].movePct, beforeExit: evExit.length ? (evExit.every((e) => e.sure) ? "yes" : "maybe") : "no", exitDays, ivExit: shortMode ? ivExitShort : ivExitHold }
+        : null;
+      c.ivExitHold = ivExitHold;
+      c.eventVarHold = evVarHold;
       const sv0 = stocky[c.underlying];
       const tgt = sv0?.d1Target1;
       if (shortMode && sv0?.d1 === want && Number.isFinite(tgt) && (type === "call" ? tgt > S : tgt < S)) {
@@ -300,23 +396,25 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
         const vol = hvFor(hv[c.underlying], days) ?? c.iv;
         const Tafter = Math.max(0, (c.dte - days) / 365);
         const pReach = probTouch(S, tgt, vol, days / 365);
-        const retTarget = ((bsPrice(type, tgt, c.strike, Tafter, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
-        const retFlat = ((bsPrice(type, S, c.strike, Tafter, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
-        c.shortTerm = { method: "target", target: tgt, days, pReach, retTargetPct: retTarget, retFlatPct: retFlat, expectedPct: pReach * retTarget + (1 - pReach) * retFlat, targetAt: sv0.d1At };
+        const retTarget = ((bsPrice(type, tgt, c.strike, Tafter, o.riskFree, ivExitShort) - c.ask) / c.ask) * 100;
+        const retFlat = ((bsPrice(type, S, c.strike, Tafter, o.riskFree, ivExitShort) - c.ask) / c.ask) * 100;
+        c.shortTerm = { method: "target", target: tgt, days, pReach, retTargetPct: retTarget, retFlatPct: retFlat, expectedPct: pReach * retTarget + (1 - pReach) * retFlat, targetAt: sv0.d1At, ivExit: ivExitShort, eventVar: evVarShort };
         // Stocky's forecast: where it expects the price after ~5 sessions, and how sure it is
         // (its low-high range, taken as about one standard deviation). The option is repriced
         // across that spread of prices; the average is the expected return.
         const fp = forecastPoint(sv0.d1Forecast, o.shortSessions);
         if (fp) {
-          const sig = fp.low > 0 && fp.high > fp.low ? Math.log(fp.high / fp.low) / 2 : vol * Math.sqrt(days / 365);
-          const { ev, pProfit } = expectedValue((x) => bsPrice(type, x, c.strike, Tafter, o.riskFree, c.iv), fp.price, sig, c.ask);
+          const sig0 = fp.low > 0 && fp.high > fp.low ? Math.log(fp.high / fp.low) / 2 : vol * Math.sqrt(days / 365);
+          const sig = Math.sqrt(sig0 * sig0 + evVarShort); // plus the event-day jump, if any
+          const { ev, pProfit } = expectedValue((x) => bsPrice(type, x, c.strike, Tafter, o.riskFree, ivExitShort), fp.price, sig, c.ask);
           Object.assign(c.shortTerm, {
             method: "forecast",
             forecastPrice: fp.price,
             forecastLow: fp.low,
             forecastHigh: fp.high,
             forecastSigma: sig,
-            retAtForecastPct: ((bsPrice(type, fp.price, c.strike, Tafter, o.riskFree, c.iv) - c.ask) / c.ask) * 100,
+            forecastSigmaStocky: sig0,
+            retAtForecastPct: ((bsPrice(type, fp.price, c.strike, Tafter, o.riskFree, ivExitShort) - c.ask) / c.ask) * 100,
             pProfit,
             expectedPct: ((ev - c.ask) / c.ask) * 100,
           });
@@ -324,11 +422,13 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
       }
 
       // Profit estimate: favourable 1-sigma move over holdDays, IV unchanged, buy at ask, value at mid.
-      const sigmaMove = (c.hvMove ?? c.hv ?? c.iv) * Math.sqrt(o.holdDays / 365); // typical move over the holding period
+      // Events before the exit add their jump to the move and take their IV out of the exit price.
+      const hm = c.hvMove ?? c.hv ?? c.iv;
+      const sigmaMove = Math.sqrt(hm * hm * (o.holdDays / 365) + evVarHold); // typical move over the holding period
       const S1 = S * Math.exp(type === "call" ? sigmaMove : -sigmaMove);
       const Tleft = Math.max(0, (c.dte - o.holdDays) / 365);
-      const vMove = bsPrice(type, S1, c.strike, Tleft, o.riskFree, c.iv);
-      const vFlat = bsPrice(type, S, c.strike, Tleft, o.riskFree, c.iv);
+      const vMove = bsPrice(type, S1, c.strike, Tleft, o.riskFree, ivExitHold);
+      const vFlat = bsPrice(type, S, c.strike, Tleft, o.riskFree, ivExitHold);
       c.scenario = { holdDays: o.holdDays, movePct: (S1 / S - 1) * 100, targetPrice: S1 };
       c.projectedReturnPct = ((vMove - c.ask) / c.ask) * 100;
       c.flatReturnPct = ((vFlat - c.ask) / c.ask) * 100;
