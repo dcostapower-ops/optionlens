@@ -159,8 +159,11 @@ The **Best Option Chains** menu scans every listed contract expiring more than N
    - cheap IV, measured against the stock's 30-day realized volatility and against the rest of
      the chain: 20%
    - cheap premium: 20%. This compares the premium with its **fair value**, the
-     Black-Scholes price at the stock's 30-day realized volatility (below 1× is cheap), and with
-     the rest of the chain. Time value grows with the square root of time, so this is neutral
+     Black-Scholes price at the stock's realized volatility over a **matching horizon** (below 1×
+     is cheap), and with the rest of the chain. Near expiries use the 30-day realized volatility,
+     shifting to the 1-year figure as expiry approaches a year out, so a spike in recent movement
+     doesn't make far-dated options look artificially cheap. The probability-of-touch rule uses
+     the same matched volatility. Time value grows with the square root of time, so this is neutral
      between short and long expiries. A per-day cost would always favor far-dated (LEAPS)
      options.
    - open interest: 15%
@@ -175,7 +178,9 @@ The **Best Option Chains** menu scans every listed contract expiring more than N
    Each row has its own **Expiry** column (date and days left) and **Premium** column (ask per
    share, total per contract, and time value per day).
 
-Click a row for its score breakdown and greeks.
+Click a row for its score breakdown and greeks. **Compare expiry dates** lists the best call
+and put on every expiry date with each factor's score, so you can see why some dates were
+picked and others weren't.
 
 **Live:** quotes, greeks, IV, open interest and volume come from the Massive Options Advanced
 real-time feed. While results are on screen, the scan reruns every `OPTIONS_REFRESH_SECONDS`

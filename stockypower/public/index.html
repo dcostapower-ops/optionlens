@@ -116,7 +116,10 @@
   .ostatus { font-size: 13px; color: var(--muted); }
   .ounder { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
   .ounder .hcard { min-width: 180px; }
-  .otable td, .otable th { font-size: 13px; }
+  .otable td, .otable th { font-size: 12.5px; padding: 6px 6px; }
+  .otable th { white-space: normal; vertical-align: bottom; line-height: 1.25; min-width: 48px; }
+  #optionsView .tablewrap { overflow-x: auto; }
+  body.wide main { max-width: 1440px; }
   .otable tr.sel td { background: #1f2a3a; }
   .otable .rank { font-weight: 700; color: var(--muted); }
   .ret { font-weight: 700; }
@@ -1000,6 +1003,7 @@ function showView(view) {
   $("#historyView").hidden = view !== "history";
   $("#analyzeView").hidden = view !== "analyze";
   $("#optionsView").hidden = view !== "options";
+  document.body.classList.toggle("wide", view === "options"); // the option tables need the room
   if (view === "history") loadHistoryView();
   if (view === "options" && !$("#optSymbols").value) {
     const last = $("#results .card")?._state?.symbol;
@@ -1272,7 +1276,7 @@ function renderOptions(d, days) {
     (d.errors?.length ? `<div class="error">${esc(d.errors.join(" · "))}</div>` : "");
   $("#optAgain").onclick = () => runOptions(true);
   $(".ounder").innerHTML = Object.entries(d.underlying || {})
-    .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}</div><div class="v">${fmt(u.price)}</div><div class="d">30-day realized volatility ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div></div>`)
+    .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}</div><div class="v">${fmt(u.price)}</div><div class="d">realized volatility: 30-day ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · 1-year ${u.hvLong != null ? (u.hvLong * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div></div>`)
     .join("");
 
   const multi = (d.symbols || []).length > 1;
@@ -1301,11 +1305,29 @@ function renderOptions(d, days) {
       <th title="Ask price per share; x100 per contract. Time value per day = (premium minus intrinsic value) / days to expiry, as % of the stock price">Premium</th>
       <th title="Estimated return on the premium if the stock makes a typical favourable move (1 standard deviation) in 30 days">Est. return*</th>
       <th title="Return if the stock is unchanged after 30 days (time decay)">If flat 30d</th><th>Delta</th><th>IV</th>
-      <th>Open interest</th><th>Volume</th><th>Spread</th><th title="Chance the stock reaches the strike at any time before expiry (out-of-the-money contracts), based on its realized volatility">Chance to reach strike before expiry</th><th title="Breakeven at expiry, and the chance the stock finishes beyond it (the option pays off if held to expiry)">Breakeven</th><th title="Combined attractiveness score, 0-100">Score</th>
+      <th>Open interest</th><th>Volume</th><th>Spread</th><th title="Chance the stock reaches the strike at any time before expiry (out-of-the-money contracts), based on its realized volatility">Reach strike before expiry</th><th title="Breakeven at expiry, and the chance the stock finishes beyond it (the option pays off if held to expiry)">Breakeven</th><th title="Combined attractiveness score, 0-100">Score</th>
       </tr></thead><tbody>${rows}</tbody></table></div></div>`;
   };
+  // Per-expiry comparison: the best call / put on every expiry date and why it scored as it did.
+  const expTable = (title, list) => {
+    if (!list?.length) return "";
+    const pct0 = (v) => Math.round(v * 100);
+    return `<h3 class="hsec">${title}</h3><div class="tablewrap"><table class="otable"><thead><tr>
+      <th>Expiry</th><th>Best contract</th><th>Score</th><th>Delta</th><th>Cheap IV</th><th>Cheap premium</th><th>Open int.</th><th>Volume</th><th>Spread</th>
+      <th>Premium vs fair</th><th>Est. return*</th><th>In top 5?</th></tr></thead><tbody>${list.map((c) => {
+        const exp = new Date(c.expiration + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+        return `<tr${c.picked ? ' class="sel"' : ""}><td><b>${esc(exp)}</b><br><small>${c.dte} days</small></td>
+          <td>${(d.symbols || []).length > 1 ? esc(c.underlying) + " " : ""}${fmt(c.strike)} <small>${c.moneyness}</small><br><small>$${fmt(c.ask)} · OI ${c.openInterest.toLocaleString()}</small></td>
+          <td><b>${pct0(c.score)}</b></td><td>${pct0(c.scores.delta)}</td><td>${pct0(c.scores.iv)}</td><td>${pct0(c.scores.premium)}</td>
+          <td>${pct0(c.scores.openInterest)}</td><td>${pct0(c.scores.volume)}</td><td>${pct0(c.scores.spread)}</td>
+          <td>${c.premiumVsFair != null ? c.premiumVsFair.toFixed(2) + "×" : "—"}</td><td>${retStr(c.projectedReturnPct)}</td><td>${c.picked ? "✓" : ""}</td></tr>`;
+      }).join("")}</tbody></table></div>`;
+  };
   $(".oresults").innerHTML =
-    table("Best 5 calls to buy · most profitable first", d.calls, "call") + table("Best 5 puts to buy · most profitable first", d.puts, "put");
+    table("Best 5 calls to buy · most profitable first", d.calls, "call") + table("Best 5 puts to buy · most profitable first", d.puts, "put") +
+    `<details class="hbox" style="margin-bottom:14px"><summary><b>Compare expiry dates</b>: the best contract on every expiry date, and why dates were or weren't picked</summary>
+      <p class="hhow">Factor scores are 0–100 (higher is better). Only contracts that passed the filters appear. An expiry date can be missing if none of its contracts passed.</p>
+      ${expTable("Calls by expiry date", d.callsByExpiry)}${expTable("Puts by expiry date", d.putsByExpiry)}</details>`;
   $(".oresults").onclick = (ev) => {
     const tr = ev.target.closest("tr[data-i]");
     if (!tr) return;
@@ -1346,7 +1368,7 @@ function renderOptions(d, days) {
     `Out-of-the-money contracts are only kept if the stock has at least a ${Math.round(d.settings.minTouchProb * 100)}% chance of reaching the strike at some point before expiry ` +
     `(probability of touch, from the stock's 30-day realized volatility and the time left). The breakeven column also shows the chance of finishing beyond breakeven at expiry. ` +
     `The rest are scored 0–100: delta (most attractive near ${d.settings.deltaSweet}) 20%, cheap IV (vs the stock's 30-day realized volatility and vs the rest of the chain) 20%, ` +
-    `cheap premium 20% (the premium compared with its fair value at the stock's realized volatility; below 1× is cheap; this compares short and long expiries fairly), ` +
+    `cheap premium 20% (the premium compared with its fair value at the stock's realized volatility over a matching horizon: recent 30-day movement for near expiries, increasingly the 1-year movement for far ones; below 1× is cheap), ` +
     `open interest 15%, volume 12.5%, tight spread 12.5%. The 5 best calls and 5 best puts by that score are shown, at most ${d.settings.maxPerExpiry} from the same expiry date, ordered by <b>estimated return*</b>: ` +
     `the option is repriced (Black-Scholes, IV unchanged) after a typical favourable 30-day move in the stock (one standard deviation of its realized volatility), bought at the ask. ` +
     `It's an estimate for comparing contracts, not a prediction. Real results depend on the move you actually get, IV changes and fills. ` +

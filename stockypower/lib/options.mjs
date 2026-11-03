@@ -143,6 +143,19 @@ function pctRank(sorted, v) {
 }
 
 // contracts: normalized; hv: realised vol by underlying; returns { calls, puts, stats }.
+// Realised volatility matched to a horizon: near-dated options are judged against the
+// last 30 days of movement, longer-dated ones increasingly against the last year.
+// hv[symbol] is { short: 30-day, long: 1-year } (a plain number is used as-is).
+export function hvFor(hvEntry, days) {
+  if (hvEntry == null) return null;
+  if (typeof hvEntry === "number") return hvEntry;
+  const { short, long } = hvEntry;
+  if (!short) return long ?? null;
+  if (!long) return short;
+  const w = Math.max(0, Math.min(1, (days - 30) / 335)); // 30 days -> all short, 365+ -> all long
+  return short * (1 - w) + long * w;
+}
+
 export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {}) {
   const o = { ...DEFAULTS, ...opts };
   const stats = { scanned: contracts.length, rejected: {} };
@@ -172,7 +185,7 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
     // actual recent (realised) volatility. Time value grows with the square root of
     // time, so this compares short and long expiries fairly; per-day cost does not
     // (it always makes long-dated options look cheaper).
-    const hvU = hv[c.underlying] ?? null;
+    const hvU = hvFor(hv[c.underlying], dte); // matched to this option's time to expiry
     const fair = hvU ? bsPrice(c.type, c.underlyingPrice, c.strike, dte / 365, o.riskFree, hvU) : null;
     const premiumVsFair = fair > 0 ? c.ask / fair : null;
     // Chances, using how much the stock actually moves (realised vol; IV if missing):
@@ -188,10 +201,11 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
       reject(`out of the money with under ${Math.round(o.minTouchProb * 100)}% chance to reach the strike before expiry`);
       continue;
     }
-    usable.push({ ...c, dte, absDelta, spreadPct, hv: hvU, intrinsic, timeValue, timeValuePerDayPct, fairValue: fair, premiumVsFair, otm, touchProb, beProb });
+    usable.push({ ...c, dte, absDelta, spreadPct, hv: hvU, hvMove: hvFor(hv[c.underlying], o.holdDays), intrinsic, timeValue, timeValuePerDayPct, fairValue: fair, premiumVsFair, otm, touchProb, beProb });
   }
   stats.passed = usable.length;
 
+  const byExpiry = { call: [], put: [] };
   const pick = (type) => {
     const list = usable.filter((c) => c.type === type);
     if (!list.length) return [];
@@ -221,7 +235,7 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
 
       // Profit estimate: favourable 1-sigma move over holdDays, IV unchanged, buy at ask, value at mid.
       const S = c.underlyingPrice;
-      const sigmaMove = (c.hv ?? c.iv) * Math.sqrt(o.holdDays / 365);
+      const sigmaMove = (c.hvMove ?? c.hv ?? c.iv) * Math.sqrt(o.holdDays / 365); // typical move over the holding period
       const S1 = S * Math.exp(type === "call" ? sigmaMove : -sigmaMove);
       const Tleft = Math.max(0, (c.dte - o.holdDays) / 365);
       const vMove = bsPrice(type, S1, c.strike, Tleft, o.riskFree, c.iv);
@@ -237,6 +251,14 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
       c.moneynessPct = (Math.abs(S - c.strike) / S) * 100;
       c.moneyness = c.moneynessPct <= 2 ? "ATM" : inMoney > 0 ? "ITM" : "OTM";
     }
+    // Best contract on each expiry date, so the page can show why dates won or lost.
+    const bestByExpiry = new Map();
+    for (const c of list) {
+      const k = `${c.underlying}|${c.expiration}`;
+      if (!bestByExpiry.has(k) || bestByExpiry.get(k).score < c.score) bestByExpiry.set(k, c);
+    }
+    byExpiry[type] = [...bestByExpiry.values()].sort((a, b) => a.dte - b.dte || a.underlying.localeCompare(b.underlying));
+
     // Best 5 by the combined score, at most maxPerExpiry from any one expiry date,
     // then shown most profitable first.
     const perExpiry = {};
@@ -250,11 +272,14 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
     }
     return chosen.sort((a, b) => b.projectedReturnPct - a.projectedReturnPct);
   };
-  return { calls: pick("call"), puts: pick("put"), stats, settings: o };
+  const calls = pick("call");
+  const puts = pick("put");
+  const mark = (arr, chosenList) => arr.map((c) => ({ ...c, picked: chosenList.includes(c) }));
+  return { calls, puts, callsByExpiry: mark(byExpiry.call, calls), putsByExpiry: mark(byExpiry.put, puts), stats, settings: o };
 }
 
 // Recent daily bars for realised volatility and a fallback underlying price.
-export async function fetchDaily({ base, apiKey, symbol, days = 120 }) {
+export async function fetchDaily({ base, apiKey, symbol, days = 400 }) {
   const to = ymd(new Date(Date.now() + 864e5));
   const from = ymd(new Date(Date.now() - days * 864e5));
   const r = await fetch(`${base}/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/day/${from}/${to}?adjusted=true&sort=asc&limit=5000`, {

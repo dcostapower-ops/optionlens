@@ -130,13 +130,15 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, refresh })
           fetchChain({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, minDays }),
           fetchDaily({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol }),
         ]);
-        hv[symbol] = realizedVol(daily, 30);
+        // 30-day and 1-year realised volatility; each option is judged against the mix
+        // that matches its time to expiry.
+        hv[symbol] = { short: realizedVol(daily, 30), long: realizedVol(daily, Math.min(252, daily.length - 1)) };
         const lastClose = daily.at(-1)?.c ?? null;
         for (const x of chain) {
           const c = normalizeContract(x, lastClose);
           if (c) contracts.push({ ...c, underlying: c.underlying || symbol });
         }
-        underlying[symbol] = { price: contracts.find((c) => c.underlying === symbol)?.underlyingPrice ?? lastClose, hv: hv[symbol], contracts: chain.length };
+        underlying[symbol] = { price: contracts.find((c) => c.underlying === symbol)?.underlyingPrice ?? lastClose, hv: hv[symbol].short, hvLong: hv[symbol].long, contracts: chain.length };
       } catch (err) {
         errors.push(`${symbol}: ${err.message}`);
       }
