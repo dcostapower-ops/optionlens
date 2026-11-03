@@ -188,6 +188,11 @@ The **Best Option Chains** menu scans every listed contract expiring more than N
    Each row has its own **Expiry** column (date and days left) and **Premium** column (ask per
    share, total per contract, and time value per day).
 
+**Outside regular hours** (before 9:30 or after 16:00 New York, or weekends), option quotes
+are frozen at the close, while the stock keeps trading after hours. So the scan uses the
+official regular-session close (`/v1/open-close`) as the stock price for every calculation.
+The after-hours / pre-market price is shown separately.
+
 Click a row for its score breakdown and greeks. **Compare expiry dates** lists the best call
 and put on every expiry date with each factor's score, so you can see why some dates were
 picked and others weren't.

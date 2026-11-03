@@ -1303,7 +1303,8 @@ function renderOptions(d, days) {
   $("#optAgain").onclick = () => runOptions(true);
   $("#optCheck").onclick = () => runSelfCheck();
   $(".ounder").innerHTML = Object.entries(d.underlying || {})
-    .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}</div><div class="v">${fmt(u.price)}</div><div class="d">realized volatility: 30-day ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · 1-year ${u.hvLong != null ? (u.hvLong * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div>
+    .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}${u.marketOpen === false ? ` · market closed, using the ${esc(u.closeDate || "")} close` : ""}</div><div class="v">${fmt(u.price)}</div>
+      ${u.extendedPrice ? `<div class="d">After-hours / pre-market: <b>${fmt(u.extendedPrice)}</b> (${u.extendedPrice >= u.price ? "+" : ""}${(((u.extendedPrice - u.price) / u.price) * 100).toFixed(2)}%). Options don't trade then, so their prices are from the close and everything here is calculated on the ${fmt(u.price)} close.</div>` : ""}<div class="d">realized volatility: 30-day ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · 1-year ${u.hvLong != null ? (u.hvLong * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div>
       <div class="d">${u.stocky ? `Stocky (${esc(new Date(u.stocky.at).toLocaleDateString([], { month: "short", day: "numeric" }))}): 1 day <b>${esc(u.stocky.d1 || "—")}</b> · 1 week <b>${esc(u.stocky.w1 || "—")}</b>` : `No Stocky analysis in the last 7 days, so "agrees with Stocky" isn't scored. Run it on the Analyze page to include it.`}</div></div>`)
     .join("");
 

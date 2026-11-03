@@ -108,7 +108,9 @@ export async function fetchChain({ base, apiKey, symbol, minDays }) {
 }
 
 // Flattens one snapshot result into what we score. Returns null if unusable.
-export function normalizeContract(x, underlyingFallback) {
+// underlyingForce: when the market is closed, option quotes are frozen at the close, so the
+// stock price used with them must be the official close too (not an after-hours trade).
+export function normalizeContract(x, underlyingFallback, underlyingForce = null) {
   const d = x?.details ?? {};
   const type = String(d.contract_type || "").toLowerCase();
   if (type !== "call" && type !== "put") return null;
@@ -133,7 +135,7 @@ export function normalizeContract(x, underlyingFallback) {
     ask,
     mid,
     last: Number(x.last_trade?.price) || Number(x.day?.close) || null,
-    underlyingPrice: Number(x.underlying_asset?.price) || underlyingFallback || null,
+    underlyingPrice: underlyingForce || Number(x.underlying_asset?.price) || underlyingFallback || null,
   };
 }
 
@@ -402,4 +404,36 @@ export async function fetchDaily({ base, apiKey, symbol, days = 400 }) {
   if (!r.ok) return [];
   const body = await r.json();
   return (body.results ?? []).map((b) => ({ t: Math.floor(b.t / 1000), c: b.c }));
+}
+
+// ── Market session ───────────────────────────────────────────────────────────
+
+const nyParts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+function ny(ms) {
+  const p = Object.fromEntries(nyParts.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, min: (+p.hour % 24) * 60 + +p.minute, weekday: p.weekday };
+}
+
+// Regular US session (09:30-16:00 New York, Mon-Fri). Holidays aren't detected; on a holiday
+// the latest daily bar is the previous session anyway, so the close used is still right.
+export function regularSessionOpen(ms = Date.now()) {
+  const t = ny(ms);
+  return !["Sat", "Sun"].includes(t.weekday) && t.min >= 9 * 60 + 30 && t.min < 16 * 60;
+}
+
+export const nyDate = (unixSeconds) => ny(unixSeconds * 1000).date;
+
+// Official regular-session close for a date, plus after-hours / pre-market prices.
+export async function fetchOfficialClose({ base, apiKey, symbol, date }) {
+  try {
+    const r = await fetch(`${base}/v1/open-close/${encodeURIComponent(symbol)}/${date}?adjusted=true`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!r.ok) return null;
+    const b = await r.json();
+    return Number(b.close) > 0 ? { close: Number(b.close), afterHours: Number(b.afterHours) || null, preMarket: Number(b.preMarket) || null, date } : null;
+  } catch {
+    return null;
+  }
 }

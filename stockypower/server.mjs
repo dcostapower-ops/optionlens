@@ -27,7 +27,7 @@ import {
 } from "./lib/market.mjs";
 import { computeIndicators, SETTINGS as IND_SETTINGS } from "./lib/indicators.mjs";
 import { evaluateCall, summarize, breakdown, RESOLVE_BARS } from "./lib/history.mjs";
-import { fetchChain, fetchDaily, normalizeContract, pickBest, realizedVol, DEFAULTS as OPTION_DEFAULTS } from "./lib/options.mjs";
+import { fetchChain, fetchDaily, normalizeContract, pickBest, realizedVol, regularSessionOpen, nyDate, fetchOfficialClose, DEFAULTS as OPTION_DEFAULTS } from "./lib/options.mjs";
 import { selfCheck } from "./lib/selfcheck.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -148,11 +148,29 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
         // that matches its time to expiry.
         hv[symbol] = { short: realizedVol(daily, 30), long: realizedVol(daily, Math.min(252, daily.length - 1)) };
         const lastClose = daily.at(-1)?.c ?? null;
+        // Outside the regular session option quotes are frozen at the close, so price the
+        // options against the official close, not an after-hours / pre-market stock trade.
+        // MARKET_SESSION=open|closed overrides the clock (testing aid).
+        const marketOpen = process.env.MARKET_SESSION === "open" ? true : process.env.MARKET_SESSION === "closed" ? false : regularSessionOpen();
+        const livePrice = Number(chain.find((x) => Number(x?.underlying_asset?.price) > 0)?.underlying_asset?.price) || null;
+        let closeUsed = null, official = null;
+        if (!marketOpen && daily.length) {
+          official = await fetchOfficialClose({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, date: nyDate(daily.at(-1).t) });
+          closeUsed = official?.close ?? lastClose;
+        }
         for (const x of chain) {
-          const c = normalizeContract(x, lastClose);
+          const c = normalizeContract(x, lastClose, closeUsed);
           if (c) contracts.push({ ...c, underlying: c.underlying || symbol });
         }
-        underlying[symbol] = { price: contracts.find((c) => c.underlying === symbol)?.underlyingPrice ?? lastClose, hv: hv[symbol].short, hvLong: hv[symbol].long, contracts: chain.length };
+        underlying[symbol] = {
+          price: closeUsed ?? livePrice ?? lastClose,
+          marketOpen,
+          closeDate: official?.date ?? (closeUsed ? nyDate(daily.at(-1).t) : null),
+          extendedPrice: !marketOpen && livePrice && closeUsed && Math.abs(livePrice - closeUsed) > 1e-6 ? livePrice : null,
+          hv: hv[symbol].short,
+          hvLong: hv[symbol].long,
+          contracts: chain.length,
+        };
       } catch (err) {
         errors.push(`${symbol}: ${err.message}`);
       }
