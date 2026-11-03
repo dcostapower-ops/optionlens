@@ -1195,15 +1195,42 @@ function drawCallChart(el, d) {
 }
 
 // ── Best Option Chains ─────────────────────────────────────────────────────
+// Live: re-scan the real-time options feed every OPT.seconds while results are on screen.
+const OPT = { seconds: 60, timer: null, query: null, busy: false, openTicker: null, updated: null, error: null };
 $("#optForm").addEventListener("submit", (ev) => { ev.preventDefault(); runOptions(false); });
 
-async function runOptions(refresh) {
-  const symbols = $("#optSymbols").value.trim();
+function optLiveOn() {
+  return OPT.query && !$("#optionsView").hidden && !document.hidden;
+}
+function scheduleOptions() {
+  clearInterval(OPT.timer);
+  if (OPT.seconds > 0) OPT.timer = setInterval(() => { if (optLiveOn() && !OPT.busy) runOptions(true, true); else renderOptLive(); }, OPT.seconds * 1000);
+}
+function renderOptLive() {
+  const el = $(".olive");
+  if (!el || !OPT.query) return;
+  const t = OPT.updated ? new Date(OPT.updated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+  el.innerHTML = !OPT.seconds
+    ? `<span class="dot off"></span>Auto-refresh off · last updated ${t}`
+    : optLiveOn()
+      ? `<span class="dot"></span>Live · real-time options feed (Massive Options Advanced) · refreshes every ${OPT.seconds}s · last updated ${t}` +
+        (OPT.error ? ` · <span style="color:#ff7b72">refresh failed (${esc(OPT.error)}), retrying</span>` : "")
+      : `<span class="dot off"></span>Paused while this page isn't showing · last updated ${t}`;
+}
+document.addEventListener("visibilitychange", () => { if (optLiveOn() && !OPT.busy) runOptions(true, true); else renderOptLive(); });
+
+async function runOptions(refresh, silent = false) {
+  const symbols = silent ? OPT.query.symbols : $("#optSymbols").value.trim();
   if (!symbols) return;
-  const days = Number($("#optDays").value) || 60;
-  $(".ostatus").textContent = "Scanning every option contract and scoring them… (large chains can take 10–30 seconds)";
-  $(".oresults").innerHTML = "";
-  $(".ounder").innerHTML = "";
+  const days = silent ? OPT.query.days : Number($("#optDays").value) || 60;
+  if (!silent) {
+    OPT.query = { symbols, days };
+    OPT.openTicker = null;
+    $(".ostatus").textContent = "Scanning every option contract and scoring them… (large chains can take 10–30 seconds)";
+    $(".oresults").innerHTML = "";
+    $(".ounder").innerHTML = "";
+  }
+  OPT.busy = true;
   try {
     const r = await fetch("/api/options", {
       method: "POST",
@@ -1212,9 +1239,16 @@ async function runOptions(refresh) {
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || r.statusText);
+    OPT.updated = d.at;
+    OPT.error = null;
     renderOptions(d, days);
+    scheduleOptions();
   } catch (err) {
-    $(".ostatus").innerHTML = `<span class="error">${esc(err.message)}</span>`;
+    if (silent) OPT.error = err.message;
+    else $(".ostatus").innerHTML = `<span class="error">${esc(err.message)}</span>`;
+  } finally {
+    OPT.busy = false;
+    renderOptLive();
   }
 }
 
@@ -1222,9 +1256,10 @@ function renderOptions(d, days) {
   const at = new Date(d.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const rej = Object.entries(d.stats.rejected || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v.toLocaleString()} ${k}`).join(", ");
   $(".ostatus").innerHTML =
+    `<div class="livebar olive"></div>` +
     `${d.cached ? "Showing results from " : "Scanned at "}${at}: ${d.stats.scanned.toLocaleString()} contracts expiring more than ${days} days out, ` +
     `${d.stats.passed.toLocaleString()} passed the liquidity and delta filters${rej ? ` (left out: ${esc(rej)})` : ""}. ` +
-    `<button class="mini" id="optAgain">Scan again</button>` +
+    `<button class="mini" id="optAgain">Refresh now</button>` +
     (d.errors?.length ? `<div class="error">${esc(d.errors.join(" · "))}</div>` : "");
   $("#optAgain").onclick = () => runOptions(true);
   $(".ounder").innerHTML = Object.entries(d.underlying || {})
@@ -1265,7 +1300,8 @@ function renderOptions(d, days) {
     const open = tr.nextElementSibling?.classList.contains("odetail");
     tr.parentElement.querySelectorAll(".odetail").forEach((x) => x.remove());
     tr.parentElement.querySelectorAll("tr.sel").forEach((x) => x.classList.remove("sel"));
-    if (open) return;
+    if (open && !ev.reopen) { OPT.openTicker = null; return; }
+    OPT.openTicker = c.ticker;
     tr.classList.add("sel");
     const bar = (label, v) => `<span>${label}</span><span class="b"><i style="width:${Math.round(v * 100)}%"></i></span><span>${Math.round(v * 100)}</span>`;
     tr.insertAdjacentHTML("afterend", `<tr class="odetail"><td colspan="12">
@@ -1280,13 +1316,22 @@ function renderOptions(d, days) {
           The most you can lose buying this option is the premium: $${c.costPerContract.toFixed(0)} per contract.
         </div></div></td></tr>`);
   };
+  // After a refresh, reopen the contract you were looking at (if it's still in the top 5).
+  if (OPT.openTicker) {
+    const all = [...d.calls.map((c, i) => ["call", i, c]), ...d.puts.map((c, i) => ["put", i, c])];
+    const f = all.find(([, , c]) => c.ticker === OPT.openTicker);
+    const tr = f && $(`.oresults tr[data-type="${f[0]}"][data-i="${f[1]}"]`);
+    if (tr) $(".oresults").onclick({ target: tr, reopen: true });
+  }
+  renderOptLive();
   $(".ohow").innerHTML =
     `How these are chosen: every contract expiring more than ${days} days out must have a two-sided quote, delta between ${d.settings.deltaMin} and ${d.settings.deltaMax} ` +
     `(−${d.settings.deltaMax} to −${d.settings.deltaMin} for puts), open interest of at least ${d.settings.minOpenInterest}, volume of at least ${d.settings.minVolume}, and a bid/ask spread under ${d.settings.maxSpreadPct}%. ` +
     `The rest are scored 0–100: delta (most attractive near ${d.settings.deltaSweet}) 25%, cheap IV (vs the stock's 30-day realized volatility and vs the rest of the chain) 25%, ` +
     `open interest 20%, volume 15%, tight spread 15%. The 5 best calls and 5 best puts by that score are shown, ordered by <b>estimated return*</b>: ` +
     `the option is repriced (Black-Scholes, IV unchanged) after a typical favourable 30-day move in the stock (one standard deviation of its realized volatility), bought at the ask. ` +
-    `It's an estimate for comparing contracts, not a prediction. Real results depend on the move you actually get, IV changes and fills. Prices are 15 minutes delayed if your plan is.`;
+    `It's an estimate for comparing contracts, not a prediction. Real results depend on the move you actually get, IV changes and fills. ` +
+    `Option quotes, greeks, IV, open interest and volume come from your Massive Options Advanced real-time feed and refresh every ${OPT.seconds || "—"} seconds while this page is open.`;
 }
 
 // ── Confirmations ──────────────────────────────────────────────────────────
@@ -1448,6 +1493,7 @@ const LIVE = { seconds: 60, delay: 15 };
 fetch("/api/config").then((r) => r.json()).then((c) => {
   if (Number.isFinite(c.liveSeconds)) LIVE.seconds = c.liveSeconds;
   if (Number.isFinite(c.delayMinutes)) LIVE.delay = c.delayMinutes;
+  if (Number.isFinite(c.optionsSeconds)) OPT.seconds = c.optionsSeconds;
   if ((c.version || 0) < 3) {
     serverOutdated = true;
     const w = document.createElement("div");

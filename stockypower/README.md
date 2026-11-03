@@ -164,8 +164,13 @@ The **Best Option Chains** menu scans every listed contract expiring more than N
    yardstick for comparing contracts, not a prediction. The page also shows the return if the
    stock stays flat for 30 days (time decay), the breakeven at expiry, and the cost per contract.
 
-Click a row for its score breakdown and greeks. Results are kept for 5 minutes, and
-**Scan again** forces a fresh scan.
+Click a row for its score breakdown and greeks.
+
+**Live:** quotes, greeks, IV, open interest and volume come from the Massive Options Advanced
+real-time feed. While results are on screen, the scan reruns every `OPTIONS_REFRESH_SECONDS`
+(default 60; 0 turns it off) and the tables update in place. An open row stays open if that
+contract is still in the top 5. Refreshing pauses when you switch menus or hide the tab.
+**Refresh now** rescans immediately.
 
 ## History & accuracy
 

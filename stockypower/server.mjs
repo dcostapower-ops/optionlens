@@ -83,6 +83,8 @@ const EXTENDED_HOURS = /^(1|true|yes)$/i.test(process.env.STOCKY_EXTENDED_HOURS 
 // Massive plan (Stocks Developer = 15 minutes; 0 for a real-time plan).
 const LIVE_SECONDS = Math.max(0, Number(process.env.STOCKY_LIVE_SECONDS ?? 60));
 const DATA_DELAY_MINUTES = Math.max(0, Number(process.env.MASSIVE_DELAY_MINUTES ?? 15));
+// Best Option Chains: refresh interval (seconds) against the real-time options feed; 0 = off.
+const OPTIONS_REFRESH_SECONDS = Math.max(0, Number(process.env.OPTIONS_REFRESH_SECONDS ?? 60));
 
 // The two indicators the user configured Stocky with, exactly as set in their
 // TradingView layout (inputs listed in TradingView's order).
@@ -880,6 +882,7 @@ const server = http.createServer(async (req, res) => {
       version: APP_VERSION,
       liveSeconds: LIVE_SECONDS,
       delayMinutes: DATA_DELAY_MINUTES,
+      optionsSeconds: OPTIONS_REFRESH_SECONDS,
       agentId: AGENT_ID,
       environmentId: ENVIRONMENT_ID,
       massiveLive: Boolean(VAULT_ID),
