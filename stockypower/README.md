@@ -212,8 +212,11 @@ contract is still in the top 5. Refreshing pauses when you switch menus or hide 
 
   The **expected return** (chance × target return + (1 − chance) × flat return) ranks the
   picks. A "short-term payoff" factor gets 20%, time decay drops to 5%, and IV, premium and
-  chance of profit fall to 10% each. If Stocky's daily call doesn't point that side's way, that
-  side falls back to the 30-day method and the page says so.
+  chance of profit fall to 10% each. Only contracts with a matching Stocky target qualify. If
+  Stocky's daily call doesn't point that side's way, or there's no recent analysis, that side
+  shows **no picks**, with the reason (for example "Stocky's latest 1-day call is SELL, see the
+  puts"). There's no fallback to the 30-day method, because that would recommend long-dated
+  options for a short-term trade.
 
   Choosing this horizon sets **Strikes → At / out of the money** and **Expiring more than →
   21 days**. Both stay editable, and switching back restores Balanced and 60 days. Strikes

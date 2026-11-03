@@ -1312,9 +1312,12 @@ function renderOptions(d, days) {
   const table = (title, list, type) => {
     const h = hz[type] || {};
     const note = h.mode === "short"
-      ? `<p class="hhow">Ranked on the next ${h.days ? Math.round(h.days * 5 / 7) : 5} sessions: Stocky's latest 1-day Target 1 is <b>${fmt(h.target)}</b>. "Est. return" is the expected return (chance of reaching the target × return if it does, plus the rest × return if the stock stays flat).</p>`
-      : h.fallback ? `<p class="hhow">⚠ ${esc(h.fallback)}.</p>` : "";
-    if (!list.length) return `<div class="hbox" style="margin-bottom:14px"><h3>${title}</h3>${note}<p class="hstatus">No ${type}s passed the filters.</p></div>`;
+      ? `<p class="hhow">Ranked on the next ${h.days ? Math.round(h.days * 5 / 7) : 5} sessions: Stocky's latest 1-day Target 1 is <b>${fmt(h.target)}</b>. "Est. return" is the expected return (chance of reaching the target × return if it does, plus the rest × return if the stock stays flat).${h.skipped ? ` Not included: ${esc(h.skipped)}.` : ""}</p>`
+      : "";
+    if (!list.length)
+      return h.mode === "none"
+        ? `<div class="hbox" style="margin-bottom:14px"><h3>${title}</h3><p class="hstatus">No 5-session ${type} trade: ${esc(h.reason)}.</p></div>`
+        : `<div class="hbox" style="margin-bottom:14px"><h3>${title}</h3>${note}<p class="hstatus">No ${type}s passed the filters.</p></div>`;
     const rows = list.map((c, i) => {
       const exp = new Date(c.expiration + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
       return `<tr data-i="${i}" data-type="${type}">

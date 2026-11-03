@@ -212,10 +212,16 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
   }
 
   // 4. Selection and ordering.
-  for (const [label, list, byExp] of [["calls", result.calls, result.callsByExpiry], ["puts", result.puts, result.putsByExpiry]]) {
+  for (const [label, list, byExp, side] of [["calls", result.calls, result.callsByExpiry, "call"], ["puts", result.puts, result.putsByExpiry, "put"]]) {
     if (!list.length) {
-      add("Selection", label, "warn", "no contracts passed the filters");
+      const h = result.horizon?.[side];
+      if (h?.mode === "none") add("Selection", label, "pass", `no 5-session ${side} trade, as intended: ${h.reason}`);
+      else add("Selection", label, "warn", "no contracts passed the filters");
       continue;
+    }
+    if (o.horizon === "short") {
+      const all = list.every((c) => c.shortTerm);
+      add("Selection", `${label}: all ranked on Stocky's 5-session target`, all ? "pass" : "fail", all ? `target ${list[0].shortTerm.target}` : "some picks have no 5-session scenario");
     }
     const sorted = list.every((c, i) => i === 0 || list[i - 1].rankReturnPct >= c.rankReturnPct);
     add("Selection", `${label}: most profitable first (${list[0].weightSet === "short" ? "expected 5-session return" : "estimated 30-day return"})`, sorted ? "pass" : "fail", list.map((c) => `${f2(c.rankReturnPct, 1)}%`).join(" > "));

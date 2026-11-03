@@ -242,8 +242,19 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
   const byExpiry = { call: [], put: [] };
   const horizonInfo = { call: { mode: "30d" }, put: { mode: "30d" } };
   const pick = (type) => {
-    const list = usable.filter((c) => c.type === type);
-    if (!list.length) return [];
+    let list = usable.filter((c) => c.type === type);
+    const wantSig = type === "call" ? "BUY" : "SELL";
+    // Why a symbol has no 5-session trade on this side (for the page).
+    const noShortReason = (sym) => {
+      const sv = stocky[sym];
+      if (!sv || !sv.d1) return `Stocky hasn't analysed ${sym} on the 1-day timeframe in the last 7 days (run it on Analyze first)`;
+      if (sv.d1 !== wantSig) return `Stocky's latest 1-day call for ${sym} is ${sv.d1}, so there's no ${type === "call" ? "upside" : "downside"} target to trade${sv.d1 === (type === "call" ? "SELL" : "BUY") ? `; see the ${type === "call" ? "puts" : "calls"}` : ""}`;
+      return `Stocky's 1-day target for ${sym} isn't ${type === "call" ? "above" : "below"} the current price`;
+    };
+    if (!list.length) {
+      if (o.horizon === "short") horizonInfo[type] = { mode: "none", reason: [...new Set(contracts.filter(Boolean).map((c) => c.underlying))].map(noShortReason).join(". ") };
+      return [];
+    }
     const ivs = list.map((c) => c.iv).sort((a, b) => a - b);
     // Fallback when realised volatility is missing: time value per sqrt(day), also expiry-neutral.
     const tvRoot = (c) => c.timeValue / Math.sqrt(c.dte) / c.underlyingPrice;
@@ -318,12 +329,25 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
       c.ivVsHv = ivVsHv;
     }
     // Short-term payoff score: expected 5-session return, ranked within this side.
-    const useShort = shortMode && list.some((c) => c.shortTerm);
-    horizonInfo[type] = !shortMode
-      ? { mode: "30d" }
-      : useShort
-        ? { mode: "short", target: list.find((c) => c.shortTerm).shortTerm.target, days: o.shortDays }
-        : { mode: "30d", fallback: `Stocky's latest 1-day call isn't ${want} with a target ${type === "call" ? "above" : "below"} the price, so these are ranked on the 30-day move instead` };
+    // Next 5 sessions: only contracts with a matching Stocky target qualify. No fallback to
+    // the 30-day method: that would recommend long-dated options for a short-term trade.
+    const useShort = shortMode;
+    if (shortMode) {
+      const symbols = [...new Set(list.map((c) => c.underlying))];
+      const without = symbols.filter((sym) => !list.some((c) => c.underlying === sym && c.shortTerm));
+      list = list.filter((c) => c.shortTerm);
+      if (!list.length) {
+        horizonInfo[type] = { mode: "none", reason: symbols.map(noShortReason).join(". ") };
+        byExpiry[type] = [];
+        return [];
+      }
+      horizonInfo[type] = {
+        mode: "short",
+        target: list[0].shortTerm.target,
+        days: o.shortDays,
+        ...(without.length ? { skipped: without.map(noShortReason).join(". ") } : {}),
+      };
+    } else horizonInfo[type] = { mode: "30d" };
     const exps = list.filter((c) => c.shortTerm).map((c) => c.shortTerm.expectedPct).sort((a, b) => a - b);
     const weights = useShort ? o.weightsShort : o.weights;
     for (const c of list) {
