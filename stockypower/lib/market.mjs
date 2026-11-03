@@ -7,6 +7,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { evaluateCall, summarize } from "./history.mjs";
 
 // Each timeframe says where its bars come from. Intraday timeframes use regular
 // trading hours (09:30-16:00 New York) like TradingView's default, and 1h/4h bars
@@ -538,57 +539,36 @@ export function trackStore(dir) {
       fs.appendFileSync(file, records.map((r) => JSON.stringify(r)).join("\n") + "\n");
     },
     load(symbol) {
+      return this.loadAll().filter((r) => r.symbol === symbol);
+    },
+    // Every saved call, each with a stable id (older records get one from their position).
+    loadAll() {
       if (!fs.existsSync(file)) return [];
       return fs
         .readFileSync(file, "utf8")
         .split("\n")
         .filter(Boolean)
-        .map((l) => {
+        .map((l, i) => {
           try {
-            return JSON.parse(l);
+            const r = JSON.parse(l);
+            return { ...r, id: r.id || `${r.session || "run"}:${r.tf}:${i}` };
           } catch {
             return null;
           }
         })
-        .filter((r) => r && r.symbol === symbol);
+        .filter((r) => r && r.symbol && r.tf && Number.isFinite(r.asOfT));
     },
   };
 }
 
-// Scores one saved call against the bars that came after it.
-export function scorePrediction(p, bars) {
-  const after = bars.filter((b) => b.t > p.asOfT);
-  if (!after.length) return { status: "open", fhHeld: null };
-  const next = after[0];
-  const fhHeld = p.forecast_high != null ? next.h <= p.forecast_high : null;
-  if (p.signal !== "BUY" && p.signal !== "SELL") return { status: "n/a", fhHeld };
-  for (const b of after) {
-    const stopHit = p.signal === "BUY" ? b.l <= p.stop1 : b.h >= p.stop1;
-    const targetHit = p.signal === "BUY" ? b.h >= p.target1 : b.l <= p.target1;
-    // Same bar: we can't know which came first, so count it against the call.
-    if (stopHit) return { status: "stop", fhHeld };
-    if (targetHit) {
-      const t2Hit = after.some((x) => x.t >= b.t && (p.signal === "BUY" ? x.h >= p.target2 : x.l <= p.target2));
-      return { status: t2Hit ? "target2" : "target1", fhHeld };
-    }
-  }
-  return { status: "open", fhHeld };
-}
-
-// Summary per timeframe for one symbol: { tfKey: { calls, target1, target2, stop, open, fhHeld, fhChecked } }
+// Summary per timeframe for one symbol (shown on each result card), using the same
+// grading as the History page.
 export function trackRecord(predictions, candlesByTf) {
-  const out = {};
+  const byTf = {};
   for (const p of predictions) {
     const bars = candlesByTf[p.tf];
     if (!bars?.length) continue;
-    const s = scorePrediction(p, bars);
-    const r = (out[p.tf] ??= { calls: 0, target1: 0, target2: 0, stop: 0, open: 0, fhHeld: 0, fhChecked: 0 });
-    r.calls++;
-    if (s.status === "target1") r.target1++;
-    else if (s.status === "target2") (r.target1++, r.target2++);
-    else if (s.status === "stop") r.stop++;
-    else if (s.status === "open") r.open++;
-    if (s.fhHeld !== null) (r.fhChecked++, s.fhHeld && r.fhHeld++);
+    (byTf[p.tf] ??= []).push({ ...p, outcome: evaluateCall(p, bars) });
   }
-  return out;
+  return Object.fromEntries(Object.entries(byTf).map(([tf, list]) => [tf, summarize(list)]));
 }

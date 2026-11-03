@@ -108,6 +108,31 @@
   .confirm button { padding: 6px 16px; margin-right: 8px; }
   .allow { background: var(--buy); color: #fff; } .deny { background: var(--sell); color: #fff; }
   footer a { color: var(--muted); }
+  .nav { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+  .navbtn { padding: 6px 16px; background: var(--panel); color: var(--muted); border: 1px solid var(--border); font-size: 14px; }
+  .navbtn.on { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .hfilters { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 14px 0; font-size: 13px; color: var(--muted); }
+  .hfilters select { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; margin-left: 4px; }
+  .hstatus { font-size: 13px; color: var(--muted); }
+  .hnote:empty, .hdetail:empty { display: none; }
+  .hnote { margin: 10px 0; }
+  .hcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: 10px 0 16px; }
+  .hcard { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+  .hcard .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+  .hcard .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .hcard .d { font-size: 12px; color: var(--muted); }
+  .hgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  .hbox { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; overflow-x: auto; }
+  .hbox h3, .hsec { margin: 4px 0 8px; font-size: 14px; font-weight: 600; }
+  .hsec { margin-top: 18px; }
+  .ob { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .ob.win { background: #1f6f35; color: #fff; } .ob.stop { background: #8e2328; color: #fff; }
+  .ob.expired { background: #30363d; color: var(--text); } .ob.open { background: #1f3a5f; color: #cde; } .ob.unknown, .ob.na { background: #30363d; color: var(--muted); }
+  .pos { color: #3fb950; } .neg { color: #f85149; }
+  .hdetail { background: var(--panel); border: 1px solid var(--accent); border-radius: 14px; padding: 14px 16px; margin: 0 0 16px; }
+  .hdetail .dchart { height: 420px; margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .hdetail .close { float: right; }
+  .hhow { font-size: 12px; color: var(--muted); margin-top: 14px; line-height: 1.6; }
   footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px; }
   @media (max-width: 600px) { .chart { height: 380px; } .card { padding: 14px; } }
 </style>
@@ -118,13 +143,40 @@
   <p>Enter a symbol. Stocky calculates signals, targets, stops and forecasts on six timeframes.</p>
 </header>
 
+<nav class="nav">
+  <button class="navbtn on" data-view="analyze">Analyze</button>
+  <button class="navbtn" data-view="history">History &amp; accuracy</button>
+</nav>
+
 <main>
+  <section id="historyView" hidden>
+    <div class="hfilters">
+      <label>Symbol <select id="hSymbol"><option value="">All</option></select></label>
+      <label>Timeframe <select id="hTf"><option value="">All</option></select></label>
+      <label>Outcome <select id="hOutcome">
+        <option value="">All</option><option value="win">Won (Target 1 or 2)</option><option value="target2">Reached Target 2</option>
+        <option value="stop">Stopped out</option><option value="expired">Expired</option><option value="open">Still open</option>
+      </select></label>
+      <button class="mini" id="hRefresh">Refresh</button>
+    </div>
+    <div class="hstatus">Loading…</div>
+    <div class="hnote"></div>
+    <div class="hcards"></div>
+    <div class="hdetail"></div>
+    <div class="hgrid"></div>
+    <h3 class="hsec">All calls <span class="hcount"></span></h3>
+    <div class="tablewrap hcalls"></div>
+    <p class="hhow"></p>
+  </section>
+
+  <div id="analyzeView">
   <form id="form" autocomplete="off">
     <input id="symbol" type="text" placeholder="AAPL" maxlength="10" required autofocus />
     <button class="primary" type="submit">Ask Stocky</button>
   </form>
   <div class="history" id="history"></div>
   <div id="results"></div>
+  </div>
 </main>
 
 <footer>Calculations by the Stocky agent · prices from Massive · charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>. Not financial advice.</footer>
@@ -268,8 +320,11 @@ function renderLevels(st) {
   $(".rationale", st.card).textContent = a.rationale || "";
   const r = st.record?.[st.tf];
   $(".track", st.card).innerHTML = r && r.calls
-    ? `Track record for ${esc(st.symbol)} on ${esc(tfInfo.label)} (earlier calls): ${r.calls} calls · Target 1 hit ${r.target1} · Target 2 hit ${r.target2} · Stopped out ${r.stop} · Still open ${r.open}` +
-      (r.fhChecked ? ` · Forecast high held ${r.fhHeld}/${r.fhChecked}` : "")
+    ? `Track record for ${esc(st.symbol)} on ${esc(tfInfo.label)} (earlier calls): ${r.calls} calls · ` +
+      (r.decided ? `won ${r.wins} of ${r.decided} decided (${Math.round(r.winRate * 100)}%) · ` : "") +
+      `Target 2 ${r.target2} · stopped ${r.stop} · expired ${r.expired} · open ${r.open}` +
+      (r.fhChecked ? ` · forecast high held ${Math.round(r.fhHeldRate * 100)}%` : "") +
+      ` · <a href="#" class="tohist" data-sym="${esc(st.symbol)}" data-tf="${esc(st.tf)}">see all in History</a>`
     : `Track record: no earlier calls for ${esc(st.symbol)} on ${esc(tfInfo.label)} yet. Each run is saved, and later runs show how they turned out.`;
 }
 
@@ -897,6 +952,212 @@ function checkAlerts(st) {
       if (prev.rsi > lvl && rsi <= lvl) alert_(st, `${label}: Ultra RSI fell below ${name} (${rsi.toFixed(1)})`, "dn");
     }
   }
+}
+
+// ── History & accuracy ─────────────────────────────────────────────────────
+const H = { data: null, chart: null };
+const pctStr = (v, digits = 0) => (v == null ? "—" : `${(v * 100).toFixed(digits)}%`);
+const OUTCOME = {
+  target2: ["win", "Target 2 ✓"], target1: ["win", "Target 1 ✓"], stop: ["stop", "Stopped ✗"],
+  expired: ["expired", "Expired"], open: ["open", "Open"], "n/a": ["na", "n/a"], unknown: ["unknown", "No data"],
+};
+const outcomeBadge = (o) => { const [cls, label] = OUTCOME[o?.status] || OUTCOME.unknown; return `<span class="ob ${cls}">${label}</span>`; };
+const retStr = (v) => (v == null ? "—" : `<span class="${v >= 0 ? "pos" : "neg"}">${v >= 0 ? "+" : ""}${v.toFixed(2)}%</span>`);
+const tfLabelOf = (k) => (DEFAULT_TFS.find((t) => t.key === k) || {}).label || k;
+
+function showView(view) {
+  document.querySelectorAll(".navbtn").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
+  $("#historyView").hidden = view !== "history";
+  $("#analyzeView").hidden = view !== "analyze";
+  if (view === "history") loadHistoryView();
+}
+document.querySelectorAll(".navbtn").forEach((b) => (b.onclick = () => showView(b.dataset.view)));
+document.addEventListener("click", (ev) => {
+  const a = ev.target.closest(".tohist");
+  if (!a) return;
+  ev.preventDefault();
+  $("#hSymbol").dataset.want = a.dataset.sym;
+  $("#hTf").value = a.dataset.tf;
+  showView("history");
+});
+if (!$("#hTf").options.length || $("#hTf").options.length === 1)
+  $("#hTf").insertAdjacentHTML("beforeend", DEFAULT_TFS.map((t) => `<option value="${t.key}">${t.label}</option>`).join(""));
+$("#hSymbol").onchange = $("#hTf").onchange = () => loadHistoryView();
+$("#hOutcome").onchange = () => renderHistory();
+$("#hRefresh").onclick = () => loadHistoryView();
+
+async function loadHistoryView() {
+  const want = $("#hSymbol").dataset.want;
+  const symbol = want ?? $("#hSymbol").value;
+  const tf = $("#hTf").value;
+  $(".hstatus").textContent = "Grading Stocky's past calls against Massive prices…";
+  try {
+    const r = await fetch(`/api/history?symbol=${encodeURIComponent(symbol || "")}&tf=${encodeURIComponent(tf || "")}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    H.data = d;
+    const sel = $("#hSymbol");
+    sel.innerHTML = `<option value="">All</option>` + d.symbols.map((s) => `<option>${esc(s)}</option>`).join("");
+    sel.value = symbol || "";
+    delete sel.dataset.want;
+    $(".hstatus").textContent = `Graded ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} against the latest Massive data.`;
+    renderHistory();
+  } catch (err) {
+    $(".hstatus").innerHTML = `<span class="error">Couldn't load history: ${esc(err.message)}</span>`;
+  }
+}
+
+function renderHistory() {
+  const d = H.data;
+  if (!d) return;
+  const s = d.stats.overall;
+  const card = (k, v, sub) => `<div class="hcard"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${sub}</div></div>`;
+  $(".hcards").innerHTML = [
+    card("Win rate", pctStr(s.winRate), `Target 1 before Stop loss 1 · ${s.wins} of ${s.decided} decided`),
+    card("Reached Target 2", pctStr(s.target2Rate), `${s.target2} of ${s.decided} decided`),
+    card("Right direction", pctStr(s.directionRate), `after the 10-bar forecast · ${s.directionChecked} checked`),
+    card("Forecast high held", pctStr(s.fhHeldRate), `next bar stayed below it · ${s.fhChecked} checked`),
+    card("Forecast low held", pctStr(s.flHeldRate), `next bar stayed above it · ${s.flChecked} checked`),
+    card("Forecast path error", s.avgPathErrorPct == null ? "—" : `${s.avgPathErrorPct.toFixed(2)}%`, `average miss vs actual close · ${s.pathChecked} calls`),
+    card("Average result", s.avgReturnPct == null ? "—" : `${s.avgReturnPct >= 0 ? "+" : ""}${s.avgReturnPct.toFixed(2)}%`, `per closed call, at T1/T2/SL1 or expiry · ${s.closed} closed`),
+    card("Calls", String(s.calls), `${s.open} still open · ${s.expired} expired`),
+  ].join("");
+
+  $(".hnote").innerHTML = !s.calls
+    ? `<div class="checks bad">No saved calls yet. Every Stocky run is saved on this PC, and its calls are graded here as prices come in.</div>`
+    : s.decided < 20
+      ? `<div class="checks bad">⚠ Only ${s.decided} call${s.decided === 1 ? " has" : "s have"} reached Target 1 or Stop loss 1 so far. That's too few to judge Stocky's accuracy: a few lucky or unlucky calls swing these numbers a lot. Treat them as a rough early read until there are at least 30.</div>`
+      : "";
+
+  const table = (title, rows, keyLabel) => {
+    const entries = Object.entries(rows);
+    if (!entries.length) return "";
+    return `<div class="hbox"><h3>${title}</h3><table><thead><tr><th>${keyLabel}</th><th>Calls</th><th>Win rate</th><th>T2</th><th>Direction</th><th>Avg result</th></tr></thead><tbody>${entries
+      .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v.calls}</td><td>${pctStr(v.winRate)} <small>(${v.wins}/${v.decided})</small></td><td>${pctStr(v.target2Rate)}</td><td>${pctStr(v.directionRate)}</td><td>${v.avgReturnPct == null ? "—" : retStr(v.avgReturnPct)}</td></tr>`)
+      .join("")}</tbody></table></div>`;
+  };
+  const tfOrder = Object.fromEntries(DEFAULT_TFS.map((t, i) => [t.key, i]));
+  const byTf = Object.fromEntries(Object.entries(d.stats.byTf).sort(([a], [b]) => tfOrder[a] - tfOrder[b]).map(([k, v]) => [tfLabelOf(k), v]));
+  const byChecks = Object.fromEntries(Object.entries(d.stats.byChecks).map(([k, v]) => [k === "passed" ? "Checks passed" : "Checks warned", v]));
+  $(".hgrid").innerHTML = table("By timeframe", byTf, "Timeframe") + table("By symbol", d.stats.bySymbol, "Symbol") + table("Accuracy checks at the time", byChecks, "Levels");
+
+  const f = $("#hOutcome").value;
+  const calls = d.calls.filter((c) => !f || (f === "win" ? ["target1", "target2"].includes(c.outcome.status) : c.outcome.status === f));
+  $(".hcount").textContent = `(${calls.length})`;
+  $(".hcalls").innerHTML = calls.length
+    ? `<table><thead><tr><th>Made</th><th>Symbol</th><th>Timeframe</th><th>Signal</th><th>Entry</th><th>Target 1</th><th>Target 2</th><th>Stop 1</th><th>Stop 2</th><th>Outcome</th><th>Result</th><th>Bars since</th></tr></thead><tbody>${calls
+        .map((c) => `<tr data-id="${esc(c.id)}"><td>${esc(new Date(c.created).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }))}</td>
+          <td>${esc(c.symbol)}</td><td>${esc(tfLabelOf(c.tf))}</td><td><span class="badge sm ${esc(c.signal)}">${esc(c.signal)}</span></td>
+          <td>${fmt(c.entry)}</td><td class="t1">${fmt(c.target1)}</td><td class="t2">${fmt(c.target2)}</td><td class="s1">${fmt(c.stop1)}</td><td class="s2">${fmt(c.stop2)}</td>
+          <td>${outcomeBadge(c.outcome)}</td><td>${retStr(c.outcome.returnPct)}</td><td>${c.outcome.barsElapsed ?? "—"}</td></tr>`)
+        .join("")}</tbody></table>`
+    : `<p class="hstatus">No calls match these filters.</p>`;
+  $(".hcalls tbody")?.addEventListener("click", (ev) => {
+    const tr = ev.target.closest("tr[data-id]");
+    if (tr) openCall(tr.dataset.id);
+  });
+  $(".hhow").innerHTML =
+    `How calls are graded: <b>Won</b> = price reached Target 1 before Stop loss 1 (Target 2 if it went on to reach it before the stop). ` +
+    `<b>Stopped</b> = Stop loss 1 came first; a bar that touched both counts as stopped (the cautious reading). ` +
+    `<b>Expired</b> = neither within ${d.resolveBars} bars; result taken at that bar's close. <b>Open</b> = still running. ` +
+    `<b>Right direction</b> = price moved the way Stocky said after the 10-bar forecast. Results are % moves from the entry price, before costs. ` +
+    `Everything is graded on the same regular-hours Massive bars the chart uses.`;
+}
+
+async function openCall(id) {
+  const box = $(".hdetail");
+  box.innerHTML = `<div class="hstatus">Loading this call…</div>`;
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+  try {
+    const r = await fetch(`/api/history/call?id=${encodeURIComponent(id)}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    renderCall(d);
+  } catch (err) {
+    box.innerHTML = `<div class="error">Couldn't load this call: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderCall(d) {
+  const c = d.call, o = c.outcome;
+  const box = $(".hdetail");
+  const when = new Date(c.created).toLocaleString();
+  const what = {
+    target2: `Price reached Target 1 and then Target 2 (${fmt(c.target2)}) before Stop loss 1.`,
+    target1: `Price reached Target 1 (${fmt(c.target1)}) before Stop loss 1.`,
+    stop: `Price hit Stop loss 1 (${fmt(c.stop1)}) first.`,
+    expired: `Neither Target 1 nor Stop loss 1 was reached within ${d.resolveBars} bars.`,
+    open: `Still open: neither Target 1 nor Stop loss 1 has been reached yet (${o.barsElapsed} bars so far).`,
+  }[o.status] || "This call couldn't be graded.";
+  box.innerHTML = `
+    <button class="mini close">Close</button>
+    <div class="card-head"><div class="sym">${esc(c.symbol)}</div><span class="badge sm ${esc(c.signal)}">${esc(c.signal)}</span>
+      <span style="color:var(--muted)">${esc(tfLabelOf(c.tf))} · made ${esc(when)}${c.confidence != null ? ` · confidence ${c.confidence}%` : ""}</span> ${outcomeBadge(o)} ${retStr(o.returnPct)}</div>
+    <p class="summary">${esc(what)}${o.directionOk != null ? ` After the 10-bar forecast, price had moved ${o.directionOk ? "the way Stocky said" : "against Stocky's call"}.` : ""}
+      ${o.fhHeld != null ? ` The next bar ${o.fhHeld ? "stayed below" : "went above"} the forecast high${o.flHeld != null ? ` and ${o.flHeld ? "stayed above" : "went below"} the forecast low` : ""}.` : ""}
+      ${o.pathErrorPct != null ? ` The forecast path missed the actual closes by ${o.pathErrorPct.toFixed(2)}% on average.` : ""}</p>
+    ${c.rationale ? `<p class="rationale">Stocky's reasoning then: ${esc(c.rationale)}</p>` : ""}
+    ${c.checkIssues?.length ? `<p class="rationale">⚠ Accuracy checks at the time: ${esc(c.checkIssues.join(" "))}</p>` : c.checksPassed ? `<p class="rationale">✓ All accuracy checks passed at the time.</p>` : ""}
+    <div class="levels" style="margin-top:8px">${[
+      lvBox("", "Entry", c.entry, null, ""), lvBox("t1", "Target 1", c.target1, c.entry), lvBox("t2", "Target 2", c.target2, c.entry),
+      lvBox("s1", "Stop loss 1", c.stop1, c.entry), lvBox("s2", "Stop loss 2", c.stop2, c.entry),
+      lvBox("fh", "Forecast high", c.forecast_high, c.entry), lvBox("fl", "Forecast low", c.forecast_low, c.entry),
+      lvBox("", o.status === "open" ? "Price now" : "Exit", o.status === "open" ? o.lastPrice : o.exitPrice, c.entry),
+    ].join("")}</div>
+    <div class="dchart"></div>
+    <div class="keys"><span><i style="background:#8b949e"></i>Entry (when Stocky made the call)</span><span><i style="background:#3fb950"></i>Targets</span><span><i style="background:#f85149"></i>Stops</span>${c.forecast?.length ? `<span><i style="background:#58a6ff"></i>Stocky's forecast at the time</span>` : ""}</div>`;
+  $(".close", box).onclick = () => { if (H.chart) H.chart.remove(); H.chart = null; box.innerHTML = ""; };
+  drawCallChart($(".dchart", box), d);
+}
+
+function drawCallChart(el, d) {
+  const LW = window.LightweightCharts;
+  if (H.chart) { H.chart.remove(); H.chart = null; }
+  if (!LW || !d.bars.length) { el.innerHTML = `<div class="nochart">No price data for this call.</div>`; return; }
+  const c = d.call, o = c.outcome;
+  const chart = LW.createChart(el, {
+    autoSize: true,
+    layout: { background: { type: "solid", color: "#0d1117" }, textColor: "#8b949e", fontSize: 11, attributionLogo: false },
+    grid: { vertLines: { visible: false }, horzLines: { color: "#161b22" } },
+    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false, timeVisible: ["15m", "1h", "4h"].includes(c.tf), rightOffset: 4 },
+    crosshair: { mode: LW.CrosshairMode.Normal },
+  });
+  H.chart = chart;
+  const data = cleanPoints(d.bars.map((b) => ({ time: toET(b.t), open: b.o, high: b.h, low: b.l, close: b.c })));
+  const callTime = toET(c.asOfT);
+  // Bars after the call are drawn brighter than the bars Stocky had seen.
+  const candles = chart.addSeries(LW.CandlestickSeries, { borderVisible: false, priceLineVisible: false, lastValueVisible: false });
+  candles.setData(data.map((p) => {
+    const up = p.close >= p.open, after = p.time > callTime;
+    const col = up ? (after ? "#2ee65a" : "rgba(46,230,90,0.35)") : after ? "#f23645" : "rgba(242,54,69,0.35)";
+    return { ...p, color: col, wickColor: col, borderColor: col };
+  }));
+  const quiet = { priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+  // Smoothed HA candles for context.
+  if (d.calc?.ha?.length) {
+    const sha = chart.addSeries(LW.CandlestickSeries, { ...quiet, borderVisible: false });
+    sha.setData(cleanPoints(d.calc.ha.map((p) => ({ time: toET(p.t), open: p.o, high: p.h, low: p.l, close: p.c }))).map((p) => {
+      const col = p.close >= p.open ? "rgba(230,216,76,0.55)" : "rgba(108,76,184,0.6)";
+      return { ...p, color: col, wickColor: col, borderColor: col };
+    }));
+  }
+  for (const [title, price, color, style] of [
+    ["Entry", c.entry, "#8b949e", LW.LineStyle.Dotted], ["TP1", c.target1, "#3fb950", LW.LineStyle.Dashed], ["TP2", c.target2, "#56d364", LW.LineStyle.Dashed],
+    ["SL1", c.stop1, "#f85149", LW.LineStyle.Dashed], ["SL2", c.stop2, "#ff7b72", LW.LineStyle.Dashed],
+  ]) if (Number.isFinite(price)) candles.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title });
+  if (c.forecast?.length) {
+    const path = cleanPoints([{ time: callTime, value: c.entry }, ...c.forecast.filter((f) => f.price != null).map((f) => ({ time: toET(f.t), value: f.price }))]);
+    if (path.length > 1) chart.addSeries(LW.LineSeries, { ...quiet, color: "#58a6ff", lineWidth: 2, lineStyle: LW.LineStyle.Dashed, pointMarkersVisible: true }).setData(path);
+  }
+  const times = new Set(data.map((p) => p.time));
+  const markers = [];
+  if (times.has(callTime)) markers.push({ time: callTime, position: c.signal === "BUY" ? "belowBar" : "aboveBar", shape: c.signal === "BUY" ? "arrowUp" : "arrowDown", color: "#c9d1d9", text: `${c.signal} call` });
+  if (o.hitT && times.has(toET(o.hitT))) {
+    const win = o.status === "target1" || o.status === "target2";
+    markers.push({ time: toET(o.hitT), position: "aboveBar", shape: "circle", color: win ? "#3fb950" : o.status === "stop" ? "#f85149" : "#8b949e", text: OUTCOME[o.status][1] });
+  }
+  if (markers.length && LW.createSeriesMarkers) LW.createSeriesMarkers(candles, markers.sort((a, b) => a.time - b.time));
+  chart.timeScale().fitContent();
 }
 
 // ── Confirmations ──────────────────────────────────────────────────────────

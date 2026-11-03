@@ -142,6 +142,27 @@ Alerts, for the timeframe you're viewing, appear in the card (and as desktop not
 you switch them on): price crossing Target 1/2 or Stop loss 1/2, Smoothed HA turning bullish
 or bearish, and Ultra RSI crossing 50, 75 or 25.
 
+## History & accuracy
+
+The **History & accuracy** tab grades every saved call (`data/predictions.jsonl`, one row per
+timeframe per run) against the Massive bars that came after it (`lib/history.mjs`):
+
+- **Won:** Target 1 reached before Stop loss 1, or Target 2 if it then got there before the stop.
+- **Stopped:** Stop loss 1 came first. A bar that touched both counts as stopped.
+- **Expired:** neither was reached within 30 bars; the result is taken at that bar's close.
+- **Open:** still running.
+
+On top of that it reports how often price moved the predicted direction after the 10-bar
+forecast, whether the next bar stayed within the forecast high/low, the forecast path's
+average miss versus actual closes, and the average result per closed call (percent from
+entry, before costs). Everything is broken down by timeframe, by symbol, and by whether
+the accuracy checks passed at the time. The page warns while fewer than 20 calls are decided,
+because rates from a handful of calls aren't meaningful.
+
+Click any call to see its chart: the bars Stocky had seen (dimmed), the bars that followed,
+the entry, TP/SL levels, Stocky's forecast at the time, and where the call was decided, plus
+Stocky's reasoning and any check warnings from that moment.
+
 ## Accuracy checks and track record
 
 A forecast can't be guaranteed, so every level is checked and every call is tracked:

@@ -26,6 +26,7 @@ import {
   resultsFromText,
 } from "./lib/market.mjs";
 import { computeIndicators, SETTINGS as IND_SETTINGS } from "./lib/indicators.mjs";
+import { evaluateCall, summarize, breakdown, RESOLVE_BARS } from "./lib/history.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -104,6 +105,77 @@ async function fetchAllCandles(symbol, send) {
   if (errors.length) send("status", { message: `Some Massive data couldn't be loaded (${errors.join("; ")}).` });
   liveData.set(symbol, { raw, at: Date.now() });
   return candles;
+}
+
+// ── History: grade every saved call against the bars that came after it ──────
+
+// Candles for a symbol, reusing recent live data (at most 2 minutes old).
+async function candlesFor(symbol) {
+  const prev = liveData.get(symbol);
+  if (prev && Date.now() - prev.at < 120_000) {
+    const { candles } = await refreshTimeframes({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, symbol, raw: prev.raw, extendedHours: EXTENDED_HOURS }).catch(() => ({ candles: null }));
+    if (candles) return candles;
+  }
+  return (await liveUpdate(symbol)).candles;
+}
+
+async function evaluatedCalls({ symbol, tf } = {}) {
+  let calls = trackStore(DATA_DIR).loadAll();
+  if (symbol) calls = calls.filter((c) => c.symbol === String(symbol).toUpperCase());
+  if (tf) calls = calls.filter((c) => c.tf === tf);
+  if (!calls.length || !MASSIVE_API_KEY) return calls.map((c) => ({ ...c, outcome: { status: "unknown" } }));
+  const symbols = [...new Set(calls.map((c) => c.symbol))];
+  const candles = {};
+  // A few symbols at a time, to be gentle with Massive.
+  for (let i = 0; i < symbols.length; i += 4) {
+    await Promise.all(
+      symbols.slice(i, i + 4).map(async (s) => {
+        try {
+          candles[s] = await candlesFor(s);
+        } catch (err) {
+          console.error(`[history ${s}]`, err?.message || err);
+        }
+      }),
+    );
+  }
+  return calls.map((c) => {
+    const bars = candles[c.symbol]?.[c.tf];
+    return { ...c, outcome: bars?.length ? evaluateCall(c, bars) : { status: "unknown" } };
+  });
+}
+
+async function historyReport(filter) {
+  const calls = await evaluatedCalls(filter);
+  const graded = calls.filter((c) => c.outcome.status !== "unknown");
+  return {
+    calls: calls.sort((a, b) => String(b.created).localeCompare(String(a.created))).slice(0, 1000),
+    stats: {
+      overall: summarize(graded),
+      byTf: breakdown(graded, (c) => c.tf),
+      bySymbol: breakdown(graded, (c) => c.symbol),
+      byChecks: breakdown(graded, (c) => (c.checksPassed ? "passed" : "failed")),
+    },
+    symbols: [...new Set(trackStore(DATA_DIR).loadAll().map((c) => c.symbol))].sort(),
+    resolveBars: RESOLVE_BARS,
+  };
+}
+
+// One call with the candles around it, for its chart.
+async function historyCall(id) {
+  const call = trackStore(DATA_DIR).loadAll().find((c) => c.id === id);
+  if (!call) return null;
+  const all = (await candlesFor(call.symbol))?.[call.tf] ?? [];
+  const i = all.findIndex((b) => b.t > call.asOfT);
+  const at = i === -1 ? all.length : i;
+  const bars = all.slice(Math.max(0, at - 80), at + RESOLVE_BARS + 20);
+  const calc = computeIndicators(all);
+  const keep = new Set(bars.map((b) => b.t));
+  return {
+    call: { ...call, outcome: evaluateCall(call, all) },
+    bars,
+    calc: { ha: calc.ha.filter((p) => keep.has(p.t)), ursi: calc.ursi.filter((p) => keep.has(p.t)) },
+    resolveBars: RESOLVE_BARS,
+  };
 }
 
 // Raw Massive bars per symbol, so live updates only fetch the newest bars.
@@ -461,6 +533,7 @@ async function analyze(symbol, send, isClosed) {
         const bars = candles[tf.key];
         if (!a || !bars?.length || !a.signal) continue;
         rows.push({
+          id: `${session.id}:${tf.key}`,
           symbol,
           tf: tf.key,
           created: now,
@@ -468,12 +541,18 @@ async function analyze(symbol, send, isClosed) {
           asOfT: bars[bars.length - 1].t,
           entry: bars[bars.length - 1].c,
           signal: a.signal,
+          confidence: a.confidence,
+          overall: verdict.signal ?? null,
           target1: a.target1,
           target2: a.target2,
           stop1: a.stop1,
           stop2: a.stop2,
           forecast_high: a.forecast_high,
+          forecast_low: a.forecast_low,
+          forecast: (a.forecast || []).map((f) => ({ t: f.t, price: f.price, low: f.low, high: f.high })),
+          rationale: a.rationale || "",
           checksPassed: checks[tf.key]?.ok ?? false,
+          checkIssues: checks[tf.key]?.issues ?? [],
         });
       }
       if (rows.length) store.save(rows);
@@ -709,6 +788,24 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     } catch (e) {
       return json(res, 400, { error: e.message });
+    }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/history") {
+    try {
+      return json(res, 200, await historyReport({ symbol: url.searchParams.get("symbol"), tf: url.searchParams.get("tf") }));
+    } catch (err) {
+      console.error("[history]", err);
+      return json(res, 502, { error: err?.message || String(err) });
+    }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/history/call") {
+    try {
+      const detail = await historyCall(url.searchParams.get("id"));
+      return detail ? json(res, 200, detail) : json(res, 404, { error: "Call not found" });
+    } catch (err) {
+      return json(res, 502, { error: err?.message || String(err) });
     }
   }
 
