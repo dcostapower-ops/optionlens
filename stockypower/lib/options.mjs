@@ -22,6 +22,7 @@ export const DEFAULTS = {
   // so time to expiry matters less (decay 5%) and the short-term payoff counts most.
   horizon: "30d", // "30d" (typical move) or "short" (Stocky's target within shortDays)
   shortDays: 7, // calendar days, about 5 trading sessions
+  shortSessions: 5, // which point of Stocky's daily forecast path to use
   weightsShort: { delta: 0.15, iv: 0.1, premium: 0.1, profit: 0.1, stocky: 0.15, liquidity: 0.15, decay: 0.05, short: 0.2 },
   minTouchProb: 0.7, // out-of-the-money: required chance of reaching the strike before expiry
   holdDays: 30,
@@ -73,6 +74,29 @@ export function probBeyond(type, S, level, sigma, T) {
   const sq = sigma * Math.sqrt(T);
   const z = (Math.log(S / level) - (sigma * sigma * T) / 2) / sq;
   return type === "call" ? normCdf(z) : normCdf(-z);
+}
+
+// The point of Stocky's daily forecast path `sessions` bars ahead (or the last one if shorter).
+export function forecastPoint(path, sessions) {
+  if (!Array.isArray(path) || !path.length) return null;
+  const p = path[Math.min(sessions, path.length) - 1];
+  if (!p || !(Number(p.price) > 0)) return null;
+  return { price: Number(p.price), low: Number(p.low) || null, high: Number(p.high) || null };
+}
+
+// Expected option value and chance of profit when the stock price is lognormal around
+// `center` with log-sd `sig` (center = median). 161-point grid over -4..4 sd.
+export function expectedValue(valueAt, center, sig, cost) {
+  let w = 0, ev = 0, pw = 0;
+  for (let i = 0; i <= 160; i++) {
+    const z = -4 + i * 0.05;
+    const wi = Math.exp((-z * z) / 2);
+    const v = valueAt(center * Math.exp(sig * z));
+    w += wi;
+    ev += wi * v;
+    if (v > cost) pw += wi;
+  }
+  return { ev: ev / w, pProfit: pw / w };
 }
 
 // Annualised realised volatility from daily closes (last `days` returns).
@@ -278,7 +302,25 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
         const pReach = probTouch(S, tgt, vol, days / 365);
         const retTarget = ((bsPrice(type, tgt, c.strike, Tafter, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
         const retFlat = ((bsPrice(type, S, c.strike, Tafter, o.riskFree, c.iv) - c.ask) / c.ask) * 100;
-        c.shortTerm = { target: tgt, days, pReach, retTargetPct: retTarget, retFlatPct: retFlat, expectedPct: pReach * retTarget + (1 - pReach) * retFlat, targetAt: sv0.d1At };
+        c.shortTerm = { method: "target", target: tgt, days, pReach, retTargetPct: retTarget, retFlatPct: retFlat, expectedPct: pReach * retTarget + (1 - pReach) * retFlat, targetAt: sv0.d1At };
+        // Stocky's forecast: where it expects the price after ~5 sessions, and how sure it is
+        // (its low-high range, taken as about one standard deviation). The option is repriced
+        // across that spread of prices; the average is the expected return.
+        const fp = forecastPoint(sv0.d1Forecast, o.shortSessions);
+        if (fp) {
+          const sig = fp.low > 0 && fp.high > fp.low ? Math.log(fp.high / fp.low) / 2 : vol * Math.sqrt(days / 365);
+          const { ev, pProfit } = expectedValue((x) => bsPrice(type, x, c.strike, Tafter, o.riskFree, c.iv), fp.price, sig, c.ask);
+          Object.assign(c.shortTerm, {
+            method: "forecast",
+            forecastPrice: fp.price,
+            forecastLow: fp.low,
+            forecastHigh: fp.high,
+            forecastSigma: sig,
+            retAtForecastPct: ((bsPrice(type, fp.price, c.strike, Tafter, o.riskFree, c.iv) - c.ask) / c.ask) * 100,
+            pProfit,
+            expectedPct: ((ev - c.ask) / c.ask) * 100,
+          });
+        }
       }
 
       // Profit estimate: favourable 1-sigma move over holdDays, IV unchanged, buy at ask, value at mid.
@@ -343,10 +385,12 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
         byExpiry[type] = [];
         return [];
       }
+      const withF = list.find((c) => c.shortTerm.method === "forecast");
       horizonInfo[type] = {
         mode: "short",
         target: list[0].shortTerm.target,
         days: o.shortDays,
+        forecast: withF ? { price: withF.shortTerm.forecastPrice, low: withF.shortTerm.forecastLow, high: withF.shortTerm.forecastHigh } : null,
         ...(without.length ? { skipped: without.map(noShortReason).join(". ") } : {}),
       };
     } else horizonInfo[type] = { mode: "30d" };

@@ -223,8 +223,17 @@ contract is still in the top 5. Refreshing pauses when you switch menus or hide 
   puts"). There's no fallback to the 30-day method, because that would recommend long-dated
   options for a short-term trade.
 
-  Choosing this horizon sets **Strikes → At / out of the money** and **Expiring more than →
-  21 days**. Both stay editable, and switching back restores Balanced and 60 days. Strikes
+  **Stocky's forecast drives the ranking.** Stocky's latest 1-day run includes a forecast path
+  with a low-high range for each session ahead. The app takes the point 5 sessions ahead,
+  treats it as a lognormal spread of prices (median = forecast price, low-high range ≈ one
+  standard deviation), reprices each option across that spread, and averages. That expected
+  return, plus the chance the option is in profit after 5 sessions, ranks the picks. The
+  target-based numbers are shown alongside. Saved runs without a forecast path fall back to
+  the target method.
+
+  Choosing this horizon sets **Strikes → At / out of the money** and **expiries 21–60 days**.
+  All of these stay editable, and switching back restores Balanced and "more than 60 days,
+  no maximum". Strikes
   beyond Stocky's target are excluded: such a call or put would still be out of the money even
   if Stocky is exactly right.
 

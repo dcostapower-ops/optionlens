@@ -1221,14 +1221,15 @@ $("#optForm").addEventListener("submit", (ev) => { ev.preventDefault(); runOptio
 // Choosing the profit horizon sets sensible starting values (still editable):
 // Next 5 sessions -> at / out of the money, expiring more than 21 days;
 // Next 30 days -> balanced, more than 60 days. Values the user typed are left alone.
-const HORIZON_DEFAULTS = { short: { days: "21", pref: "otm" }, "30d": { days: "60", pref: "balanced" } };
+const HORIZON_DEFAULTS = { short: { days: "21", maxDays: "60", pref: "otm" }, "30d": { days: "60", maxDays: "", pref: "balanced" } };
 $("#optHorizon").addEventListener("change", () => {
   const to = HORIZON_DEFAULTS[$("#optHorizon").value];
   const from = HORIZON_DEFAULTS[$("#optHorizon").value === "short" ? "30d" : "short"];
   if ($("#optDays").value === from.days) $("#optDays").value = to.days;
   if ($("#optPref").value === from.pref) $("#optPref").value = to.pref;
+  if ($("#optMaxDays").value === from.maxDays) $("#optMaxDays").value = to.maxDays;
   $(".ohorizon-note").textContent = $("#optHorizon").value === "short"
-    ? "Next 5 sessions: strikes default to at / out of the money and expiries to more than 21 days (you can change both). Strikes beyond Stocky's target are left out."
+    ? "Next 5 sessions: strikes default to at / out of the money and expiries to 21-60 days (you can change them). Strikes beyond Stocky's target are left out, and returns use Stocky's 5-session forecast."
     : "";
 });
 
@@ -1313,7 +1314,11 @@ function renderOptions(d, days) {
   const table = (title, list, type) => {
     const h = hz[type] || {};
     const note = h.mode === "short"
-      ? `<p class="hhow">Ranked on the next ${h.days ? Math.round(h.days * 5 / 7) : 5} sessions: Stocky's latest 1-day Target 1 is <b>${fmt(h.target)}</b>. "Est. return" is the expected return (chance of reaching the target × return if it does, plus the rest × return if the stock stays flat).${h.skipped ? ` Not included: ${esc(h.skipped)}.` : ""}</p>`
+      ? `<p class="hhow">Ranked on the next 5 sessions. Stocky's latest 1-day Target 1 is <b>${fmt(h.target)}</b>${h.forecast ? ` and its forecast for 5 sessions ahead is <b>${fmt(h.forecast.price)}</b>${h.forecast.low && h.forecast.high ? ` (range ${fmt(h.forecast.low)}–${fmt(h.forecast.high)})` : ""}` : ""}. ` +
+        (h.forecast
+          ? `"Est. return" is the expected return if Stocky's forecast is right: each option is repriced across the forecast range (taken as about one standard deviation) and averaged.`
+          : `Stocky's saved run has no forecast path, so "Est. return" uses the target: chance of reaching it × return if it does, plus the rest × return if the stock stays flat.`) +
+        `${h.skipped ? ` Not included: ${esc(h.skipped)}.` : ""}</p>`
       : "";
     if (!list.length)
       return h.mode === "none"
@@ -1327,7 +1332,9 @@ function renderOptions(d, days) {
         <td><b>${esc(exp)}</b><br><small>${c.dte} days</small></td>
         <td><b>$${fmt(c.ask)}</b> <small>/share</small><br><small>$${c.costPerContract.toFixed(0)} per contract · bid ${fmt(c.bid)}</small><br><small>${c.premiumVsFair != null ? `${c.premiumVsFair.toFixed(2)}× fair value · ` : ""}time value ${c.timeValuePerDayPct.toFixed(3)}%/day</small></td>
         <td class="ret">${retStr(c.rankReturnPct ?? c.projectedReturnPct)}${c.shortTerm && c.weightSet === "short"
-          ? `<br><small style="font-weight:400">target hit: ${retStr(c.shortTerm.retTargetPct)} (${Math.round(c.shortTerm.pReach * 100)}% chance)<br>flat 5 sessions: ${retStr(c.shortTerm.retFlatPct)}</small>` : ""}</td>
+          ? `<br><small style="font-weight:400">${c.shortTerm.method === "forecast"
+              ? `at Stocky's forecast ${fmt(c.shortTerm.forecastPrice)}: ${retStr(c.shortTerm.retAtForecastPct)}<br>${Math.round(c.shortTerm.pProfit * 100)}% chance in profit after 5 sessions<br>`
+              : ""}target ${fmt(c.shortTerm.target)} hit: ${retStr(c.shortTerm.retTargetPct)} (${Math.round(c.shortTerm.pReach * 100)}% chance)<br>flat 5 sessions: ${retStr(c.shortTerm.retFlatPct)}</small>` : ""}</td>
         <td>${retStr(c.flatReturnPct)}</td>
         <td>${c.delta.toFixed(2)}</td>
         <td>${(c.iv * 100).toFixed(1)}%<br><small>${c.ivVsHv != null ? c.ivVsHv.toFixed(2) + "× realized" : ""}</small></td>

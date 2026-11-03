@@ -36,7 +36,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv();
 
 const PORT = Number(process.env.PORT || 8790);
-const APP_VERSION = 6; // bump when the page and server must match (page checks it)
+const APP_VERSION = 7; // bump when the page and server must match (page checks it)
 // Set APP_PASSWORD to require a password (needed before putting Stockypower on the web).
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const APP_USER = process.env.APP_USER || "stocky";
@@ -194,7 +194,7 @@ function latestStockyViews(symbols) {
     if (!(t >= cutoff)) continue;
     const v = (out[r.symbol] ??= { d1: null, w1: null, d1At: 0, w1At: 0 });
     const k = r.tf === "1D" ? "d1" : "w1";
-    if (t > v[`${k}At`]) Object.assign(v, { [k]: r.signal, [`${k}At`]: t, ...(k === "d1" ? { d1Target1: r.target1, d1Target2: r.target2, d1Entry: r.entry } : {}) });
+    if (t > v[`${k}At`]) Object.assign(v, { [k]: r.signal, [`${k}At`]: t, ...(k === "d1" ? { d1Target1: r.target1, d1Target2: r.target2, d1Entry: r.entry, d1Forecast: Array.isArray(r.forecast) ? r.forecast : null } : {}) });
   }
   for (const v of Object.values(out)) v.at = Math.max(v.d1At, v.w1At);
   return out;

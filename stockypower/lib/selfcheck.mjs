@@ -203,8 +203,29 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
         ["chance to reach Stocky's target in 5 sessions", p, st.pReach, 0.002],
         ["return if target reached %", rT, st.retTargetPct, 0.1, 0.002],
         ["return if flat 5 sessions %", rF, st.retFlatPct, 0.1, 0.002],
-        ["expected 5-session return %", p * rT + (1 - p) * rF, st.expectedPct, 0.1, 0.002],
+        ...(st.method === "target" ? [["expected 5-session return %", p * rT + (1 - p) * rF, st.expectedPct, 0.1, 0.002]] : []),
       );
+      if (st.method === "forecast") {
+        // Simpson's rule over -6..6 sd (the app uses a 161-point grid over -4..4).
+        const sg = st.forecastSigma, F = st.forecastPrice, n = 240, h = 12 / n;
+        let ev = 0, pp = 0, wsum = 0;
+        for (let i = 0; i <= n; i++) {
+          const z = -6 + i * h;
+          const coef = i === 0 || i === n ? 1 : i % 2 ? 4 : 2;
+          const wi = coef * Math.exp(-0.5 * z * z);
+          const v = bs(c.side, F * Math.exp(sg * z), c.strike, Ta, o.riskFree, c.iv);
+          ev += wi * v;
+          wsum += wi;
+          if (v > c.ask) pp += wi;
+        }
+        const sgExpected = st.forecastLow > 0 && st.forecastHigh > st.forecastLow ? Math.log(st.forecastHigh / st.forecastLow) / 2 : sg;
+        maths.push(
+          ["forecast spread (log sd)", sgExpected, sg, 1e-9],
+          ["return at Stocky's forecast price %", ((bs(c.side, F, c.strike, Ta, o.riskFree, c.iv) - c.ask) / c.ask) * 100, st.retAtForecastPct, 0.1, 0.002],
+          ["expected 5-session return from forecast %", ((ev / wsum - c.ask) / c.ask) * 100, st.expectedPct, 0.3, 0.005],
+          ["chance in profit after 5 sessions", pp / wsum, st.pProfit, 0.03],
+        );
+      }
     }
     const bad = maths.filter(([, mine, app, abs, rel]) => !(Number.isFinite(app) && close(mine, app, abs, rel || 0)));
     add("Maths", name, bad.length ? "fail" : "pass",
