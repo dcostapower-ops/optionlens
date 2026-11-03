@@ -1327,7 +1327,8 @@ function renderOptions(d, days) {
   $(".ounder").innerHTML = Object.entries(d.underlying || {})
     .map(([sym, u]) => `<div class="hcard"><div class="k">${esc(sym)}${u.marketOpen === false ? ` · market closed, using the ${esc(u.closeDate || "")} close` : ""}</div><div class="v">${fmt(u.price)}</div>
       ${u.extendedPrice ? `<div class="d">After-hours / pre-market: <b>${fmt(u.extendedPrice)}</b> (${u.extendedPrice >= u.price ? "+" : ""}${(((u.extendedPrice - u.price) / u.price) * 100).toFixed(2)}%). Options don't trade then, so their prices are from the close and everything here is calculated on the ${fmt(u.price)} close.</div>` : ""}<div class="d">realized volatility: 30-day ${u.hv != null ? (u.hv * 100).toFixed(1) + "%" : "—"} · 1-year ${u.hvLong != null ? (u.hvLong * 100).toFixed(1) + "%" : "—"} · ${u.contracts.toLocaleString()} contracts</div>
-      <div class="d">${u.stocky ? `Stocky (${esc(new Date(u.stocky.at).toLocaleDateString([], { month: "short", day: "numeric" }))}): 1 day <b>${esc(u.stocky.d1 || "—")}</b> · 1 week <b>${esc(u.stocky.w1 || "—")}</b>` : `No Stocky analysis in the last 7 days, so "agrees with Stocky" isn't scored yet.`}</div>
+      <div class="d">${u.stocky ? `Stocky (${esc(new Date(u.stocky.at).toLocaleDateString([], { month: "short", day: "numeric" }))}): ${["1h", "4h", "1D", "1W"].map((k) => `${k} <b>${esc(u.stocky.tfs?.[k]?.signal || (k === "1D" ? u.stocky.d1 : k === "1W" ? u.stocky.w1 : null) || "—")}</b>`).join(" · ")}` : `No Stocky analysis in the last 7 days, so "agrees with Stocky" isn't scored yet.`}</div>
+      ${u.priceAgainst ? `<div class="d" style="color:#ff7b72">⚠ Price moving against Stocky's ${esc(u.priceAgainst.tf)} ${esc(u.priceAgainst.signal)}: ${fmt(u.priceAgainst.px)} vs ${fmt(u.priceAgainst.entry)} when it ran (${u.priceAgainst.movePct >= 0 ? "+" : ""}${u.priceAgainst.movePct.toFixed(2)}%). 5-session picks are on hold until a fresh run.</div>` : ""}
       ${eventLine(u)}
       ${stockyRunLine(sym, u, d)}</div>`)
     .join("");
@@ -1337,7 +1338,7 @@ function renderOptions(d, days) {
   const table = (title, list, type) => {
     const h = hz[type] || {};
     const note = h.mode === "short"
-      ? `<p class="hhow">Ranked on the next 5 sessions. Stocky's latest 1-day Target 1 is <b>${fmt(h.target)}</b>${h.forecast ? ` and its forecast for 5 sessions ahead is <b>${fmt(h.forecast.price)}</b>${h.forecast.low && h.forecast.high ? ` (range ${fmt(h.forecast.low)}–${fmt(h.forecast.high)})` : ""}` : ""}. ` +
+      ? `<p class="hhow">Ranked on the next 5 sessions using Stocky's <b>${h.source === "4h" ? "4-hour" : "1-day"}</b> view${h.source === "4h" ? " (its 1-hour call agrees or is neutral)" : " (no 4-hour result in its run)"}. Target 1 is <b>${fmt(h.target)}</b>${h.forecast ? ` and its forecast for 5 sessions ahead is <b>${fmt(h.forecast.price)}</b>${h.forecast.low && h.forecast.high ? ` (range ${fmt(h.forecast.low)}–${fmt(h.forecast.high)})` : ""}` : ""}. ` +
         (h.forecast
           ? `"Est. return" is the expected return if Stocky's forecast is right: each option is repriced across the forecast range (taken as about one standard deviation) and averaged.`
           : `Stocky's saved run has no forecast path, so "Est. return" uses the target: chance of reaching it × return if it does, plus the rest × return if the stock stays flat.`) +

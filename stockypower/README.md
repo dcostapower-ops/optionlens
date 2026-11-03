@@ -247,6 +247,16 @@ contract is still in the top 5. Refreshing pauses when you switch menus or hide 
   automatically**, or set `OPTIONS_AUTO_STOCKY=0`, to turn it off. The result also appears
   instantly on the Analyze page.
 
+  **Which Stocky view: 4-hour, checked against 1-hour.** Ten four-hour bars cover about five
+  sessions, so the 5-session trade uses Stocky's **4-hour** call, Target 1 and forecast path
+  (the point about 5 sessions / 7 calendar days ahead, by its timestamps). If a run has no
+  4-hour result, the 1-day one is used. Picks are held (with the reason shown) when:
+  - Stocky's **1-hour** call from the same run points the other way (e.g. 4h SELL, 1h BUY);
+  - the price has already moved **against** the call by more than 1.5% from Stocky's entry, or
+    through its stop. Outside regular hours this uses the after-hours / pre-market price. A
+    fresh Stocky run is then started once Stocky can see the move: during regular hours, or any
+    time with `STOCKY_EXTENDED_HOURS=1` (intraday bars then include extended hours).
+
   **Only a current Stocky run is used for 5 sessions.** The 1-day run must be on the latest
   trading day's data. An older run isn't used for the 5-session ranking (a fresh one is started
   automatically, see above); the page says which date it was from.

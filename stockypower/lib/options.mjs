@@ -151,6 +151,24 @@ export function forecastPoint(path, sessions) {
   return { price: Number(p.price), low: Number(p.low) || null, high: Number(p.high) || null };
 }
 
+// The point of a forecast path about `days` calendar days after `asOfT` (unix seconds): the first
+// point at or past that time, else the last one. Falls back to `fallbackIndex` bars ahead when
+// the path has no usable times. Returns the point plus how far ahead it really is.
+export function forecastPointAt(path, asOfT, days, fallbackIndex) {
+  if (!Array.isArray(path) || !path.length) return null;
+  const pts = path.filter((p) => Number(p?.price) > 0);
+  if (!pts.length) return null;
+  const timed = asOfT > 0 && pts.every((p) => Number(p.t) > asOfT);
+  let p;
+  if (timed) {
+    const want = asOfT + days * 86400 - 12 * 3600;
+    p = [...pts].sort((a, b) => a.t - b.t).find((x) => x.t >= want) ?? pts.reduce((a, b) => (b.t > a.t ? b : a));
+  } else p = pts[Math.min(fallbackIndex, pts.length) - 1];
+  return { price: Number(p.price), low: Number(p.low) || null, high: Number(p.high) || null, t: Number(p.t) || null, daysAhead: timed ? (p.t - asOfT) / 86400 : null };
+}
+
+export const TF_LABEL = { "1h": "1-hour", "4h": "4-hour", "1D": "1-day", "1W": "1-week" };
+
 // Expected option value and chance of profit when the stock price is lognormal around
 // `center` with log-sd `sig` (center = median). 161-point grid over -4..4 sd.
 export function expectedValue(valueAt, center, sig, cost) {
@@ -294,13 +312,13 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
     if (!(c.bid > 0 && c.ask > 0 && c.ask >= c.bid)) { reject("no two-sided quote"); continue; }
     if (!Number.isFinite(c.delta) || !Number.isFinite(c.iv) || c.iv <= 0) { reject("no delta/IV"); continue; }
     if (!(c.underlyingPrice > 0)) { reject("no underlying price"); continue; }
-    // Next 5 sessions: a strike beyond Stocky's 1-day Target 1 would still be out of the money even if
+    // Next 5 sessions: a strike beyond Stocky's Target 1 would still be out of the money even if
     // Stocky is exactly right, so it isn't considered for the side Stocky points to.
     if (o.horizon === "short") {
-      const sv = stocky[c.underlying];
-      const tgt = sv?.d1Target1;
+      const sh = stocky[c.underlying]?.short;
+      const tgt = sh?.target1;
       const sideWanted = c.type === "call" ? "BUY" : "SELL";
-      if (sv?.d1 === sideWanted && Number.isFinite(tgt)) {
+      if (sh?.signal === sideWanted && Number.isFinite(tgt)) {
         const beyond = c.type === "call" ? c.strike > tgt : c.strike < tgt;
         if (beyond) { reject(`strike beyond Stocky's target (${tgt})`); continue; }
       }
@@ -352,10 +370,12 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
     // Why a symbol has no 5-session trade on this side (for the page).
     const noShortReason = (sym) => {
       const sv = stocky[sym];
-      if (sv?.d1Stale) return `Stocky's latest 1-day run for ${sym} uses data up to ${sv.d1Stale.asOf || "an earlier day"}, not the latest trading day (${sv.d1Stale.latest}), so it isn't used for a 5-session trade (see the status under the stock price above)`;
-      if (!sv || !sv.d1) return `Stocky hasn't analysed ${sym} on the 1-day timeframe in the last 7 days (see the status under the stock price above)`;
-      if (sv.d1 !== wantSig) return `Stocky's latest 1-day call for ${sym} is ${sv.d1}, so there's no ${type === "call" ? "upside" : "downside"} target to trade${sv.d1 === (type === "call" ? "SELL" : "BUY") ? `; see the ${type === "call" ? "puts" : "calls"}` : ""}`;
-      return `Stocky's 1-day target for ${sym} isn't ${type === "call" ? "above" : "below"} the current price`;
+      if (sv?.shortBlock) return sv.shortBlock;
+      const sh = sv?.short;
+      if (!sh) return `Stocky hasn't analysed ${sym} on the 4-hour or 1-day timeframe in the last 7 days (see the status under the stock price above)`;
+      const lbl = TF_LABEL[sh.tf] || sh.tf;
+      if (sh.signal !== wantSig) return `Stocky's latest ${lbl} call for ${sym} is ${sh.signal}, so there's no ${type === "call" ? "upside" : "downside"} target to trade${sh.signal === (type === "call" ? "SELL" : "BUY") ? `; see the ${type === "call" ? "puts" : "calls"}` : ""}`;
+      return `Stocky's ${lbl} target for ${sym} isn't ${type === "call" ? "above" : "below"} the current price`;
     };
     if (!list.length) {
       if (o.horizon === "short") horizonInfo[type] = { mode: "none", reason: [...new Set(contracts.filter(Boolean).map((c) => c.underlying))].map(noShortReason).join(". ") };
@@ -389,20 +409,20 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
         : null;
       c.ivExitHold = ivExitHold;
       c.eventVarHold = evVarHold;
-      const sv0 = stocky[c.underlying];
-      const tgt = sv0?.d1Target1;
-      if (shortMode && sv0?.d1 === want && Number.isFinite(tgt) && (type === "call" ? tgt > S : tgt < S)) {
+      const sh0 = stocky[c.underlying]?.short;
+      const tgt = sh0?.target1;
+      if (shortMode && sh0?.signal === want && Number.isFinite(tgt) && (type === "call" ? tgt > S : tgt < S)) {
         const days = o.shortDays;
         const vol = hvFor(hv[c.underlying], days) ?? c.iv;
         const Tafter = Math.max(0, (c.dte - days) / 365);
         const pReach = probTouch(S, tgt, vol, days / 365);
         const retTarget = ((bsPrice(type, tgt, c.strike, Tafter, o.riskFree, ivExitShort) - c.ask) / c.ask) * 100;
         const retFlat = ((bsPrice(type, S, c.strike, Tafter, o.riskFree, ivExitShort) - c.ask) / c.ask) * 100;
-        c.shortTerm = { method: "target", target: tgt, days, pReach, retTargetPct: retTarget, retFlatPct: retFlat, expectedPct: pReach * retTarget + (1 - pReach) * retFlat, targetAt: sv0.d1At, ivExit: ivExitShort, eventVar: evVarShort };
+        c.shortTerm = { method: "target", target: tgt, days, pReach, retTargetPct: retTarget, retFlatPct: retFlat, expectedPct: pReach * retTarget + (1 - pReach) * retFlat, targetAt: sh0.at, source: sh0.tf, ivExit: ivExitShort, eventVar: evVarShort };
         // Stocky's forecast: where it expects the price after ~5 sessions, and how sure it is
         // (its low-high range, taken as about one standard deviation). The option is repriced
         // across that spread of prices; the average is the expected return.
-        const fp = forecastPoint(sv0.d1Forecast, o.shortSessions);
+        const fp = sh0.point;
         if (fp) {
           const sig0 = fp.low > 0 && fp.high > fp.low ? Math.log(fp.high / fp.low) / 2 : vol * Math.sqrt(days / 365);
           const sig = Math.sqrt(sig0 * sig0 + evVarShort); // plus the event-day jump, if any
@@ -412,6 +432,7 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
             forecastPrice: fp.price,
             forecastLow: fp.low,
             forecastHigh: fp.high,
+            forecastDaysAhead: fp.daysAhead,
             forecastSigma: sig,
             forecastSigmaStocky: sig0,
             retAtForecastPct: ((bsPrice(type, fp.price, c.strike, Tafter, o.riskFree, ivExitShort) - c.ask) / c.ask) * 100,
@@ -489,6 +510,7 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
       horizonInfo[type] = {
         mode: "short",
         target: list[0].shortTerm.target,
+        source: list[0].shortTerm.source,
         days: o.shortDays,
         forecast: withF ? { price: withF.shortTerm.forecastPrice, low: withF.shortTerm.forecastLow, high: withF.shortTerm.forecastHigh } : null,
         ...(without.length ? { skipped: without.map(noShortReason).join(". ") } : {}),

@@ -27,6 +27,7 @@ import {
 } from "./lib/market.mjs";
 import { computeIndicators, SETTINGS as IND_SETTINGS } from "./lib/indicators.mjs";
 import { evaluateCall, summarize, breakdown, RESOLVE_BARS } from "./lib/history.mjs";
+import { forecastPointAt, TF_LABEL } from "./lib/options.mjs";
 import { fetchChain, fetchDaily, fetchAtmTerm, detectEvents, normalizeContract, pickBest, realizedVol, regularSessionOpen, nyDate, fetchOfficialClose, DEFAULTS as OPTION_DEFAULTS } from "./lib/options.mjs";
 import { selfCheck } from "./lib/selfcheck.mjs";
 
@@ -36,7 +37,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv();
 
 const PORT = Number(process.env.PORT || 8790);
-const APP_VERSION = 9; // bump when the page and server must match (page checks it)
+const APP_VERSION = 10; // bump when the page and server must match (page checks it)
 // Set APP_PASSWORD to require a password (needed before putting Stockypower on the web).
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const APP_USER = process.env.APP_USER || "stocky";
@@ -189,24 +190,47 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
     }),
   );
   const stocky = latestStockyViews(symbols);
-  // Stocky's analysis missing or old? Start a run in the background; the next refresh uses it.
-  // Fresh = for the 5-session horizon, a 1-day run on the latest trading day's data;
-  // for 30 days, any run in the last 7 days.
+  // The 5-session view: Stocky's 4-hour call and forecast (10 four-hour bars ≈ 5 sessions),
+  // or the 1-day one if the run has no 4-hour result.
+  const stockyPick = {};
   for (const sym of Object.keys(underlying)) {
     const v = stocky[sym];
-    const latest = underlying[sym].lastSession;
-    const fresh = horizon === "short"
-      ? Boolean(v?.d1 && (!latest || (v.d1AsOfT && nyDate(v.d1AsOfT) >= latest)))
-      : Boolean(v?.at);
-    underlying[sym].stockyFresh = fresh;
+    const u = underlying[sym];
+    const src = v?.tfs?.["4h"] ?? v?.tfs?.["1D"] ?? null;
+    const latest = u.lastSession;
+    // Stocky's analysis missing or old? Start a run in the background; the next refresh uses it.
+    // Fresh = for the 5-session horizon, a run on the latest trading day's data;
+    // for 30 days, any run in the last 7 days.
+    const fresh = horizon === "short" ? Boolean(src && (!latest || (src.asOfT && nyDate(src.asOfT) >= latest))) : Boolean(v?.at);
+    u.stockyFresh = fresh;
     if (!fresh && autoStocky) requestStockyRun(sym);
-  }
-  // A 5-session trade only uses a 1-day run made on the latest trading day's data.
-  const stockyPick = {};
-  for (const [sym, v] of Object.entries(stocky)) {
-    stockyPick[sym] = horizon === "short" && v.d1 && underlying[sym] && !underlying[sym].stockyFresh
-      ? { ...v, d1: null, d1Target1: null, d1Forecast: null, d1Stale: { at: v.d1At, asOf: v.d1AsOfT ? nyDate(v.d1AsOfT) : null, latest: underlying[sym].lastSession } }
-      : v;
+    if (horizon !== "short") { stockyPick[sym] = v; continue; }
+    let block = null;
+    if (src && !fresh) block = `Stocky's latest ${TF_LABEL[src.tf]} run for ${sym} uses data up to ${src.asOfT ? nyDate(src.asOfT) : "an earlier day"}, not the latest trading day (${latest}), so it isn't used for a 5-session trade (see the status under the stock price above)`;
+    // The 1-hour call from the same run must not point the other way.
+    const h1 = v?.tfs?.["1h"];
+    if (!block && src && h1 && Math.abs(h1.at - src.at) < 5 * 60_000 && ["BUY", "SELL"].includes(h1.signal) && ["BUY", "SELL"].includes(src.signal) && h1.signal !== src.signal)
+      block = `Conflicting: Stocky's ${TF_LABEL[src.tf]} call for ${sym} is ${src.signal} but its 1-hour call is ${h1.signal} (a short-term move against the trend), so no 5-session trade until they agree`;
+    // Price already moving against the call (live, or after-hours / pre-market when closed).
+    const px = u.extendedPrice ?? u.price;
+    if (!block && src && px > 0 && src.entry > 0 && ["BUY", "SELL"].includes(src.signal)) {
+      const movePct = ((px - src.entry) / src.entry) * 100;
+      const against = src.signal === "SELL" ? movePct > 1.5 || (src.stop1 > 0 && px >= src.stop1) : movePct < -1.5 || (src.stop1 > 0 && px <= src.stop1);
+      if (against) {
+        block = `Price moving against Stocky's ${TF_LABEL[src.tf]} ${src.signal} for ${sym}: ${px.toFixed(2)}${u.extendedPrice ? " after hours / pre-market" : ""} vs ${src.entry.toFixed(2)} when Stocky ran (${movePct >= 0 ? "+" : ""}${movePct.toFixed(2)}%${src.stop1 > 0 ? `, stop ${src.stop1}` : ""}), so no 5-session trade until a fresh run`;
+        u.priceAgainst = { px, entry: src.entry, movePct, stop: src.stop1 ?? null, signal: src.signal, tf: src.tf };
+        // A fresh run only helps once Stocky can see the move (regular hours, or extended-hours bars on).
+        if (autoStocky && (u.marketOpen || EXTENDED_HOURS) && Date.now() - src.at > 30 * 60_000) requestStockyRun(sym, { force: true });
+      }
+    }
+    u.shortSource = src ? { tf: src.tf, signal: src.signal, h1: h1?.signal ?? null, blocked: Boolean(block) } : null;
+    stockyPick[sym] = {
+      ...(v || {}),
+      short: src && !block
+        ? { tf: src.tf, signal: src.signal, target1: src.target1, stop1: src.stop1, entry: src.entry, at: src.at, asOfT: src.asOfT, point: forecastPointAt(src.forecast, src.asOfT, OPTION_DEFAULTS.shortDays, src.tf === "4h" ? 10 : OPTION_DEFAULTS.shortSessions) }
+        : null,
+      shortBlock: block,
+    };
   }
   const picked = pickBest(contracts, { hv, stocky: stockyPick, events, minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon });
   for (const sym of Object.keys(underlying)) underlying[sym].stocky = stocky[sym] ?? null;
@@ -221,14 +245,14 @@ const autoRuns = new Map(); // symbol -> { state: queued|running|done|failed, ..
 const autoQueue = [];
 let autoActive = 0;
 
-function requestStockyRun(symbol) {
+function requestStockyRun(symbol, { force = false } = {}) {
   if (!OPTIONS_AUTO_STOCKY) return;
   const r = autoRuns.get(symbol);
   if (r && (r.state === "queued" || r.state === "running")) return;
   // Don't hammer Stocky: wait 30 minutes after a failure, 2 hours after a run that
-  // finished but still didn't give a usable 1-day call.
+  // finished but still didn't give a usable call (1 hour when the price has moved against it).
   if (r?.state === "failed" && Date.now() - r.finishedAt < 30 * 60_000) return;
-  if (r?.state === "done" && Date.now() - r.finishedAt < 2 * 60 * 60_000) return;
+  if (r?.state === "done" && Date.now() - r.finishedAt < (force ? 60 : 120) * 60_000) return;
   autoRuns.set(symbol, { state: "queued", queuedAt: Date.now() });
   autoQueue.push(symbol);
   pumpStockyRuns();
@@ -285,14 +309,17 @@ function latestStockyViews(symbols) {
   const cutoff = Date.now() - 7 * 864e5;
   const out = {};
   for (const r of trackStore(DATA_DIR).loadAll()) {
-    if (!symbols.includes(r.symbol) || !["1D", "1W"].includes(r.tf)) continue;
+    if (!symbols.includes(r.symbol) || !["1h", "4h", "1D", "1W"].includes(r.tf)) continue;
     const t = Date.parse(r.created);
     if (!(t >= cutoff)) continue;
-    const v = (out[r.symbol] ??= { d1: null, w1: null, d1At: 0, w1At: 0 });
+    const v = (out[r.symbol] ??= { d1: null, w1: null, d1At: 0, w1At: 0, tfs: {} });
+    if (!v.tfs[r.tf] || t > v.tfs[r.tf].at)
+      v.tfs[r.tf] = { tf: r.tf, signal: r.signal, target1: r.target1, stop1: r.stop1, entry: r.entry, asOfT: r.asOfT, at: t, forecast: Array.isArray(r.forecast) ? r.forecast : null };
+    if (!["1D", "1W"].includes(r.tf)) continue;
     const k = r.tf === "1D" ? "d1" : "w1";
     if (t > v[`${k}At`]) Object.assign(v, { [k]: r.signal, [`${k}At`]: t, ...(k === "d1" ? { d1Target1: r.target1, d1Target2: r.target2, d1Entry: r.entry, d1AsOfT: r.asOfT, d1Forecast: Array.isArray(r.forecast) ? r.forecast : null } : {}) });
   }
-  for (const v of Object.values(out)) v.at = Math.max(v.d1At, v.w1At);
+  for (const v of Object.values(out)) v.at = Math.max(v.d1At, v.w1At, ...Object.values(v.tfs).map((x) => x.at));
   return out;
 }
 
