@@ -201,6 +201,10 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
       c.costPerContract = c.ask * c.sharesPerContract;
       c.breakeven = type === "call" ? c.strike + c.ask : c.strike - c.ask;
       c.breakevenMovePct = (c.breakeven / S - 1) * 100;
+      // Moneyness: how far the strike is from the stock price. ATM = within 2%.
+      const inMoney = type === "call" ? S - c.strike : c.strike - S;
+      c.moneynessPct = (Math.abs(S - c.strike) / S) * 100;
+      c.moneyness = c.moneynessPct <= 2 ? "ATM" : inMoney > 0 ? "ITM" : "OTM";
     }
     // Best 5 by the combined score, at most maxPerExpiry from any one expiry date,
     // then shown most profitable first.

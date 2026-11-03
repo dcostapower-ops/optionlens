@@ -1279,7 +1279,7 @@ function renderOptions(d, days) {
       const exp = new Date(c.expiration + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
       return `<tr data-i="${i}" data-type="${type}">
         <td class="rank">${i + 1}</td>
-        <td><b>${multi ? esc(c.underlying) + " " : ""}${fmt(c.strike)} ${type === "call" ? "Call" : "Put"}</b></td>
+        <td><b>${multi ? esc(c.underlying) + " " : ""}${fmt(c.strike)} ${type === "call" ? "Call" : "Put"}</b><br><small title="Strike vs stock price. ATM = strike within 2% of the price">${c.moneyness}${c.moneyness === "ATM" ? "" : ` ${c.moneynessPct.toFixed(1)}%`}</small></td>
         <td><b>${esc(exp)}</b><br><small>${c.dte} days</small></td>
         <td><b>$${fmt(c.ask)}</b> <small>/share</small><br><small>$${c.costPerContract.toFixed(0)} per contract · bid ${fmt(c.bid)}</small><br><small>${c.premiumVsFair != null ? `${c.premiumVsFair.toFixed(2)}× fair value · ` : ""}time value ${c.timeValuePerDayPct.toFixed(3)}%/day</small></td>
         <td class="ret">${retStr(c.projectedReturnPct)}</td>
@@ -1338,6 +1338,7 @@ function renderOptions(d, days) {
   $(".ohow").innerHTML =
     `How these are chosen: every contract expiring more than ${days} days out${d.settings.maxDays ? ` (and within ${d.settings.maxDays} days)` : ""} must have a two-sided quote, delta between ${d.settings.deltaMin} and ${d.settings.deltaMax} ` +
     `(−${d.settings.deltaMax} to −${d.settings.deltaMin} for puts), open interest of at least ${d.settings.minOpenInterest}, volume of at least ${d.settings.minVolume}, and a bid/ask spread under ${d.settings.maxSpreadPct}%. ` +
+    `That delta range spans moderately out-of-the-money to moderately in-the-money contracts (each row is labelled ITM / ATM / OTM; ATM = strike within 2% of the price); deep in-the-money and far out-of-the-money contracts are left out. ` +
     `The rest are scored 0–100: delta (most attractive near ${d.settings.deltaSweet}) 20%, cheap IV (vs the stock's 30-day realized volatility and vs the rest of the chain) 20%, ` +
     `cheap premium 20% (the premium compared with its fair value at the stock's realized volatility; below 1× is cheap; this compares short and long expiries fairly), ` +
     `open interest 15%, volume 12.5%, tight spread 12.5%. The 5 best calls and 5 best puts by that score are shown, at most ${d.settings.maxPerExpiry} from the same expiry date, ordered by <b>estimated return*</b>: ` +
