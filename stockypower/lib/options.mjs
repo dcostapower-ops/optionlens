@@ -2,6 +2,8 @@
 // requested symbols (Massive options chain snapshot), keeps liquid ones, scores
 // them on delta, IV cheapness, open interest, volume and spread, takes the best 5
 // calls and 5 puts, and orders those by an estimated return on premium.
+// Factors: delta 20%, IV cheapness 20%, premium (time value per day) 20%,
+// open interest 15%, volume 12.5%, spread 12.5%.
 //
 // Profit can't be known in advance, so "most profitable" uses one comparable
 // scenario for every contract: the stock makes a typical favourable move (one
@@ -140,7 +142,12 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
     if (c.volume < o.minVolume) { reject(`volume under ${o.minVolume}`); continue; }
     const spreadPct = ((c.ask - c.bid) / ((c.ask + c.bid) / 2)) * 100;
     if (spreadPct > o.maxSpreadPct) { reject(`spread over ${o.maxSpreadPct}%`); continue; }
-    usable.push({ ...c, dte, absDelta, spreadPct, hv: hv[c.underlying] ?? null });
+    // Premium: the time value you pay per day held, as % of the stock price. Comparable
+    // across expiries (a later expiry costs more in total but often less per day).
+    const intrinsic = Math.max(0, c.type === "call" ? c.underlyingPrice - c.strike : c.strike - c.underlyingPrice);
+    const timeValue = Math.max(0, c.ask - intrinsic);
+    const timeValuePerDayPct = (timeValue / dte / c.underlyingPrice) * 100;
+    usable.push({ ...c, dte, absDelta, spreadPct, hv: hv[c.underlying] ?? null, intrinsic, timeValue, timeValuePerDayPct });
   }
   stats.passed = usable.length;
 
@@ -150,6 +157,7 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
     const ivs = list.map((c) => c.iv).sort((a, b) => a - b);
     const ois = list.map((c) => Math.log10(1 + c.openInterest)).sort((a, b) => a - b);
     const vols = list.map((c) => Math.log10(1 + c.volume)).sort((a, b) => a - b);
+    const tvpd = list.map((c) => c.timeValuePerDayPct).sort((a, b) => a - b);
     for (const c of list) {
       const deltaScore = clamp01(1 - Math.abs(c.absDelta - o.deltaSweet) / 0.3);
       // IV cheapness: vs the stock's realised volatility, and vs the rest of the chain.
@@ -159,9 +167,10 @@ export function pickBest(contracts, { hv = {}, now = Date.now(), ...opts } = {})
       const oiScore = pctRank(ois, Math.log10(1 + c.openInterest));
       const volScore = pctRank(vols, Math.log10(1 + c.volume));
       const spreadScore = clamp01(1 - c.spreadPct / o.maxSpreadPct);
-      c.scores = { delta: deltaScore, iv: ivScore, openInterest: oiScore, volume: volScore, spread: spreadScore };
+      const premiumScore = 1 - pctRank(tvpd, c.timeValuePerDayPct); // cheaper per day = better
+      c.scores = { delta: deltaScore, iv: ivScore, premium: premiumScore, openInterest: oiScore, volume: volScore, spread: spreadScore };
       c.ivVsHv = ivVsHv;
-      c.score = 0.25 * deltaScore + 0.25 * ivScore + 0.2 * oiScore + 0.15 * volScore + 0.15 * spreadScore;
+      c.score = 0.2 * deltaScore + 0.2 * ivScore + 0.2 * premiumScore + 0.15 * oiScore + 0.125 * volScore + 0.125 * spreadScore;
 
       // Profit estimate: favourable 1-sigma move over holdDays, IV unchanged, buy at ask, value at mid.
       const S = c.underlyingPrice;

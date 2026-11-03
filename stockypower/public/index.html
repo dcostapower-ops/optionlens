@@ -1273,10 +1273,11 @@ function renderOptions(d, days) {
       const exp = new Date(c.expiration + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
       return `<tr data-i="${i}" data-type="${type}">
         <td class="rank">${i + 1}</td>
-        <td><b>${multi ? esc(c.underlying) + " " : ""}${fmt(c.strike)} ${type === "call" ? "Call" : "Put"}</b><br><small>${esc(exp)} · ${c.dte} days</small></td>
+        <td><b>${multi ? esc(c.underlying) + " " : ""}${fmt(c.strike)} ${type === "call" ? "Call" : "Put"}</b></td>
+        <td><b>${esc(exp)}</b><br><small>${c.dte} days</small></td>
+        <td><b>$${fmt(c.ask)}</b> <small>/share</small><br><small>$${c.costPerContract.toFixed(0)} per contract · bid ${fmt(c.bid)}</small><br><small>time value ${c.timeValuePerDayPct.toFixed(3)}%/day</small></td>
         <td class="ret">${retStr(c.projectedReturnPct)}</td>
         <td>${retStr(c.flatReturnPct)}</td>
-        <td>$${c.costPerContract.toFixed(0)}<br><small>${fmt(c.bid)} / ${fmt(c.ask)}</small></td>
         <td>${c.delta.toFixed(2)}</td>
         <td>${(c.iv * 100).toFixed(1)}%<br><small>${c.ivVsHv != null ? c.ivVsHv.toFixed(2) + "× realized" : ""}</small></td>
         <td>${c.openInterest.toLocaleString()}</td>
@@ -1286,8 +1287,10 @@ function renderOptions(d, days) {
         <td>${Math.round(c.score * 100)}</td></tr>`;
     }).join("");
     return `<div class="hbox" style="margin-bottom:14px"><h3>${title}</h3><div class="tablewrap"><table class="otable"><thead><tr>
-      <th>#</th><th>Contract</th><th title="Estimated return on the premium if the stock makes a typical favourable move (1 standard deviation) in 30 days">Est. return*</th>
-      <th title="Return if the stock is unchanged after 30 days (time decay)">If flat 30d</th><th>Cost / contract<br><small>bid / ask</small></th><th>Delta</th><th>IV</th>
+      <th>#</th><th>Contract</th><th>Expiry</th>
+      <th title="Ask price per share; x100 per contract. Time value per day = (premium minus intrinsic value) / days to expiry, as % of the stock price">Premium</th>
+      <th title="Estimated return on the premium if the stock makes a typical favourable move (1 standard deviation) in 30 days">Est. return*</th>
+      <th title="Return if the stock is unchanged after 30 days (time decay)">If flat 30d</th><th>Delta</th><th>IV</th>
       <th>Open interest</th><th>Volume</th><th>Spread</th><th>Breakeven</th><th title="Combined attractiveness score, 0-100">Score</th>
       </tr></thead><tbody>${rows}</tbody></table></div></div>`;
   };
@@ -1304,11 +1307,13 @@ function renderOptions(d, days) {
     OPT.openTicker = c.ticker;
     tr.classList.add("sel");
     const bar = (label, v) => `<span>${label}</span><span class="b"><i style="width:${Math.round(v * 100)}%"></i></span><span>${Math.round(v * 100)}</span>`;
-    tr.insertAdjacentHTML("afterend", `<tr class="odetail"><td colspan="12">
+    tr.insertAdjacentHTML("afterend", `<tr class="odetail"><td colspan="13">
       <div style="display:flex;flex-wrap:wrap;gap:24px">
-        <div class="bars">${bar("Delta", c.scores.delta)}${bar("Cheap IV", c.scores.iv)}${bar("Open interest", c.scores.openInterest)}${bar("Volume", c.scores.volume)}${bar("Tight spread", c.scores.spread)}</div>
+        <div class="bars">${bar("Delta", c.scores.delta)}${bar("Cheap IV", c.scores.iv)}${bar("Cheap premium", c.scores.premium)}${bar("Open interest", c.scores.openInterest)}${bar("Volume", c.scores.volume)}${bar("Tight spread", c.scores.spread)}</div>
         <div style="max-width:560px;font-size:13px;line-height:1.6">
           <b>${esc(c.ticker || "")}</b><br>
+          Premium $${fmt(c.ask)} per share ($${c.costPerContract.toFixed(0)} per contract): $${c.intrinsic.toFixed(2)} intrinsic value + $${c.timeValue.toFixed(2)} time value,
+          which decays over ${c.dte} days, about ${c.timeValuePerDayPct.toFixed(3)}% of the stock price per day.<br>
           If ${esc(c.underlying)} moves ${c.scenario.movePct >= 0 ? "up" : "down"} ${Math.abs(c.scenario.movePct).toFixed(1)}% to about ${fmt(c.scenario.targetPrice)} within ${c.scenario.holdDays} days
           (a typical move for this stock), this option would be worth about ${retStr(c.projectedReturnPct)} on what you paid. If the stock doesn't move, it loses about
           ${Math.abs(c.flatReturnPct).toFixed(1)}% to time decay over those ${c.scenario.holdDays} days. Gamma ${Number.isFinite(c.gamma) ? c.gamma.toFixed(4) : "—"} ·
@@ -1327,8 +1332,9 @@ function renderOptions(d, days) {
   $(".ohow").innerHTML =
     `How these are chosen: every contract expiring more than ${days} days out must have a two-sided quote, delta between ${d.settings.deltaMin} and ${d.settings.deltaMax} ` +
     `(−${d.settings.deltaMax} to −${d.settings.deltaMin} for puts), open interest of at least ${d.settings.minOpenInterest}, volume of at least ${d.settings.minVolume}, and a bid/ask spread under ${d.settings.maxSpreadPct}%. ` +
-    `The rest are scored 0–100: delta (most attractive near ${d.settings.deltaSweet}) 25%, cheap IV (vs the stock's 30-day realized volatility and vs the rest of the chain) 25%, ` +
-    `open interest 20%, volume 15%, tight spread 15%. The 5 best calls and 5 best puts by that score are shown, ordered by <b>estimated return*</b>: ` +
+    `The rest are scored 0–100: delta (most attractive near ${d.settings.deltaSweet}) 20%, cheap IV (vs the stock's 30-day realized volatility and vs the rest of the chain) 20%, ` +
+    `cheap premium 20% (the time value you pay per day held, as % of the stock price, so different expiry dates compare fairly), ` +
+    `open interest 15%, volume 12.5%, tight spread 12.5%. The 5 best calls and 5 best puts by that score are shown, ordered by <b>estimated return*</b>: ` +
     `the option is repriced (Black-Scholes, IV unchanged) after a typical favourable 30-day move in the stock (one standard deviation of its realized volatility), bought at the ask. ` +
     `It's an estimate for comparing contracts, not a prediction. Real results depend on the move you actually get, IV changes and fills. ` +
     `Option quotes, greeks, IV, open interest and volume come from your Massive Options Advanced real-time feed and refresh every ${OPT.seconds || "—"} seconds while this page is open.`;

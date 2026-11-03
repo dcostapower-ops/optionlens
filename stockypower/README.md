@@ -152,17 +152,22 @@ The **Best Option Chains** menu scans every listed contract expiring more than N
 1. **Filters:** two-sided quote, |delta| 0.25–0.75, open interest ≥ 100, volume ≥ 10,
    bid/ask spread under 15%.
 2. **Score 0–100:**
-   - delta, best near 0.55: 25%
+   - delta, best near 0.55: 20%
    - cheap IV, measured against the stock's 30-day realized volatility and against the rest of
-     the chain: 25%
-   - open interest: 20%
-   - volume: 15%
-   - tight spread: 15%
+     the chain: 20%
+   - cheap premium: 20%. This is the time value paid per day held,
+     (premium minus intrinsic) ÷ days to expiry, as % of the stock price, so different expiries
+     compare fairly.
+   - open interest: 15%
+   - volume: 12.5%
+   - tight spread: 12.5%
 3. **Top 5 by score, ordered most profitable first.** "Estimated return" assumes a typical
    favorable 30-day move (one standard deviation of realized volatility). The option is
    repriced with Black-Scholes at its current IV and assumed bought at the ask. It's a common
    yardstick for comparing contracts, not a prediction. The page also shows the return if the
    stock stays flat for 30 days (time decay), the breakeven at expiry, and the cost per contract.
+   Each row has its own **Expiry** column (date and days left) and **Premium** column (ask per
+   share, total per contract, and time value per day).
 
 Click a row for its score breakdown and greeks.
 
