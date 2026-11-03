@@ -148,6 +148,9 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
       [`volume >= ${o.minVolume}`, c.volume >= o.minVolume, c.volume.toLocaleString()],
       [`spread < ${o.maxSpreadPct}%`, spread <= o.maxSpreadPct, `${f2(spread)}%`],
     ];
+    const itmPct = ((c.side === "call" ? c.underlyingPrice - c.strike : c.strike - c.underlyingPrice) / c.underlyingPrice) * 100;
+    if (o.excludeMoneyness === "itm") filters.push([`strike preference "${o.strikePrefLabel}": not in the money`, itmPct <= 2, `${f2(itmPct, 1)}% in the money`]);
+    if (o.excludeMoneyness === "otm") filters.push([`strike preference "${o.strikePrefLabel}": not out of the money`, itmPct >= -2, `${f2(-itmPct, 1)}% out of the money`]);
     const S = c.underlyingPrice, T = c.dte / 365;
     const otm = c.side === "call" ? c.strike > S : c.strike < S;
     const v = hvMix(result.underlying?.[c.underlying]?.hv, result.underlying?.[c.underlying]?.hvLong, c.dte) ?? c.iv;

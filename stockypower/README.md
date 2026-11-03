@@ -149,7 +149,15 @@ The **Best Option Chains** menu scans every listed contract expiring more than N
 (`/v3/snapshot/options/{symbol}`; the API key must include the options plan). It picks the
 5 best calls and 5 best puts to buy (`lib/options.mjs`):
 
-1. **Filters:** two-sided quote, |delta| 0.25–0.75, open interest ≥ 100, volume ≥ 10,
+1. **Strikes preference:**
+   - **Balanced** (default): |delta| 0.25–0.75, best near 0.55.
+   - **At / out of the money:** in-the-money strikes left out, |delta| 0.25–0.60, best near 0.45.
+   - **In the money:** out-of-the-money strikes left out, |delta| 0.45–0.85, best near 0.65.
+
+   ATM (strike within 2% of the price) is always allowed.
+
+   **Filters:** two-sided quote, |delta| in the preference's range, open interest ≥ 500
+   (adjustable), volume ≥ 10,
    bid/ask spread under 15%. **Out-of-the-money** contracts must also have at least a 70%
    (adjustable) chance of the stock reaching the strike at some point before expiry. This is
    the probability of touch, using the stock's 30-day realized volatility and the time left.

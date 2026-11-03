@@ -115,8 +115,20 @@ async function fetchAllCandles(symbol, send) {
 
 const optionsCache = new Map(); // key -> { at, result }, kept 5 minutes
 
-async function bestOptions(symbols, { minDays, maxDays, minTouchProb, refresh }) {
-  const key = `${symbols.join(",")}|${minDays}|${maxDays ?? ""}|${minTouchProb}`;
+// Scan settings from a request body (shared by the scan and the self-check).
+function optionParams(body) {
+  const minDays = Math.max(1, Number(body.minDays) || OPTION_DEFAULTS.minDays);
+  const maxDays = Number(body.maxDays) > 0 ? Math.max(minDays, Number(body.maxDays)) : null;
+  const touch = Number(body.minTouchPct);
+  const minTouchProb = Number.isFinite(touch) && touch >= 0 && touch <= 100 ? touch / 100 : OPTION_DEFAULTS.minTouchProb;
+  const oi = Number(body.minOpenInterest);
+  const minOpenInterest = Number.isFinite(oi) && oi >= 0 ? Math.round(oi) : OPTION_DEFAULTS.minOpenInterest;
+  const strikePref = ["balanced", "otm", "itm"].includes(body.strikePref) ? body.strikePref : "balanced";
+  return { minDays, maxDays, minTouchProb, minOpenInterest, strikePref };
+}
+
+async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, refresh }) {
+  const key = `${symbols.join(",")}|${minDays}|${maxDays ?? ""}|${minTouchProb}|${minOpenInterest}|${strikePref}`;
   const hit = optionsCache.get(key);
   if (!refresh && hit && Date.now() - hit.at < 5 * 60_000) return { ...hit.result, cached: true };
 
@@ -146,7 +158,7 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, refresh })
     }),
   );
   const stocky = latestStockyViews(symbols);
-  const picked = pickBest(contracts, { hv, stocky, minDays, maxDays, minTouchProb });
+  const picked = pickBest(contracts, { hv, stocky, minDays, maxDays, minTouchProb, minOpenInterest, strikePref });
   for (const sym of Object.keys(underlying)) underlying[sym].stocky = stocky[sym] ?? null;
   const result = { ...picked, underlying, errors, symbols, minDays, at: Date.now() };
   optionsCache.set(key, { at: Date.now(), result });
@@ -870,14 +882,17 @@ const server = http.createServer(async (req, res) => {
       const symbols = [...new Set(String(body.symbols || "").toUpperCase().split(/[\s,;]+/).filter(Boolean))];
       if (!symbols.length || symbols.length > 10 || symbols.some((s) => !SYMBOL_RE.test(s))) return json(res, 400, { error: "Enter 1-10 valid symbols." });
       if (!MASSIVE_API_KEY) return json(res, 400, { error: "MASSIVE_API_KEY isn't set." });
-      const minDays = Math.max(1, Number(body.minDays) || OPTION_DEFAULTS.minDays);
-      const maxDays = Number(body.maxDays) > 0 ? Math.max(minDays, Number(body.maxDays)) : null;
-      const touch = Number(body.minTouchPct);
-      const minTouchProb = Number.isFinite(touch) && touch >= 0 && touch <= 100 ? touch / 100 : OPTION_DEFAULTS.minTouchProb;
+      const params = optionParams(body);
       // A fresh scan, then check it against Massive and independent recomputation.
-      const result = await bestOptions(symbols, { minDays, maxDays, minTouchProb, refresh: true });
+      const result = await bestOptions(symbols, { ...params, refresh: true });
       const report = await selfCheck({ base: MASSIVE_BASE, apiKey: MASSIVE_API_KEY, result });
-      return json(res, 200, { version: APP_VERSION, symbols, settings: { minDays, maxDays, minTouchPct: Math.round(minTouchProb * 100) }, result, report });
+      return json(res, 200, {
+        version: APP_VERSION,
+        symbols,
+        settings: { minDays: params.minDays, maxDays: params.maxDays, minTouchPct: Math.round(params.minTouchProb * 100), minOpenInterest: params.minOpenInterest, strikePref: result.settings.strikePrefLabel },
+        result,
+        report,
+      });
     } catch (err) {
       console.error("[selfcheck]", err);
       return json(res, 502, { error: err?.message || String(err) });
@@ -893,11 +908,7 @@ const server = http.createServer(async (req, res) => {
       const bad = symbols.find((s) => !SYMBOL_RE.test(s));
       if (bad) return json(res, 400, { error: `"${bad}" isn't a valid symbol.` });
       if (!MASSIVE_API_KEY) return json(res, 400, { error: "MASSIVE_API_KEY isn't set." });
-      const minDays = Math.max(1, Number(body.minDays) || OPTION_DEFAULTS.minDays);
-      const maxDays = Number(body.maxDays) > 0 ? Math.max(minDays, Number(body.maxDays)) : null;
-      const touch = Number(body.minTouchPct);
-      const minTouchProb = Number.isFinite(touch) && touch >= 0 && touch <= 100 ? touch / 100 : OPTION_DEFAULTS.minTouchProb;
-      return json(res, 200, await bestOptions(symbols, { minDays, maxDays, minTouchProb, refresh: Boolean(body.refresh) }));
+      return json(res, 200, await bestOptions(symbols, { ...optionParams(body), refresh: Boolean(body.refresh) }));
     } catch (err) {
       console.error("[options]", err);
       return json(res, 502, { error: err?.message || String(err) });

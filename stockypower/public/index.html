@@ -194,6 +194,12 @@
       <label>Expiring more than <input id="optDays" type="number" min="1" max="2000" value="60" /> days out</label>
       <label>and at most <input id="optMaxDays" type="number" min="1" max="2000" placeholder="any" /> days (optional)</label>
       <label title="Out-of-the-money contracts are only considered if the stock has at least this chance of reaching the strike before expiry">Out of the money: at least <input id="optTouch" type="number" min="0" max="100" value="70" />% chance to reach the strike</label>
+      <label>Strikes <select id="optPref">
+        <option value="balanced">Balanced</option>
+        <option value="otm">At / out of the money (cheaper, more leverage)</option>
+        <option value="itm">In the money (pricier, higher odds)</option>
+      </select></label>
+      <label>Minimum open interest <input id="optOI" type="number" min="0" max="100000" value="500" style="width:80px" /></label>
       <button class="primary" type="submit">Find best options</button>
     </form>
     <div class="ostatus"></div>
@@ -1237,7 +1243,7 @@ async function runOptions(refresh, silent = false) {
   const touchRaw = $("#optTouch").value;
   const minTouchPct = silent ? OPT.query.minTouchPct : touchRaw === "" ? 70 : Math.max(0, Math.min(100, Number(touchRaw)));
   if (!silent) {
-    OPT.query = { symbols, days, maxDays, minTouchPct };
+    OPT.query = { symbols, days, maxDays, minTouchPct, strikePref: $("#optPref").value, minOpenInterest: $("#optOI").value === "" ? 500 : Number($("#optOI").value) };
     OPT.openTicker = null;
     $(".ostatus").textContent = "Scanning every option contract and scoring them… (large chains can take 10–30 seconds)";
     $(".oresults").innerHTML = "";
@@ -1248,7 +1254,7 @@ async function runOptions(refresh, silent = false) {
     const r = await fetch("/api/options", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols, minDays: days + 1, maxDays, minTouchPct, refresh }), // "more than N days"
+      body: JSON.stringify({ symbols, minDays: days + 1, maxDays, minTouchPct, strikePref: OPT.query.strikePref, minOpenInterest: OPT.query.minOpenInterest, refresh }), // "more than N days"
     });
     if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
     const d = await r.json();
@@ -1365,7 +1371,8 @@ function renderOptions(d, days) {
   }
   renderOptLive();
   $(".ohow").innerHTML =
-    `How these are chosen: every contract expiring more than ${days} days out${d.settings.maxDays ? ` (and within ${d.settings.maxDays} days)` : ""} must have a two-sided quote, delta between ${d.settings.deltaMin} and ${d.settings.deltaMax} ` +
+    `How these are chosen (strikes: <b>${esc(d.settings.strikePrefLabel)}</b>${d.settings.excludeMoneyness ? `, so ${d.settings.excludeMoneyness === "itm" ? "in-the-money" : "out-of-the-money"} strikes are left out` : ""}): ` +
+    `every contract expiring more than ${days} days out${d.settings.maxDays ? ` (and within ${d.settings.maxDays} days)` : ""} must have a two-sided quote, delta between ${d.settings.deltaMin} and ${d.settings.deltaMax} ` +
     `(−${d.settings.deltaMax} to −${d.settings.deltaMin} for puts), open interest of at least ${d.settings.minOpenInterest}, volume of at least ${d.settings.minVolume}, and a bid/ask spread under ${d.settings.maxSpreadPct}%. ` +
     `That delta range spans moderately out-of-the-money to moderately in-the-money contracts (each row is labelled ITM / ATM / OTM; ATM = strike within 2% of the price); deep in-the-money and far out-of-the-money contracts are left out. ` +
     `Out-of-the-money contracts are only kept if the stock has at least a ${Math.round(d.settings.minTouchProb * 100)}% chance of reaching the strike at some point before expiry ` +
@@ -1389,7 +1396,7 @@ async function runSelfCheck() {
     const r = await fetch("/api/options/selfcheck", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols: OPT.query.symbols, minDays: OPT.query.days + 1, maxDays: OPT.query.maxDays, minTouchPct: OPT.query.minTouchPct }),
+      body: JSON.stringify({ symbols: OPT.query.symbols, minDays: OPT.query.days + 1, maxDays: OPT.query.maxDays, minTouchPct: OPT.query.minTouchPct, strikePref: OPT.query.strikePref, minOpenInterest: OPT.query.minOpenInterest }),
     });
     if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
     const d = await r.json();
@@ -1405,7 +1412,7 @@ function selfCheckText(d) {
   const r = d.report, when = new Date(r.at).toLocaleString();
   const lines = [
     `Stockypower self-check (Best Option Chains), app version ${d.version}, ${when}`,
-    `Symbols: ${d.symbols.join(", ")} · more than ${d.settings.minDays - 1} days${d.settings.maxDays ? `, at most ${d.settings.maxDays}` : ""} · OTM min ${d.settings.minTouchPct}% to reach strike`,
+    `Symbols: ${d.symbols.join(", ")} · more than ${d.settings.minDays - 1} days${d.settings.maxDays ? `, at most ${d.settings.maxDays}` : ""} · OTM min ${d.settings.minTouchPct}% to reach strike · strikes: ${d.settings.strikePref} · min open interest ${d.settings.minOpenInterest}`,
     `Result: ${r.counts.pass} passed, ${r.counts.warn} warnings, ${r.counts.fail} failed`,
     "",
   ];

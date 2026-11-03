@@ -20,7 +20,7 @@ export const DEFAULTS = {
   weights: { delta: 0.15, iv: 0.15, premium: 0.15, profit: 0.15, stocky: 0.15, liquidity: 0.15, decay: 0.1 },
   minTouchProb: 0.7, // out-of-the-money: required chance of reaching the strike before expiry
   holdDays: 30,
-  minOpenInterest: 100,
+  minOpenInterest: 500,
   minVolume: 10,
   maxSpreadPct: 15,
   deltaMin: 0.25,
@@ -161,8 +161,17 @@ export function hvFor(hvEntry, days) {
 }
 
 // stocky: { SYMBOL: { d1: "BUY"|"SELL"|..., w1: ..., at } } from Stocky's latest saved run (optional).
+// Strike preference: which part of the chain to consider, and where delta is "best".
+export const STRIKE_PREFS = {
+  balanced: { label: "Balanced", deltaMin: 0.25, deltaMax: 0.75, deltaSweet: 0.55 },
+  otm: { label: "At / out of the money", deltaMin: 0.25, deltaMax: 0.6, deltaSweet: 0.45, exclude: "itm" },
+  itm: { label: "In the money", deltaMin: 0.45, deltaMax: 0.85, deltaSweet: 0.65, exclude: "otm" },
+};
+
 export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ...opts } = {}) {
-  const o = { ...DEFAULTS, ...opts };
+  const pref = STRIKE_PREFS[opts.strikePref] ? opts.strikePref : "balanced";
+  const { label: _l, exclude: _e, ...prefDelta } = STRIKE_PREFS[pref];
+  const o = { ...DEFAULTS, ...prefDelta, ...opts, strikePref: pref, strikePrefLabel: STRIKE_PREFS[pref].label, excludeMoneyness: STRIKE_PREFS[pref].exclude ?? null };
   const stats = { scanned: contracts.length, rejected: {} };
   const reject = (why) => (stats.rejected[why] = (stats.rejected[why] || 0) + 1);
 
@@ -175,6 +184,10 @@ export function pickBest(contracts, { hv = {}, stocky = {}, now = Date.now(), ..
     if (!(c.bid > 0 && c.ask > 0 && c.ask >= c.bid)) { reject("no two-sided quote"); continue; }
     if (!Number.isFinite(c.delta) || !Number.isFinite(c.iv) || c.iv <= 0) { reject("no delta/IV"); continue; }
     if (!(c.underlyingPrice > 0)) { reject("no underlying price"); continue; }
+    // Strike preference: leave out the side of the chain the user doesn't want (ATM, within 2%, is always kept).
+    const itmPct = ((c.type === "call" ? c.underlyingPrice - c.strike : c.strike - c.underlyingPrice) / c.underlyingPrice) * 100;
+    if (o.excludeMoneyness === "itm" && itmPct > 2) { reject("in the money (preference: at / out of the money)"); continue; }
+    if (o.excludeMoneyness === "otm" && itmPct < -2) { reject("out of the money (preference: in the money)"); continue; }
     const absDelta = Math.abs(c.delta);
     if (absDelta < o.deltaMin || absDelta > o.deltaMax) { reject(`delta outside ${o.deltaMin}-${o.deltaMax}`); continue; }
     if (c.openInterest < o.minOpenInterest) { reject(`open interest under ${o.minOpenInterest}`); continue; }
