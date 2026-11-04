@@ -198,6 +198,21 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
       ["if flat 30 days %", flat, c.flatReturnPct, 0.1, 0.002],
       ["score from factor weights", score, c.score, 0.0005],
     ];
+    if (c.adverse) {
+      const dir = c.side === "call" ? -1 : 1;
+      let Sx, val;
+      if (c.shortTerm && c.weightSet === "short") {
+        const st = c.shortTerm;
+        const vS0 = hvMix(result.underlying?.[c.underlying]?.hv, result.underlying?.[c.underlying]?.hvLong, st.days) ?? c.iv;
+        const sA = st.forecastSigma ?? vS0 * Math.sqrt(st.days / 365);
+        Sx = S * Math.exp(dir * sA);
+        val = bs(c.side, Sx, c.strike, Math.max(0, (c.dte - st.days) / 365), o.riskFree, st.ivExit ?? c.iv);
+      } else {
+        Sx = S * Math.exp(dir * mv);
+        val = bs(c.side, Sx, c.strike, Tl, o.riskFree, ivH);
+      }
+      maths.push(["if it moves the wrong way %", ((val - c.ask) / c.ask) * 100, c.adverse.pct, 0.1, 0.002]);
+    }
     if (c.shortTerm) {
       const st = c.shortTerm;
       const vS = hvMix(result.underlying?.[c.underlying]?.hv, result.underlying?.[c.underlying]?.hvLong, st.days) ?? c.iv;
@@ -261,6 +276,36 @@ export async function selfCheck({ base, apiKey, result, now = Date.now() }) {
       `${term.length} expiries; normal IV ${(Math.sqrt(base) * 100).toFixed(1)}%; ` +
         ((u.events || []).length ? u.events.map((e) => `event between ${e.after || "today"} and ${e.by}, about ±${e.movePct.toFixed(1)}%`).join("; ") : "no event found") +
         (ok ? "" : ` (recomputed event variance ${mineTotal.toFixed(6)} vs app ${appTotal.toFixed(6)})`));
+  }
+
+  // 3c. Amount to invest: quantities, dollars and the winner, recomputed.
+  for (const [side, plan] of Object.entries(result.budget || {})) {
+    if (!plan) continue;
+    const list = side === "call" ? result.calls : result.puts;
+    const issues = [];
+    let checked = 0;
+    for (const r of plan.rows) {
+      const p = r.pos;
+      if (!p) continue;
+      checked++;
+      const per = p.ask * 100;
+      const qty = Math.floor(plan.budget / per + 1e-9);
+      const inv = qty * per;
+      if (Math.abs(p.perContract - per) > 0.01 && p.perContract % 100 !== 0) issues.push(`${p.ticker}: cost per contract`);
+      if (p.qty !== Math.floor(plan.budget / p.perContract + 1e-9)) issues.push(`${p.ticker}: quantity ${p.qty} (should be ${qty})`);
+      if (Math.abs(p.invested - p.qty * p.perContract) > 0.01) issues.push(`${p.ticker}: invested`);
+      if (Math.abs(p.unused - (plan.budget - p.invested)) > 0.01) issues.push(`${p.ticker}: unused cash`);
+      if (Math.abs(p.expected - (p.invested * p.returnPct) / 100) > 0.05) issues.push(`${p.ticker}: expected $ ${p.expected.toFixed(2)} vs ${((p.invested * p.returnPct) / 100).toFixed(2)}`);
+      if (Math.abs(p.deltaShares - p.qty * Math.abs(p.delta) * 100) > 0.5 && p.perContract === per) issues.push(`${p.ticker}: delta exposure`);
+      if (!(Math.abs(p.delta) >= r.min && Math.abs(p.delta) < r.max)) issues.push(`${p.ticker}: delta ${p.delta} outside ${r.bucket}`);
+      void inv;
+    }
+    const filled = plan.rows.map((r, i) => [r, i]).filter(([r]) => r.pos);
+    const bestI = filled.length ? filled.reduce((a, b) => (b[0].pos.expected > a[0].pos.expected ? b : a))[1] : null;
+    if (bestI !== plan.best) issues.push(`winner is row ${plan.best}, recomputed ${bestI}`);
+    void list;
+    add("Selection", `${side}s: amount $${plan.budget.toLocaleString()} by delta`, issues.length ? "fail" : "pass",
+      issues.length ? issues.join("; ") : `${checked} delta ranges: quantities, dollars and the winner recomputed and match`);
   }
 
   // 4. Selection and ordering.

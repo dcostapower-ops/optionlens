@@ -363,6 +363,7 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
   stats.passed = usable.length;
 
   const byExpiry = { call: [], put: [] };
+  const budgetPlans = { call: null, put: null };
   const horizonInfo = { call: { mode: "30d" }, put: { mode: "30d" } };
   const pick = (type) => {
     let list = usable.filter((c) => c.type === type);
@@ -458,6 +459,21 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
       c.projectedReturnPct = ((vMove - c.ask) / c.ask) * 100;
       c.flatReturnPct = ((vFlat - c.ask) / c.ask) * 100;
       c.costPerContract = c.ask * c.sharesPerContract;
+      // "If wrong": the stock moves about one standard deviation the other way over the same
+      // period (5 sessions: Stocky's forecast spread; 30 days: the typical move).
+      {
+        const dirAgainst = type === "call" ? -1 : 1;
+        if (shortMode && c.shortTerm) {
+          const st = c.shortTerm;
+          const sA = st.forecastSigma ?? (hvFor(hv[c.underlying], st.days) ?? c.iv) * Math.sqrt(st.days / 365);
+          const Sx = S * Math.exp(dirAgainst * sA);
+          const Ta = Math.max(0, (c.dte - st.days) / 365);
+          c.adverse = { price: Sx, sigma: sA, pct: ((bsPrice(type, Sx, c.strike, Ta, o.riskFree, st.ivExit) - c.ask) / c.ask) * 100 };
+        } else {
+          const Sx = S * Math.exp(dirAgainst * sigmaMove);
+          c.adverse = { price: Sx, sigma: sigmaMove, pct: ((bsPrice(type, Sx, c.strike, Tleft, o.riskFree, ivExitHold) - c.ask) / c.ask) * 100 };
+        }
+      }
       c.breakeven = type === "call" ? c.strike + c.ask : c.strike - c.ask;
       c.breakevenMovePct = (c.breakeven / S - 1) * 100;
       // Moneyness: how far the strike is from the stock price. ATM = within 2%.
@@ -536,6 +552,8 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
       // What "most profitable" means for this side.
       c.rankReturnPct = useShort && c.shortTerm ? c.shortTerm.expectedPct : c.projectedReturnPct;
     }
+    // With an amount to invest: lower delta / more contracts vs higher delta / fewer contracts.
+    budgetPlans[type] = o.budget > 0 ? budgetPlan(list, o.budget, useShort) : null;
     // Best contract on each expiry date, so the page can show why dates won or lost.
     const bestByExpiry = new Map();
     for (const c of list) {
@@ -560,7 +578,7 @@ export function pickBest(contracts, { hv = {}, stocky = {}, events = {}, now = D
   const calls = pick("call");
   const puts = pick("put");
   const mark = (arr, chosenList) => arr.map((c) => ({ ...c, picked: chosenList.includes(c) }));
-  return { calls, puts, callsByExpiry: mark(byExpiry.call, calls), putsByExpiry: mark(byExpiry.put, puts), horizon: horizonInfo, stats, settings: o };
+  return { calls, puts, callsByExpiry: mark(byExpiry.call, calls), putsByExpiry: mark(byExpiry.put, puts), horizon: horizonInfo, budget: budgetPlans, stats, settings: o };
 }
 
 // Recent daily bars for realised volatility and a fallback underlying price.
@@ -574,6 +592,69 @@ export async function fetchDaily({ base, apiKey, symbol, days = 400 }) {
   if (!r.ok) return [];
   const body = await r.json();
   return (body.results ?? []).map((b) => ({ t: Math.floor(b.t / 1000), c: b.c }));
+}
+
+// ── Amount to invest: how many contracts it buys, and the dollar result ─────────
+//
+// For each delta range, the contract with the highest expected dollar profit for the amount.
+// Whole contracts only, so part of the amount can stay unused. Everything is in dollars for
+// the whole position: quantity × per-contract cost × the scenario's % return.
+export const DELTA_BUCKETS = [
+  { label: "Low delta (0.20–0.35)", min: 0.2, max: 0.35 },
+  { label: "Lower-mid delta (0.35–0.50)", min: 0.35, max: 0.5 },
+  { label: "Upper-mid delta (0.50–0.65)", min: 0.5, max: 0.65 },
+  { label: "High delta (0.65+)", min: 0.65, max: 1.01 },
+];
+
+export function budgetPosition(c, budget, short) {
+  const per = c.ask * c.sharesPerContract;
+  const qty = Math.floor(budget / per + 1e-9);
+  const invested = qty * per;
+  const usd = (pct) => (pct == null || !Number.isFinite(pct) ? null : (invested * pct) / 100);
+  const st = short ? c.shortTerm : null;
+  return {
+    ticker: c.ticker, underlying: c.underlying, type: c.type, strike: c.strike, expiration: c.expiration, dte: c.dte,
+    delta: c.delta, ask: c.ask, perContract: per, qty, invested, unused: budget - invested, moneyness: c.moneyness,
+    returnPct: c.rankReturnPct,
+    expected: usd(c.rankReturnPct),
+    target: st ? usd(st.retTargetPct) : null,
+    targetPrice: st ? st.target : c.scenario?.targetPrice ?? null,
+    atForecast: st?.retAtForecastPct != null ? usd(st.retAtForecastPct) : null,
+    forecastPrice: st?.forecastPrice ?? null,
+    flat: usd(st ? st.retFlatPct : c.flatReturnPct),
+    adverse: usd(c.adverse?.pct),
+    adversePrice: c.adverse?.price ?? null,
+    chance: st ? st.pProfit ?? null : c.beProb ?? null,
+    deltaShares: qty * Math.abs(c.delta) * c.sharesPerContract, // stock-equivalent exposure
+    thetaPerDay: Number.isFinite(c.theta) ? qty * c.theta * c.sharesPerContract : null,
+    maxLoss: invested,
+  };
+}
+
+export function budgetPlan(list, budget, short) {
+  const rows = [];
+  for (const b of DELTA_BUCKETS) {
+    let best = null;
+    for (const c of list) {
+      if (!(c.absDelta >= b.min && c.absDelta < b.max)) continue;
+      const p = budgetPosition(c, budget, short);
+      if (p.qty < 1 || p.expected == null) continue;
+      if (!best || p.expected > best.expected) best = p;
+    }
+    rows.push({ bucket: b.label, min: b.min, max: b.max, pos: best });
+  }
+  const filled = rows.filter((r) => r.pos);
+  const bestRow = filled.reduce((a, r) => (!a || r.pos.expected > a.pos.expected ? r : a), null);
+  const likelyRow = filled.filter((r) => r.pos.chance != null).reduce((a, r) => (!a || r.pos.chance > a.pos.chance ? r : a), null);
+  const cheapest = list.reduce((m, c) => Math.min(m, c.ask * c.sharesPerContract), Infinity);
+  return {
+    budget,
+    horizon: short ? "short" : "30d",
+    rows,
+    best: bestRow ? rows.indexOf(bestRow) : null,
+    mostLikely: likelyRow ? rows.indexOf(likelyRow) : null,
+    tooSmall: !filled.length && Number.isFinite(cheapest) ? cheapest : null,
+  };
 }
 
 // ── Market session ───────────────────────────────────────────────────────────

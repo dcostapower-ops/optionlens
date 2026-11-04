@@ -202,6 +202,20 @@ The stock card and each affected row show the event window, the expected move an
 it. It's a market-implied estimate: it can't tell earnings from other scheduled news, and a
 window between two expiries is as precise as it gets.
 
+**Amount to invest (optional): lower delta & more contracts vs higher delta & fewer.** Enter
+an amount and, under each table, the app compares four delta ranges (0.20–0.35, 0.35–0.50,
+0.50–0.65, 0.65+). For each it takes the contract (among those that passed your filters) with
+the highest dollar profit for that amount: whole contracts = amount ÷ (ask × 100), rounded
+down; dollars = amount used × the contract's % return in each scenario. It shows the expected
+profit (5 sessions: Stocky's forecast; 30 days: a typical favourable move), the result at
+Stocky's target, if flat, if the stock moves about one standard deviation the wrong way, the
+chance of profit, the stock-equivalent exposure (contracts × delta × 100) and time decay per
+day. **Why is this the most profitable?** opens a popup that explains the winner with these
+numbers: cheaper, lower-delta options buy more contracts and more leverage, but swing more both
+ways and decay more; sometimes the higher delta wins because the lower-delta options lose too
+much to time decay before the move pays. The self-check recomputes quantities, dollars and the
+winner.
+
 **Outside regular hours** (before 9:30 or after 16:00 New York, or weekends), option quotes
 are frozen at the close, while the stock keeps trading after hours. So the scan uses the
 official regular-session close (`/v1/open-close`) as the stock price for every calculation.

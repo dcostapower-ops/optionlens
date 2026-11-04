@@ -37,7 +37,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv();
 
 const PORT = Number(process.env.PORT || 8790);
-const APP_VERSION = 11; // bump when the page and server must match (page checks it)
+const APP_VERSION = 12; // bump when the page and server must match (page checks it)
 // Set APP_PASSWORD to require a password (needed before putting Stockypower on the web).
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const APP_USER = process.env.APP_USER || "stocky";
@@ -132,11 +132,12 @@ function optionParams(body) {
   const horizon = body.horizon === "short" ? "short" : "30d";
   const autoStocky = body.autoStocky !== false;
   const shortSource = body.shortSource === "1h" ? "1h" : "4h";
-  return { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, autoStocky, shortSource };
+  const budget = Number(body.budget) > 0 ? Math.min(1e8, Math.round(Number(body.budget) * 100) / 100) : null;
+  return { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, autoStocky, shortSource, budget };
 }
 
-async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, autoStocky = true, shortSource = "4h", refresh }) {
-  const key = `${symbols.join(",")}|${minDays}|${maxDays ?? ""}|${minTouchProb}|${minOpenInterest}|${strikePref}|${horizon}|${shortSource}`;
+async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, autoStocky = true, shortSource = "4h", budget = null, refresh }) {
+  const key = `${symbols.join(",")}|${minDays}|${maxDays ?? ""}|${minTouchProb}|${minOpenInterest}|${strikePref}|${horizon}|${shortSource}|${budget ?? ""}`;
   const hit = optionsCache.get(key);
   if (!refresh && hit && Date.now() - hit.at < 5 * 60_000) return { ...hit.result, stockyRuns: stockyRunStatus(symbols), cached: true };
 
@@ -241,7 +242,7 @@ async function bestOptions(symbols, { minDays, maxDays, minTouchProb, minOpenInt
       shortBlock: block,
     };
   }
-  const picked = pickBest(contracts, { hv, stocky: stockyPick, events, minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon });
+  const picked = pickBest(contracts, { hv, stocky: stockyPick, events, minDays, maxDays, minTouchProb, minOpenInterest, strikePref, horizon, budget });
   for (const sym of Object.keys(underlying)) underlying[sym].stocky = stocky[sym] ?? null;
   const result = { ...picked, underlying, errors, symbols, minDays, at: Date.now(), stockyRuns: stockyRunStatus(symbols), autoStocky: autoStocky && OPTIONS_AUTO_STOCKY };
   optionsCache.set(key, { at: Date.now(), result });

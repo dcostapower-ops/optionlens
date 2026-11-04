@@ -153,6 +153,15 @@
   .hhow { font-size: 12px; color: var(--muted); margin-top: 14px; line-height: 1.6; }
   footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px; }
   @media (max-width: 600px) { .chart { height: 380px; } .card { padding: 14px; } }
+  .omodal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: flex-start; justify-content: center; z-index: 50; overflow: auto; padding: 40px 16px; }
+  .omodal[hidden] { display: none; }
+  .omodal .mbox { background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 10px; max-width: 760px; width: 100%; padding: 20px 22px; line-height: 1.5; position: relative; }
+  .omodal .mbox h3 { margin-top: 0; }
+  .omodal .mbox table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+  .omodal .mbox th, .omodal .mbox td { border-bottom: 1px solid #30363d; padding: 5px 6px; text-align: right; }
+  .omodal .mbox th:first-child, .omodal .mbox td:first-child { text-align: left; }
+  .omodal .mclose { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: #8b949e; font-size: 22px; cursor: pointer; }
+  .budgettable tr.win td { background: rgba(46,160,67,.12); }
 </style>
 </head>
 <body>
@@ -201,6 +210,7 @@
       </select></label>
       <label title="When Stocky's analysis of a symbol is missing or older than the latest trading day, start a Stocky run in the background. Each run is a Stocky session (uses Anthropic credits); at most one per symbol per trading day.">
         <input id="optAutoStocky" type="checkbox" checked /> Run Stocky automatically</label>
+      <label title="Optional. Compares lower delta / more contracts with higher delta / fewer contracts for this amount, in dollars.">Amount to invest $ <input id="optBudget" type="number" min="0" step="100" placeholder="optional" style="width:100px" /></label>
       <label>Minimum open interest <input id="optOI" type="number" min="0" max="100000" value="500" style="width:80px" /></label>
       <label title="How 'most profitable' is judged">Profit horizon <select id="optHorizon">
         <option value="30d">Next 30 days (typical move)</option>
@@ -232,6 +242,7 @@
 
 <footer>Calculations by the Stocky agent · prices from Massive · charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>. Not financial advice.</footer>
 
+<div id="omodal" class="omodal" hidden><div class="mbox"><button class="mclose" aria-label="Close">×</button><div id="omodalBody"></div></div></div>
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1269,7 +1280,7 @@ async function runOptions(refresh, silent = false) {
   const touchRaw = $("#optTouch").value;
   const minTouchPct = silent ? OPT.query.minTouchPct : touchRaw === "" ? 70 : Math.max(0, Math.min(100, Number(touchRaw)));
   if (!silent) {
-    OPT.query = { symbols, days, maxDays, minTouchPct, autoStocky: $("#optAutoStocky").checked, horizon: $("#optHorizon").value, shortSource: $("#optSource").value, strikePref: $("#optPref").value, minOpenInterest: $("#optOI").value === "" ? 500 : Number($("#optOI").value) };
+    OPT.query = { symbols, days, maxDays, minTouchPct, autoStocky: $("#optAutoStocky").checked, horizon: $("#optHorizon").value, shortSource: $("#optSource").value, budget: Number($("#optBudget").value) || null, strikePref: $("#optPref").value, minOpenInterest: $("#optOI").value === "" ? 500 : Number($("#optOI").value) };
     OPT.openTicker = null;
     $(".ostatus").textContent = "Scanning every option contract and scoring them… (large chains can take 10–30 seconds)";
     $(".oresults").innerHTML = "";
@@ -1280,7 +1291,7 @@ async function runOptions(refresh, silent = false) {
     const r = await fetch("/api/options", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols, minDays: days + 1, maxDays, minTouchPct, strikePref: OPT.query.strikePref, minOpenInterest: OPT.query.minOpenInterest, horizon: OPT.query.horizon, shortSource: OPT.query.shortSource, autoStocky: OPT.query.autoStocky, refresh }), // "more than N days"
+      body: JSON.stringify({ symbols, minDays: days + 1, maxDays, minTouchPct, strikePref: OPT.query.strikePref, minOpenInterest: OPT.query.minOpenInterest, horizon: OPT.query.horizon, shortSource: OPT.query.shortSource, budget: OPT.query.budget, autoStocky: OPT.query.autoStocky, refresh }), // "more than N days"
     });
     if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
     const d = await r.json();
@@ -1317,7 +1328,102 @@ function stockyRunLine(sym, u, d) {
   return "";
 }
 
+// ── Amount to invest: lower delta / more contracts vs higher delta / fewer contracts ──
+const usd = (v) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 ? "+" : ""}$${Math.abs(Math.round(v)).toLocaleString()}`);
+const usd0 = (v) => `$${Math.round(v).toLocaleString()}`;
+let BUDGET_PLANS = {};
+function budgetBox(plan, type, symbols) {
+  if (!plan) return "";
+  BUDGET_PLANS[type] = plan;
+  const short = plan.horizon === "short";
+  if (plan.tooSmall) return `<div class="hhow" style="margin-top:10px">With ${usd0(plan.budget)} you can't buy even one of these ${type}s (cheapest ${usd0(plan.tooSmall)} per contract).</div>`;
+  const multi = (symbols || []).length > 1;
+  const rows = plan.rows.map((r, i) => {
+    const p = r.pos;
+    if (!p) return `<tr><td>${esc(r.bucket)}</td><td colspan="9"><small>no ${type} in this delta range passed your filters</small></td></tr>`;
+    const exp = new Date(p.expiration + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric" });
+    return `<tr class="${i === plan.best ? "win" : ""}"><td>${esc(r.bucket)}${i === plan.best ? "<br><b style='color:#3fb950'>most profitable</b>" : ""}${i === plan.mostLikely && i !== plan.best ? "<br><small>most likely to profit</small>" : ""}</td>
+      <td>${multi ? esc(p.underlying) + " " : ""}${fmt(p.strike)} ${type === "call" ? "C" : "P"} ${esc(exp)}<br><small>Δ ${Math.abs(p.delta).toFixed(2)} · ${p.moneyness}</small></td>
+      <td><b>${p.qty}</b> × ${usd0(p.perContract)}<br><small>${usd0(p.invested)} used${p.unused >= 1 ? ` · ${usd0(p.unused)} left` : ""}</small></td>
+      <td><b>${usd(p.expected)}</b><br><small>${retStr(p.returnPct)}</small></td>
+      ${short ? `<td>${usd(p.target)}</td>` : ""}
+      <td>${usd(p.flat)}</td><td>${usd(p.adverse)}</td>
+      <td>${p.chance != null ? Math.round(p.chance * 100) + "%" : "—"}</td>
+      <td>${Math.round(p.deltaShares).toLocaleString()} sh</td>
+      <td>${p.thetaPerDay != null ? usd(p.thetaPerDay) : "—"}</td></tr>`;
+  }).join("");
+  return `<div style="margin-top:14px"><h3 class="hsec">With ${usd0(plan.budget)}: lower delta &amp; more contracts vs higher delta &amp; fewer contracts
+      <button class="mini" data-why="${type}">Why is this the most profitable?</button></h3>
+    <div class="tablewrap"><table class="otable budgettable"><thead><tr>
+      <th>Delta range</th><th>Best contract for the amount</th><th>Contracts × cost</th>
+      <th title="${short ? "Expected profit if Stocky's 5-session forecast is right" : "Profit after a typical favourable 30-day move"}">${short ? "Expected profit" : "Profit, typical move"}</th>
+      ${short ? `<th title="Profit if Stocky's target is reached in 5 sessions">At target</th>` : ""}
+      <th title="${short ? "Profit/loss if the stock is unchanged after 5 sessions" : "Profit/loss if the stock is unchanged after 30 days"}">If flat</th>
+      <th title="Profit/loss if the stock moves about one standard deviation the other way">If wrong way</th>
+      <th title="${short ? "Chance the position is in profit after 5 sessions" : "Chance the option finishes beyond breakeven at expiry"}">Chance of profit</th>
+      <th title="Stock-equivalent exposure: contracts × delta × 100. Roughly the $ gained per $1 move in your favour, at first">Exposure</th>
+      <th title="Time decay per day for the whole position">Decay/day</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="hhow">Whole contracts only. The most you can lose is the amount used, whichever row you choose.</p></div>`;
+}
+
+function whyBudget(type) {
+  const plan = BUDGET_PLANS[type];
+  if (!plan) return;
+  const short = plan.horizon === "short";
+  const rows = plan.rows.filter((r) => r.pos);
+  const best = plan.rows[plan.best]?.pos;
+  if (!best) return;
+  const lo = rows[0].pos, hi = rows[rows.length - 1].pos;
+  const name = (p) => `${fmt(p.strike)} ${type} (Δ ${Math.abs(p.delta).toFixed(2)}, ${new Date(p.expiration + "T12:00:00Z").toLocaleDateString([], { month: "short", day: "numeric" })})`;
+  const scen = short ? "if Stocky's 5-session forecast is right" : "after a typical favourable 30-day move";
+  const per1 = (p) => Math.round(p.deltaShares).toLocaleString();
+  const left = (p) => (p.unused >= 1 ? ` (${usd0(p.unused)} left unused)` : "");
+  let why = `<p><b>The ${name(best)} gives the most profit for ${usd0(plan.budget)}: ${usd(best.expected)}</b> (${retStr(best.returnPct)}) ${scen}, with <b>${best.qty}</b> contracts.</p>`;
+  if (rows.length < 2) why += `<p>Only one delta range had a contract that passed your filters, so there is nothing to compare. Widen the strike preference or lower the minimum open interest to see more.</p>`;
+  // Against a higher delta: fewer, pricier contracts.
+  if (hi !== best) {
+    why += `<p><b>Why not the higher delta ${name(hi)}?</b> It costs ${usd0(hi.perContract)} per contract, so the same money buys only <b>${hi.qty}</b>${left(hi)}, against <b>${best.qty}</b> at ${usd0(best.perContract)}. ` +
+      (best.deltaShares >= hi.deltaShares
+        ? `Each of its contracts moves more, but you hold fewer: exposure (contracts × delta × 100) is <b>${per1(best)}</b> vs <b>${per1(hi)}</b> shares-equivalent, so for each $1 the stock moves your way the position first gains about $${per1(best)} vs $${per1(hi)}. The cheaper contracts are also more leveraged: the same move is a bigger % of their price.`
+        : `It gives a little more exposure (${per1(hi)} vs ${per1(best)} shares-equivalent), but you pay more for it: much of its premium is intrinsic value that only moves one-for-one, so the % gain on the move is smaller.`) +
+      ` Result ${scen}: <b>${usd(hi.expected)}</b> vs <b>${usd(best.expected)}</b>.</p>`;
+  }
+  // Against a lower delta: more, cheaper contracts.
+  if (lo !== best) {
+    why += `<p><b>Why not the lower delta ${name(lo)}?</b> It's cheaper (${usd0(lo.perContract)}), so the same money buys <b>${lo.qty}</b> contracts instead of <b>${best.qty}</b>, ` +
+      (lo.deltaShares > best.deltaShares ? `with more exposure (${per1(lo)} vs ${per1(best)} shares-equivalent). ` : `yet still less exposure (${per1(lo)} vs ${per1(best)} shares-equivalent). `) +
+      `But the extra contracts don't make up for it: these options are further from the money, so more of their price is time value that decays${short ? ", and the move Stocky expects leaves them with less value" : ""}. Result ${scen}: <b>${usd(lo.expected)}</b> vs <b>${usd(best.expected)}</b>; if the stock stays flat, ${usd(lo.flat)} vs ${usd(best.flat)}.</p>`;
+  }
+  const line = (label, f) => `<tr><td>${label}</td>${rows.map((r) => `<td${r.pos === best ? " style='color:#3fb950;font-weight:600'" : ""}>${f(r.pos)}</td>`).join("")}</tr>`;
+  const table = `<table><thead><tr><th></th>${rows.map((r) => `<th>${esc(r.bucket.replace(/ \(.*/, ""))}<br><small>${name(r.pos)}</small></th>`).join("")}</tr></thead><tbody>
+    ${line("Contracts you can buy", (p) => `${p.qty} × ${usd0(p.perContract)}`)}
+    ${line("Amount used / left", (p) => `${usd0(p.invested)} / ${usd0(p.unused)}`)}
+    ${line("Exposure (shares-equivalent)", (p) => Math.round(p.deltaShares).toLocaleString())}
+    ${line(short ? "Expected profit (forecast)" : "Profit, typical move", (p) => usd(p.expected))}
+    ${short ? line(`At Stocky's target`, (p) => usd(p.target)) : ""}
+    ${line("If the stock is flat", (p) => usd(p.flat))}
+    ${line("If it moves the wrong way", (p) => usd(p.adverse))}
+    ${line("Chance of profit", (p) => (p.chance != null ? Math.round(p.chance * 100) + "%" : "—"))}
+    ${line("Time decay per day", (p) => (p.thetaPerDay != null ? usd(p.thetaPerDay) : "—"))}
+    ${line("Most you can lose", (p) => usd0(p.maxLoss))}
+  </tbody></table>`;
+  const riskier = rows.reduce((a, r) => (r.pos.adverse < a.adverse ? r.pos : a), rows[0].pos);
+  const risk = `<p><b>The trade-off.</b> ${riskier === best ? `The most profitable choice is also the one that loses most if the stock goes the wrong way (${usd(best.adverse)}).` : `If the stock goes the wrong way, the most profitable choice loses ${usd(best.adverse)}, while the ${name(riskier)} would lose ${usd(riskier.adverse)}.`}
+    ${best.chance != null && plan.rows[plan.mostLikely]?.pos && plan.rows[plan.mostLikely].pos !== best ? ` The ${name(plan.rows[plan.mostLikely].pos)} has the best chance of ending in profit (${Math.round(plan.rows[plan.mostLikely].pos.chance * 100)}% vs ${Math.round(best.chance * 100)}%), but earns less when it does.` : ""}
+    Lower-delta positions usually swing more in dollars both ways: more contracts means more exposure and more time decay. In every case the most you can lose is the amount used.</p>`;
+  const how = `<p class="hhow"><b>How it's calculated.</b> For each delta range the app takes every contract that passed your filters, works out how many whole contracts ${usd0(plan.budget)} buys (amount ÷ (ask × 100), rounded down), and multiplies the amount used by that contract's % return in each scenario. The row with the highest ${short ? "expected profit" : "profit after a typical move"} wins. ${short ? "The expected profit averages the option's value across Stocky's forecast range after 5 sessions." : "The typical move is one standard deviation of the stock's realised volatility over 30 days."} "Wrong way" is the same-sized move against you. Option values use Black-Scholes at the current IV (less any event's IV, if an event falls before the exit).</p>`;
+  $("#omodalBody").innerHTML = `<h3>Why this choice for ${usd0(plan.budget)}?</h3>${why}${table}${risk}${how}`;
+  $("#omodal").hidden = false;
+}
+
+document.addEventListener("click", (ev) => {
+  if (ev.target.id === "omodal" || ev.target.closest(".mclose")) $("#omodal").hidden = true;
+});
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") $("#omodal").hidden = true; });
+
 function renderOptions(d, days) {
+  BUDGET_PLANS = {};
   const at = new Date(d.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const rej = Object.entries(d.stats.rejected || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v.toLocaleString()} ${k}`).join(", ");
   $(".ostatus").innerHTML =
@@ -1384,7 +1490,7 @@ function renderOptions(d, days) {
       <th title="30-day horizon: return if the stock makes a typical favourable move (1 standard deviation) in 30 days. 5-session horizon: expected return from Stocky's 1-day target">Est. return*</th>
       <th title="Return if the stock is unchanged after 30 days (time decay)">If flat 30d</th><th>Delta</th><th>IV</th>
       <th>Open interest</th><th>Volume</th><th>Spread</th><th title="Chance the stock reaches the strike at any time before expiry (out-of-the-money contracts), based on its realized volatility">Reach strike before expiry</th><th title="Breakeven at expiry, and the chance the stock finishes beyond it (the option pays off if held to expiry)">Breakeven</th><th title="Combined attractiveness score, 0-100">Score</th>
-      </tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      </tr></thead><tbody>${rows}</tbody></table></div>${budgetBox(d.budget?.[type], type, d.symbols)}</div>`;
   };
   // Per-expiry comparison: the best call / put on every expiry date and why it scored as it did.
   const expTable = (title, list) => {
@@ -1407,6 +1513,8 @@ function renderOptions(d, days) {
       <p class="hhow">Factor scores are 0–100 (higher is better). Only contracts that passed the filters appear. An expiry date can be missing if none of its contracts passed.</p>
       ${expTable("Calls by expiry date", d.callsByExpiry)}${expTable("Puts by expiry date", d.putsByExpiry)}</details>`;
   $(".oresults").onclick = (ev) => {
+    const why = ev.target.closest("[data-why]");
+    if (why) return whyBudget(why.dataset.why);
     const tr = ev.target.closest("tr[data-i]");
     if (!tr) return;
     const c = (tr.dataset.type === "call" ? d.calls : d.puts)[+tr.dataset.i];
@@ -1467,7 +1575,7 @@ async function runSelfCheck() {
     const r = await fetch("/api/options/selfcheck", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols: OPT.query.symbols, minDays: OPT.query.days + 1, maxDays: OPT.query.maxDays, minTouchPct: OPT.query.minTouchPct, strikePref: OPT.query.strikePref, minOpenInterest: OPT.query.minOpenInterest, horizon: OPT.query.horizon, shortSource: OPT.query.shortSource, autoStocky: OPT.query.autoStocky }),
+      body: JSON.stringify({ symbols: OPT.query.symbols, minDays: OPT.query.days + 1, maxDays: OPT.query.maxDays, minTouchPct: OPT.query.minTouchPct, strikePref: OPT.query.strikePref, minOpenInterest: OPT.query.minOpenInterest, horizon: OPT.query.horizon, shortSource: OPT.query.shortSource, budget: OPT.query.budget, autoStocky: OPT.query.autoStocky }),
     });
     if (r.status === 405 || r.status === 404) throw new Error(OLD_SERVER);
     const d = await r.json();
